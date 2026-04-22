@@ -28,6 +28,14 @@ coverage
 # Grunt intermediate storage (https://gruntjs.com/creating-plugins#storing-task-files)
 .grunt
 
+# local database / dev files
+*.sqlite
+*.sqlite3
+
+# OS files
+.DS_Store
+Thumbs.db
+
 # Bower dependency directory (https://bower.io/)
 bower_components
 

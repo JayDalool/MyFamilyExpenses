@@ -23,9 +23,7 @@ export function LoginForm() {
 
         const response = await fetch("/api/auth/login", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
 
@@ -33,7 +31,6 @@ export function LoginForm() {
           const data = (await response.json().catch(() => null)) as
             | { error?: { message?: string } }
             | null;
-
           setError(data?.error?.message ?? "Login failed. Please try again.");
           return;
         }
@@ -46,28 +43,36 @@ export function LoginForm() {
 
   return (
     <form
-      className="space-y-4 rounded-3xl bg-white p-6 shadow-soft"
+      className="space-y-5 rounded-3xl bg-white p-7 shadow-soft"
       onSubmit={handleSubmit}
     >
-      <div>
-        <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="email">
-          Email
+      <div className="space-y-1">
+        <label
+          className="block text-sm font-semibold text-slate-700"
+          htmlFor="email"
+        >
+          Email address
         </label>
         <input
-          className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-brand-500"
+          autoComplete="email"
+          className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:bg-white"
           id="email"
           name="email"
-          placeholder="admin@example.com"
+          placeholder="you@example.com"
           type="email"
         />
       </div>
 
-      <div>
-        <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="password">
+      <div className="space-y-1">
+        <label
+          className="block text-sm font-semibold text-slate-700"
+          htmlFor="password"
+        >
           Password
         </label>
         <input
-          className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-brand-500"
+          autoComplete="current-password"
+          className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3.5 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:bg-white"
           id="password"
           name="password"
           placeholder="Enter your password"
@@ -76,11 +81,16 @@ export function LoginForm() {
       </div>
 
       {error ? (
-        <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p>
+        <div className="flex items-start gap-3 rounded-2xl bg-rose-50 px-4 py-3">
+          <svg className="mt-0.5 h-4 w-4 flex-shrink-0 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <p className="text-sm text-rose-700">{error}</p>
+        </div>
       ) : null}
 
       <button
-        className="w-full rounded-2xl bg-brand-600 px-4 py-3 text-base font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
+        className="w-full rounded-2xl bg-brand-600 px-4 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-brand-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
         disabled={isPending}
         type="submit"
       >

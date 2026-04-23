@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { AppShell } from "@/components/app-shell";
-import { ExpenseForm } from "@/components/expense-form";
+import { ExpenseWizard } from "@/components/expense-wizard";
 import {
   listExpensesForUser,
   normalizeExpenseHistoryFilters,
@@ -35,8 +35,16 @@ export default async function ExpensesPage({ searchParams }: ExpensesPageProps) 
 
   return (
     <AppShell user={user}>
-      <div className="grid gap-6 xl:grid-cols-[1.05fr,0.95fr]">
-        <ExpenseForm categories={categories} />
+      <div className="grid gap-6 xl:grid-cols-[1fr,1fr]">
+        <div>
+          <div className="mb-4">
+            <h1 className="text-2xl font-bold text-slate-900">Add Expense</h1>
+            <p className="text-sm text-slate-500">
+              Select a category, snap or upload your receipt, then save.
+            </p>
+          </div>
+          <ExpenseWizard categories={categories} />
+        </div>
 
         <section className="rounded-3xl bg-white p-6 shadow-soft">
           <div className="mb-6">

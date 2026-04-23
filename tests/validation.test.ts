@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { loginSchema } from "../lib/validation/auth";
-import { expenseInputSchema, finalExpenseSchema } from "../lib/validation/expense";
+import {
+  expenseHistoryFiltersSchema,
+  expenseInputSchema,
+  finalExpenseSchema,
+} from "../lib/validation/expense";
 
 test("login schema normalizes email to lowercase", () => {
   const parsed = loginSchema.parse({
@@ -36,4 +40,18 @@ test("final expense schema requires invoice data", () => {
   assert.equal(parsed.invoiceNumber, "INV-1001");
   assert.equal(parsed.invoiceDate, "2026-04-22");
   assert.equal(parsed.amount, 42.5);
+});
+
+test("expense history filters schema accepts invoice and date filters", () => {
+  const parsed = expenseHistoryFiltersSchema.parse({
+    invoiceNumber: "INV-1001",
+    categoryId: "6dd5ab70-6866-4ae1-a0c0-567c1714d062",
+    fromDate: "2026-04-01",
+    toDate: "2026-04-30",
+  });
+
+  assert.equal(parsed.invoiceNumber, "INV-1001");
+  assert.equal(parsed.categoryId, "6dd5ab70-6866-4ae1-a0c0-567c1714d062");
+  assert.equal(parsed.fromDate, "2026-04-01");
+  assert.equal(parsed.toDate, "2026-04-30");
 });

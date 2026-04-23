@@ -3,6 +3,19 @@ import { hashPassword } from "../lib/auth/password";
 
 const prisma = new PrismaClient();
 
+const seedUsers = [
+  {
+    name: "Osama Daloul",
+    email: "osamadaloul@hotmail.com",
+    role: "USER" as const,
+  },
+  {
+    name: "Jay Daloul",
+    email: "jay16ca@gmail.com",
+    role: "ADMIN" as const,
+  },
+];
+
 const defaultCategories = [
   "Restaurant",
   "Travel",
@@ -18,24 +31,36 @@ const defaultCategories = [
 ];
 
 async function main() {
-  const adminEmail = (process.env.SEED_ADMIN_EMAIL ?? "admin@example.com").toLowerCase();
-  const adminName = process.env.SEED_ADMIN_NAME ?? "Family Admin";
-  const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "ChangeMe123!";
+  const seedPassword = process.env.SEED_USER_PASSWORD;
 
-  const existingAdmin = await prisma.user.findUnique({
-    where: { email: adminEmail },
-  });
-
-  if (!existingAdmin) {
-    await prisma.user.create({
-      data: {
-        name: adminName,
-        email: adminEmail,
-        passwordHash: await hashPassword(adminPassword),
-        role: "ADMIN",
-      },
-    });
+  if (!seedPassword) {
+    throw new Error(
+      "SEED_USER_PASSWORD is required before running the seed script.",
+    );
   }
+
+  const passwordHash = await hashPassword(seedPassword);
+
+  await Promise.all(
+    seedUsers.map((user) =>
+      prisma.user.upsert({
+        where: {
+          email: user.email.toLowerCase(),
+        },
+        update: {
+          name: user.name,
+          role: user.role,
+          passwordHash,
+        },
+        create: {
+          name: user.name,
+          email: user.email.toLowerCase(),
+          role: user.role,
+          passwordHash,
+        },
+      }),
+    ),
+  );
 
   await Promise.all(
     defaultCategories.map((name, index) =>

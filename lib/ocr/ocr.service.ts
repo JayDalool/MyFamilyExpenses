@@ -1,32 +1,20 @@
-export type OcrResult = {
-  invoiceNumber: string;
-  invoiceDate: string;
-  amount: number;
-  provider: "mock-ocr";
-  confidence: {
-    invoiceNumber: number;
-    invoiceDate: number;
-    amount: number;
-  };
-};
+import { MockOcrProvider } from "@/lib/ocr/mock-ocr-provider";
+import type { OcrInput, OcrProvider, OcrResult } from "@/lib/ocr/types";
 
-type OcrInput = {
-  fileName: string;
-};
+function getOcrProvider(): OcrProvider {
+  const providerName = (process.env.OCR_PROVIDER ?? "mock").toLowerCase();
 
-// This is the seam for a real OCR provider later.
-export async function extractInvoiceData(_: OcrInput): Promise<OcrResult> {
-  const suffix = Date.now().toString().slice(-6);
-
-  return {
-    invoiceNumber: `MOCK-${suffix}`,
-    invoiceDate: new Date().toISOString().slice(0, 10),
-    amount: 24.99,
-    provider: "mock-ocr",
-    confidence: {
-      invoiceNumber: 0.82,
-      invoiceDate: 0.84,
-      amount: 0.78,
-    },
-  };
+  switch (providerName) {
+    case "mock":
+    default:
+      return new MockOcrProvider();
+  }
 }
+
+// Keep the service function stable so the rest of the app can swap to a real
+// provider later without changing route handlers or pages.
+export async function extractInvoiceData(input: OcrInput): Promise<OcrResult> {
+  return getOcrProvider().extract(input);
+}
+
+export type { OcrInput, OcrProvider, OcrResult };

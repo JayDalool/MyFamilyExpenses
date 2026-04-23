@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { AppShell } from "@/components/app-shell";
 import { prisma } from "@/lib/db/prisma";
 import { requireUser } from "@/lib/auth/session";
@@ -63,7 +64,9 @@ export default async function DashboardPage() {
 
           <div className="rounded-3xl bg-brand-600 p-6 text-white shadow-soft">
             <p className="text-sm font-medium text-brand-50">Quick start</p>
-            <p className="mt-3 text-lg font-semibold">Select a category, upload an invoice, and save it in one short flow.</p>
+            <p className="mt-3 text-lg font-semibold">
+              Select a category, upload an invoice, and save it in one short flow.
+            </p>
           </div>
         </section>
 
@@ -71,7 +74,9 @@ export default async function DashboardPage() {
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h2 className="text-xl font-semibold text-slate-900">Recent expenses</h2>
-              <p className="text-sm text-slate-500">Latest saved invoices for this account scope.</p>
+              <p className="text-sm text-slate-500">
+                Latest saved invoices for this account scope.
+              </p>
             </div>
           </div>
 
@@ -87,10 +92,15 @@ export default async function DashboardPage() {
                   key={expense.id}
                 >
                   <div>
-                    <p className="font-medium text-slate-900">{expense.invoiceNumber}</p>
+                    <Link
+                      className="font-medium text-slate-900 hover:text-brand-700"
+                      href={`/expenses/${expense.id}`}
+                    >
+                      {expense.invoiceNumber}
+                    </Link>
                     <p className="text-sm text-slate-500">
-                      {expense.category.name} • {expense.invoiceDate.toISOString().slice(0, 10)}
-                      {user.role === "ADMIN" ? ` • ${expense.user.name}` : ""}
+                      {expense.category.name} | {expense.invoiceDate.toISOString().slice(0, 10)}
+                      {user.role === "ADMIN" ? ` | ${expense.user.name}` : ""}
                     </p>
                   </div>
                   <p className="text-lg font-semibold text-slate-900">

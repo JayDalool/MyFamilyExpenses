@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getCurrentUser } from "@/lib/auth/session";
+import { listExpensesForUser, normalizeExpenseHistoryFilters } from "@/lib/expenses";
 import { extractInvoiceData } from "@/lib/ocr/ocr.service";
 import { saveUploadedFile } from "@/lib/storage";
 import { expenseInputSchema, finalExpenseSchema } from "@/lib/validation/expense";
@@ -16,7 +17,7 @@ function parseMaxUploadBytes() {
   return Number(process.env.MAX_UPLOAD_MB ?? "10") * 1024 * 1024;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const user = await getCurrentUser();
 
   if (!user) {
@@ -30,17 +31,14 @@ export async function GET() {
     );
   }
 
-  const expenses = await prisma.expense.findMany({
-    where: user.role === "ADMIN" ? {} : { userId: user.id },
-    include: {
-      category: true,
-      user: true,
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
-    take: 50,
+  const { searchParams } = new URL(request.url);
+  const filters = normalizeExpenseHistoryFilters({
+    invoiceNumber: searchParams.get("invoiceNumber") ?? undefined,
+    categoryId: searchParams.get("categoryId") ?? undefined,
+    fromDate: searchParams.get("fromDate") ?? undefined,
+    toDate: searchParams.get("toDate") ?? undefined,
   });
+  const expenses = await listExpensesForUser(user, filters);
 
   return NextResponse.json({
     data: expenses,
@@ -134,7 +132,11 @@ export async function POST(request: Request) {
   }
 
   const storedFile = await saveUploadedFile(file);
-  const ocrData = await extractInvoiceData({ fileName: file.name });
+  const ocrData = await extractInvoiceData({
+    fileName: file.name,
+    mimeType: file.type,
+    absolutePath: storedFile.absolutePath,
+  });
 
   const finalized = finalExpenseSchema.safeParse({
     categoryId: input.data.categoryId,

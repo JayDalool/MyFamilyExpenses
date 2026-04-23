@@ -24,9 +24,8 @@ services:
       SESSION_TTL_DAYS: "7"
       UPLOAD_DIR: /app/uploads
       MAX_UPLOAD_MB: "10"
-      SEED_ADMIN_NAME: Family Admin
-      SEED_ADMIN_EMAIL: admin@example.com
-      SEED_ADMIN_PASSWORD: ChangeMe123!
+      OCR_PROVIDER: mock
+      SEED_USER_PASSWORD: change-me-before-seeding
       NODE_ENV: production
     ports:
       - "3000:3000"

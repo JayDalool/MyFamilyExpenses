@@ -25,6 +25,24 @@ type DateCandidate = {
   score: number;
 };
 
+type ReceiptContext = {
+  hasCanadianMarkers: boolean;
+  hasCardPaymentMarkers: boolean;
+};
+
+type DateParseOptions = {
+  hasDateLabel: boolean;
+  preferDayFirst: boolean;
+  overallConfidence: number;
+};
+
+type InvoiceLabelRule = {
+  pattern: RegExp;
+  score: number;
+  confidence: number;
+  strength: "strong" | "weak";
+};
+
 const MONTH_NAMES: Record<string, number> = {
   jan: 1,
   january: 1,
@@ -59,48 +77,139 @@ const DATE_LABEL_PATTERNS = [
   /\btransaction\s+date\b/i,
   /\btxn\s+date\b/i,
   /\binvoice\s+date\b/i,
+  /\border\s+date\b/i,
   /\breceipt\s+date\b/i,
+  /\bsale\s+date\b/i,
   /\bissued\b/i,
 ];
+
+const CANADIAN_RECEIPT_PATTERN =
+  /\b(?:gst|hst|pst|qst|interac|debit|visa|mastercard|amex|cad|canada)\b/i;
+
+const CARD_PAYMENT_PATTERN =
+  /\b(?:debit|visa|mastercard|interac|amex)\b/i;
 
 const STRONG_AMOUNT_RULES = [
   { pattern: /\bgrand\s+total\b/i, score: 1.35, confidence: 0.96 },
   { pattern: /\bamount\s+paid\b/i, score: 1.28, confidence: 0.95 },
   { pattern: /\btotal\s+paid\b/i, score: 1.24, confidence: 0.94 },
   { pattern: /\bpayment\s+total\b/i, score: 1.18, confidence: 0.93 },
+  { pattern: /\bamount\s+due\b/i, score: 1.16, confidence: 0.92 },
   { pattern: /\bbalance\s+due\b/i, score: 1.15, confidence: 0.92 },
   { pattern: /\btotal\s+due\b/i, score: 1.12, confidence: 0.91 },
   { pattern: /\binvoice\s+total\b/i, score: 1.08, confidence: 0.9 },
   { pattern: /\bamount\b/i, score: 0.74, confidence: 0.72 },
   { pattern: /(?:^|\b)total(?:\b|$)/i, score: 0.98, confidence: 0.84 },
+  { pattern: /\binterac\b/i, score: 0.7, confidence: 0.76 },
+  { pattern: /\bdebit\b/i, score: 0.68, confidence: 0.74 },
+  { pattern: /\bvisa\b/i, score: 0.66, confidence: 0.73 },
+  { pattern: /\bmastercard\b/i, score: 0.66, confidence: 0.73 },
+  { pattern: /\bamex\b/i, score: 0.64, confidence: 0.72 },
 ];
 
 const NEGATIVE_AMOUNT_PATTERNS = {
   subtotal: /\bsub[\s-]?total\b/i,
-  tax: /\b(?:tax|gst|pst|hst|vat|iva)\b/i,
+  tax: /\b(?:tax|gst|pst|hst|qst|vat|iva)\b/i,
   taxTotal: /\b(?:tax\s+total|total\s+tax)\b/i,
   tip: /\btip\b/i,
   change: /\bchange\b/i,
   tendered: /\b(?:cash|tender(?:ed)?|paid\s+out)\b/i,
   discount: /\b(?:discount|savings?)\b/i,
   rounding: /\bround(?:ing)?\b/i,
+  auth: /\b(?:authorization|authorisation|approval|auth(?:\s*code)?|trace|rrn|stan)\b/i,
 };
 
-const POSITIVE_AMOUNT_LINE_PATTERN = /\b(?:grand\s+total|amount\s+paid|total\s+paid|payment\s+total|balance\s+due|total\s+due|invoice\s+total|total|amount)\b/i;
+const INVOICE_LABEL_RULES: InvoiceLabelRule[] = [
+  {
+    pattern:
+      /\breceipt\s*(?:#|no\.?|number|num|id)?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9/.-]{2,31})\b/i,
+    score: 1.22,
+    confidence: 0.94,
+    strength: "strong",
+  },
+  {
+    pattern:
+      /\binvoice\s*(?:#|no\.?|number|num|id)?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9/.-]{2,31})\b/i,
+    score: 1.18,
+    confidence: 0.93,
+    strength: "strong",
+  },
+  {
+    pattern:
+      /\b(?:transaction|trans|txn)\s*(?:#|no\.?|number|num|id)?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9/.-]{2,31})\b/i,
+    score: 1.15,
+    confidence: 0.92,
+    strength: "strong",
+  },
+  {
+    pattern:
+      /\border\s*(?:#|no\.?|number|num|id)?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9/.-]{2,31})\b/i,
+    score: 1.08,
+    confidence: 0.9,
+    strength: "strong",
+  },
+  {
+    pattern:
+      /\bref(?:erence)?\s*(?:#|no\.?|number|num|id)?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9/.-]{2,31})\b/i,
+    score: 0.98,
+    confidence: 0.86,
+    strength: "strong",
+  },
+  {
+    pattern:
+      /\b(?:check|cheque)\s*(?:#|no\.?|number|num|id)?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9/.-]{2,31})\b/i,
+    score: 0.95,
+    confidence: 0.84,
+    strength: "strong",
+  },
+  {
+    pattern:
+      /\bbill\s*(?:#|no\.?|number|num|id)?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9/.-]{2,31})\b/i,
+    score: 0.92,
+    confidence: 0.82,
+    strength: "strong",
+  },
+  {
+    pattern:
+      /\bsale\s*(?:#|no\.?|number|num|id)?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9/.-]{2,31})\b/i,
+    score: 0.82,
+    confidence: 0.78,
+    strength: "strong",
+  },
+  {
+    pattern:
+      /\breg\s*(?:#|no\.?|number|num|id)?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9/.-]{2,31})\b/i,
+    score: 0.58,
+    confidence: 0.58,
+    strength: "weak",
+  },
+];
 
-const INLINE_INVOICE_LABEL_PATTERN =
-  /\b(?:invoice|receipt|trans(?:action)?|tran|txn|check|order|bill|ref(?:erence)?|ticket)\s*(?:no|#|number|num|id)?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9/.-]{2,})/i;
+const SPLIT_INVOICE_LABEL_RULES: InvoiceLabelRule[] = [
+  { pattern: /\breceipt\s*(?:#|no\.?|number|num|id)?\b/i, score: 1.08, confidence: 0.9, strength: "strong" },
+  { pattern: /\binvoice\s*(?:#|no\.?|number|num|id)?\b/i, score: 1.04, confidence: 0.88, strength: "strong" },
+  { pattern: /\b(?:transaction|trans|txn)\s*(?:#|no\.?|number|num|id)?\b/i, score: 1.02, confidence: 0.87, strength: "strong" },
+  { pattern: /\border\s*(?:#|no\.?|number|num|id)?\b/i, score: 0.94, confidence: 0.84, strength: "strong" },
+  { pattern: /\bref(?:erence)?\s*(?:#|no\.?|number|num|id)?\b/i, score: 0.86, confidence: 0.8, strength: "strong" },
+  { pattern: /\b(?:check|cheque)\s*(?:#|no\.?|number|num|id)?\b/i, score: 0.82, confidence: 0.78, strength: "strong" },
+  { pattern: /\bbill\s*(?:#|no\.?|number|num|id)?\b/i, score: 0.78, confidence: 0.76, strength: "strong" },
+  { pattern: /\bsale\s*(?:#|no\.?|number|num|id)?\b/i, score: 0.72, confidence: 0.72, strength: "strong" },
+  { pattern: /\breg\s*(?:#|no\.?|number|num|id)?\b/i, score: 0.48, confidence: 0.54, strength: "weak" },
+];
 
-const SPLIT_INVOICE_LABEL_PATTERN =
-  /\b(?:invoice|receipt|trans(?:action)?|tran|txn|check|order|bill|ref(?:erence)?|ticket)\s*(?:no|#|number|num|id)?\b/i;
-
-const INVOICE_IGNORE_LINE_PATTERN =
-  /\b(?:phone|tel|telephone|fax|mobile|customer\s+service|store|location|branch|register|terminal|cashier|clerk|server)\b/i;
+const WEAK_INVOICE_IGNORE_LINE_PATTERN =
+  /\b(?:phone|tel|telephone|fax|mobile|customer\s+service|store\s*(?:#|no|number)?|location|branch|terminal(?:\s+id)?|term\s*id|merchant|cashier|clerk|server|table|gst|hst|pst|qst|bn|business\s+number|authorization|authorisation|approval|auth(?:\s*code)?|trace|rrn|stan|mid|tid|aid)\b/i;
 
 const PHONE_PATTERN =
   /(?:\+?\d{1,2}[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})/;
 
-const WEAK_INVOICE_PATTERN = /\b(?:[A-Za-z]{1,6}[-/]?\d{3,}[A-Za-z0-9/-]*|\d{3,}[A-Za-z]{1,6}[A-Za-z0-9/-]*)\b/g;
+const CANADIAN_POSTAL_CODE_PATTERN =
+  /\b[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z][ -]?\d[ABCEGHJ-NPRSTV-Z]\d\b/i;
+
+const TAX_IDENTIFIER_PATTERN = /^\d{9}(?:RT\d{4})?$/i;
+
+const WEAK_INVOICE_PATTERN =
+  /\b(?:[A-Za-z]{1,8}[-/]?\d{3,}[A-Za-z0-9/-]*|\d{3,}[A-Za-z]{1,8}[A-Za-z0-9/-]*)\b/g;
 
 function clampConfidence(value: number) {
   return Math.max(0, Math.min(1, Number(value.toFixed(2))));
@@ -157,99 +266,307 @@ function normalizeYear(year: number) {
   return year >= 70 ? 1900 + year : 2000 + year;
 }
 
-function parseNamedMonthDate(value: string) {
-  const monthFirst = value.match(
-    /\b([A-Za-z]{3,9})\s+(\d{1,2})(?:,)?\s+((?:19|20)?\d{2})\b/i,
-  );
+function buildReceiptContext(lines: string[]): ReceiptContext {
+  const joinedText = lines.join(" ");
 
-  if (monthFirst) {
-    const month = MONTH_NAMES[monthFirst[1].toLowerCase()];
-    const day = Number(monthFirst[2]);
-    const year = normalizeYear(Number(monthFirst[3]));
-    return month ? toIsoDate(year, month, day) : null;
+  return {
+    hasCanadianMarkers: CANADIAN_RECEIPT_PATTERN.test(joinedText),
+    hasCardPaymentMarkers: CARD_PAYMENT_PATTERN.test(joinedText),
+  };
+}
+
+function getReceiptDateRealismScore(value: string) {
+  const date = new Date(`${value}T12:00:00Z`);
+
+  if (Number.isNaN(date.getTime())) {
+    return -0.75;
   }
 
-  const dayFirst = value.match(
-    /\b(\d{1,2})\s+([A-Za-z]{3,9})(?:,)?\s+((?:19|20)?\d{2})\b/i,
-  );
+  const now = new Date();
+  const currentYear = now.getUTCFullYear();
+  const year = date.getUTCFullYear();
 
-  if (!dayFirst) {
+  if (year < 2000 || year > currentYear + 1) {
+    return -0.75;
+  }
+
+  const today = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate(),
+  );
+  const daysDiff = Math.round((date.getTime() - today) / 86_400_000);
+  let score = 0;
+
+  if (daysDiff > 60) {
+    score -= 0.24;
+  } else if (daysDiff > 21) {
+    score -= 0.08;
+  } else {
+    score += 0.04;
+  }
+
+  if (daysDiff < -3650) {
+    score -= 0.08;
+  }
+
+  if (daysDiff < -7300) {
+    score -= 0.14;
+  }
+
+  return score;
+}
+
+function buildDateCandidate(
+  value: string,
+  options: DateParseOptions,
+  baseScore: number,
+  ambiguityPenalty = 0,
+): DateCandidate | null {
+  const realismScore = getReceiptDateRealismScore(value);
+
+  if (realismScore <= -0.7) {
     return null;
   }
 
-  const month = MONTH_NAMES[dayFirst[2].toLowerCase()];
-  const day = Number(dayFirst[1]);
-  const year = normalizeYear(Number(dayFirst[3]));
+  const confidenceWeight = options.hasDateLabel ? 0.82 : 0.6;
+  const confidenceBonus = options.hasDateLabel ? 0.12 : 0.04;
 
-  return month ? toIsoDate(year, month, day) : null;
+  return {
+    value,
+    score: baseScore + realismScore - ambiguityPenalty,
+    confidence: scaleConfidence(
+      options.overallConfidence * confidenceWeight +
+        confidenceBonus -
+        ambiguityPenalty * 0.22,
+      options.hasDateLabel ? 0.58 : 0.28,
+      options.hasDateLabel ? 0.97 : 0.84,
+    ),
+  };
 }
 
-function parseCompactDate(value: string) {
-  const compact = value.match(/\b((?:19|20)\d{2})(\d{2})(\d{2})\b/);
-
-  if (!compact) {
-    return null;
+function pushDateCandidate(
+  candidates: DateCandidate[],
+  isoDate: string | null,
+  options: DateParseOptions,
+  baseScore: number,
+  ambiguityPenalty = 0,
+) {
+  if (!isoDate) {
+    return;
   }
 
-  return toIsoDate(
-    Number(compact[1]),
-    Number(compact[2]),
-    Number(compact[3]),
+  const candidate = buildDateCandidate(
+    isoDate,
+    options,
+    baseScore,
+    ambiguityPenalty,
   );
+
+  if (candidate) {
+    candidates.push(candidate);
+  }
 }
 
-function parseNumericDate(value: string) {
-  const isoLike = value.match(
-    /\b((?:19|20)\d{2})[-/.](\d{1,2})[-/.](\d{1,2})\b/,
-  );
+function extractNamedMonthDateCandidates(
+  value: string,
+  options: DateParseOptions,
+  candidates: DateCandidate[],
+) {
+  const monthFirstPattern =
+    /\b([A-Za-z]{3,9})\s+(\d{1,2})(?:,)?\s+((?:19|20)?\d{2})\b/gi;
 
-  if (isoLike) {
-    return toIsoDate(
-      Number(isoLike[1]),
-      Number(isoLike[2]),
-      Number(isoLike[3]),
+  for (const match of value.matchAll(monthFirstPattern)) {
+    const month = MONTH_NAMES[match[1].toLowerCase()];
+    const day = Number(match[2]);
+    const year = normalizeYear(Number(match[3]));
+
+    pushDateCandidate(
+      candidates,
+      month ? toIsoDate(year, month, day) : null,
+      options,
+      options.hasDateLabel ? 1.02 : 0.68,
     );
   }
 
-  const slashLike = value.match(
-    /\b(\d{1,2})([-/.])(\d{1,2})\2((?:19|20)?\d{2})\b/,
-  );
+  const dayFirstPattern =
+    /\b(\d{1,2})\s+([A-Za-z]{3,9})(?:,)?\s+((?:19|20)?\d{2})\b/gi;
 
-  if (!slashLike) {
-    return null;
+  for (const match of value.matchAll(dayFirstPattern)) {
+    const month = MONTH_NAMES[match[2].toLowerCase()];
+    const day = Number(match[1]);
+    const year = normalizeYear(Number(match[3]));
+
+    pushDateCandidate(
+      candidates,
+      month ? toIsoDate(year, month, day) : null,
+      options,
+      options.hasDateLabel ? 1.02 : 0.68,
+    );
   }
-
-  const first = Number(slashLike[1]);
-  const separator = slashLike[2];
-  const second = Number(slashLike[3]);
-  const year = normalizeYear(Number(slashLike[4]));
-
-  if (first > 12 && second <= 12) {
-    return toIsoDate(year, second, first);
-  }
-
-  if (second > 12 && first <= 12) {
-    return toIsoDate(year, first, second);
-  }
-
-  if (separator === ".") {
-    return toIsoDate(year, second, first);
-  }
-
-  return toIsoDate(year, first, second);
 }
 
-function parseDateValue(value: string) {
-  return (
-    parseNumericDate(value) ??
-    parseNamedMonthDate(value) ??
-    parseCompactDate(value)
-  );
+function extractCompactDateCandidates(
+  value: string,
+  options: DateParseOptions,
+  candidates: DateCandidate[],
+) {
+  const compactPattern = /\b((?:19|20)\d{2})(\d{2})(\d{2})\b/g;
+
+  for (const match of value.matchAll(compactPattern)) {
+    pushDateCandidate(
+      candidates,
+      toIsoDate(Number(match[1]), Number(match[2]), Number(match[3])),
+      options,
+      options.hasDateLabel ? 0.92 : 0.52,
+    );
+  }
+}
+
+function extractYearFirstDateCandidates(
+  value: string,
+  options: DateParseOptions,
+  candidates: DateCandidate[],
+) {
+  const yearFirstPattern = /\b((?:19|20)\d{2})[-/.](\d{1,2})[-/.](\d{1,2})\b/g;
+
+  for (const match of value.matchAll(yearFirstPattern)) {
+    pushDateCandidate(
+      candidates,
+      toIsoDate(Number(match[1]), Number(match[2]), Number(match[3])),
+      options,
+      options.hasDateLabel ? 1.06 : 0.7,
+    );
+  }
+}
+
+function extractSlashDateCandidates(
+  value: string,
+  options: DateParseOptions,
+  candidates: DateCandidate[],
+) {
+  const numericPattern = /\b(\d{1,2})([-/.])(\d{1,2})\2((?:19|20)?\d{2})\b/g;
+
+  for (const match of value.matchAll(numericPattern)) {
+    const first = Number(match[1]);
+    const separator = match[2];
+    const second = Number(match[3]);
+    const year = normalizeYear(Number(match[4]));
+
+    if (first > 31 || second > 31) {
+      continue;
+    }
+
+    if (first > 12 && second <= 12) {
+      pushDateCandidate(
+        candidates,
+        toIsoDate(year, second, first),
+        options,
+        options.hasDateLabel ? 1.04 : 0.66,
+      );
+      continue;
+    }
+
+    if (second > 12 && first <= 12) {
+      pushDateCandidate(
+        candidates,
+        toIsoDate(year, first, second),
+        options,
+        options.hasDateLabel ? 1.02 : 0.64,
+      );
+      continue;
+    }
+
+    if (first > 12 || second > 12) {
+      continue;
+    }
+
+    const preferDayFirst = separator === "." || options.preferDayFirst;
+    const dayFirstBase = options.hasDateLabel
+      ? preferDayFirst
+        ? 0.98
+        : 0.84
+      : preferDayFirst
+        ? 0.6
+        : 0.48;
+    const monthFirstBase = options.hasDateLabel
+      ? preferDayFirst
+        ? 0.84
+        : 0.98
+      : preferDayFirst
+        ? 0.48
+        : 0.6;
+
+    pushDateCandidate(
+      candidates,
+      toIsoDate(year, second, first),
+      options,
+      dayFirstBase,
+      0.08,
+    );
+    pushDateCandidate(
+      candidates,
+      toIsoDate(year, first, second),
+      options,
+      monthFirstBase,
+      0.08,
+    );
+  }
+}
+
+function dedupeDateCandidates(candidates: DateCandidate[]) {
+  const byValue = new Map<string, DateCandidate>();
+
+  for (const candidate of candidates) {
+    const existing = byValue.get(candidate.value);
+
+    if (
+      !existing ||
+      candidate.score > existing.score ||
+      (candidate.score === existing.score &&
+        candidate.confidence > existing.confidence)
+    ) {
+      byValue.set(candidate.value, candidate);
+    }
+  }
+
+  return Array.from(byValue.values());
+}
+
+function extractDateCandidatesFromText(
+  value: string,
+  options: DateParseOptions,
+) {
+  const candidates: DateCandidate[] = [];
+
+  extractYearFirstDateCandidates(value, options, candidates);
+  extractSlashDateCandidates(value, options, candidates);
+  extractNamedMonthDateCandidates(value, options, candidates);
+  extractCompactDateCandidates(value, options, candidates);
+
+  return dedupeDateCandidates(candidates);
+}
+
+function shouldPreferDayFirst(
+  text: string,
+  hasDateLabel: boolean,
+  context: ReceiptContext,
+) {
+  if (/\b\d{1,2}\.\d{1,2}\.\d{2,4}\b/.test(text)) {
+    return true;
+  }
+
+  if (CANADIAN_RECEIPT_PATTERN.test(text)) {
+    return true;
+  }
+
+  return context.hasCanadianMarkers && hasDateLabel;
 }
 
 function findInvoiceDate(
   lines: string[],
   overallConfidence: number,
+  context: ReceiptContext,
 ): MatchCandidate<string> {
   const candidates: DateCandidate[] = [];
 
@@ -257,32 +574,24 @@ function findInvoiceDate(
     const line = lines[index];
     const nextLine = lines[index + 1];
     const hasDateLabel = DATE_LABEL_PATTERNS.some((pattern) => pattern.test(line));
-    const labeledContext = nextLine ? `${line} ${nextLine}` : line;
+    const contexts = [line];
 
-    if (hasDateLabel) {
-      const parsed = parseDateValue(labeledContext);
-
-      if (parsed) {
-        candidates.push({
-          value: parsed,
-          confidence: scaleConfidence(overallConfidence * 0.86 + 0.12, 0.62, 0.96),
-          score: 1.2,
-        });
-      }
+    if (hasDateLabel && nextLine) {
+      contexts.push(`${line} ${nextLine}`);
     }
 
-    const genericParsed = parseDateValue(line);
-
-    if (genericParsed) {
-      candidates.push({
-        value: genericParsed,
-        confidence: scaleConfidence(overallConfidence * 0.58 + 0.05, 0.32, 0.78),
-        score: hasDateLabel ? 0.95 : 0.55,
-      });
+    for (const text of contexts) {
+      candidates.push(
+        ...extractDateCandidatesFromText(text, {
+          hasDateLabel,
+          preferDayFirst: shouldPreferDayFirst(text, hasDateLabel, context),
+          overallConfidence,
+        }),
+      );
     }
   }
 
-  return pickBestCandidate(candidates);
+  return pickBestCandidate(dedupeDateCandidates(candidates));
 }
 
 function normalizeInvoiceNumber(candidate: string) {
@@ -294,15 +603,26 @@ function looksLikePhoneNumber(candidate: string) {
 
   return (
     PHONE_PATTERN.test(candidate) ||
-    (/^[\d().+\s-]+$/.test(candidate) &&
-      digitsOnly.length >= 10 &&
-      digitsOnly.length <= 12)
+    (/^\+?\d+$/.test(candidate.replace(/\s+/g, "")) &&
+      (digitsOnly.length === 10 || digitsOnly.length === 11))
   );
+}
+
+function isLikelyDateValue(candidate: string) {
+  return (
+    /^(?:19|20)\d{2}[-/.]\d{1,2}[-/.]\d{1,2}$/.test(candidate) ||
+    /^\d{1,2}[-/.]\d{1,2}[-/.](?:19|20)?\d{2}$/.test(candidate)
+  );
+}
+
+function isLikelyAmountValue(candidate: string) {
+  return /^\d+(?:[.,]\d{2})$/.test(candidate);
 }
 
 function isInvoiceNumberCandidate(
   candidate: string,
   strength: "strong" | "weak",
+  line: string,
 ) {
   const normalized = normalizeInvoiceNumber(candidate);
 
@@ -311,8 +631,24 @@ function isInvoiceNumberCandidate(
     normalized.length > 32 ||
     !/\d/.test(normalized) ||
     looksLikePhoneNumber(normalized) ||
-    /^\d+(?:[.,]\d{2})$/.test(normalized) ||
-    /^(?:19|20)\d{2}[-/.]\d{1,2}[-/.]\d{1,2}$/.test(normalized)
+    CANADIAN_POSTAL_CODE_PATTERN.test(normalized) ||
+    isLikelyAmountValue(normalized) ||
+    isLikelyDateValue(normalized)
+  ) {
+    return false;
+  }
+
+  if (
+    TAX_IDENTIFIER_PATTERN.test(normalized) &&
+    (strength === "weak" ||
+      /\b(?:gst|hst|pst|qst|tax|business\s+number|bn)\b/i.test(line))
+  ) {
+    return false;
+  }
+
+  if (
+    strength === "weak" &&
+    WEAK_INVOICE_IGNORE_LINE_PATTERN.test(line)
   ) {
     return false;
   }
@@ -321,7 +657,12 @@ function isInvoiceNumberCandidate(
     return /[A-Za-z/-]/.test(normalized);
   }
 
-  return !/^\d{1,3}$/.test(normalized);
+  return !/^\d{1,2}$/.test(normalized);
+}
+
+function extractSplitInvoiceCandidate(line: string) {
+  const match = line.match(/[A-Za-z0-9][A-Za-z0-9/.-]{2,31}/);
+  return normalizeInvoiceNumber(match?.[0] ?? "");
 }
 
 function findInvoiceNumber(
@@ -338,37 +679,54 @@ function findInvoiceNumber(
     const line = lines[index];
     const nextLine = lines[index + 1];
 
-    if (INVOICE_IGNORE_LINE_PATTERN.test(line)) {
+    for (const rule of INVOICE_LABEL_RULES) {
+      const inlineMatch = line.match(rule.pattern);
+
+      if (!inlineMatch?.[1]) {
+        continue;
+      }
+
+      const candidate = normalizeInvoiceNumber(inlineMatch[1]);
+
+      if (!isInvoiceNumberCandidate(candidate, rule.strength, line)) {
+        continue;
+      }
+
+      labeledCandidates.push({
+        value: candidate,
+        confidence: scaleConfidence(
+          overallConfidence * rule.confidence,
+          rule.strength === "strong" ? 0.6 : 0.44,
+          0.96,
+        ),
+        score: rule.score,
+      });
+    }
+
+    if (!nextLine) {
       continue;
     }
 
-    const inlineMatch = line.match(INLINE_INVOICE_LABEL_PATTERN);
-
-    if (inlineMatch?.[1]) {
-      const candidate = normalizeInvoiceNumber(inlineMatch[1]);
-
-      if (isInvoiceNumberCandidate(candidate, "strong")) {
-        labeledCandidates.push({
-          value: candidate,
-          confidence: scaleConfidence(overallConfidence * 0.88 + 0.08, 0.6, 0.95),
-          score: 1.15,
-        });
+    for (const rule of SPLIT_INVOICE_LABEL_RULES) {
+      if (!rule.pattern.test(line)) {
+        continue;
       }
-    }
 
-    if (nextLine && SPLIT_INVOICE_LABEL_PATTERN.test(line)) {
-      const nextCandidate = normalizeInvoiceNumber(nextLine.split(/\s+/)[0] ?? "");
+      const nextCandidate = extractSplitInvoiceCandidate(nextLine);
 
-      if (
-        !INVOICE_IGNORE_LINE_PATTERN.test(nextLine) &&
-        isInvoiceNumberCandidate(nextCandidate, "strong")
-      ) {
-        labeledCandidates.push({
-          value: nextCandidate,
-          confidence: scaleConfidence(overallConfidence * 0.82 + 0.06, 0.52, 0.9),
-          score: 0.96,
-        });
+      if (!isInvoiceNumberCandidate(nextCandidate, rule.strength, nextLine)) {
+        continue;
       }
+
+      labeledCandidates.push({
+        value: nextCandidate,
+        confidence: scaleConfidence(
+          overallConfidence * rule.confidence,
+          rule.strength === "strong" ? 0.54 : 0.4,
+          0.92,
+        ),
+        score: rule.score,
+      });
     }
   }
 
@@ -385,7 +743,7 @@ function findInvoiceNumber(
   }> = [];
 
   for (const line of lines) {
-    if (INVOICE_IGNORE_LINE_PATTERN.test(line)) {
+    if (WEAK_INVOICE_IGNORE_LINE_PATTERN.test(line)) {
       continue;
     }
 
@@ -394,7 +752,7 @@ function findInvoiceNumber(
     for (const match of matches) {
       const candidate = normalizeInvoiceNumber(match);
 
-      if (isInvoiceNumberCandidate(candidate, "weak")) {
+      if (isInvoiceNumberCandidate(candidate, "weak", line)) {
         weakCandidates.push({
           value: candidate,
           confidence: scaleConfidence(overallConfidence * 0.48 + 0.04, 0.25, 0.64),
@@ -467,21 +825,10 @@ function getPositiveAmountRule(line: string) {
   return STRONG_AMOUNT_RULES.find((rule) => rule.pattern.test(line)) ?? null;
 }
 
-function isNegativeAmountLine(line: string) {
-  return (
-    NEGATIVE_AMOUNT_PATTERNS.subtotal.test(line) ||
-    NEGATIVE_AMOUNT_PATTERNS.tax.test(line) ||
-    NEGATIVE_AMOUNT_PATTERNS.taxTotal.test(line) ||
-    NEGATIVE_AMOUNT_PATTERNS.tip.test(line) ||
-    NEGATIVE_AMOUNT_PATTERNS.change.test(line) ||
-    NEGATIVE_AMOUNT_PATTERNS.discount.test(line) ||
-    NEGATIVE_AMOUNT_PATTERNS.rounding.test(line)
-  );
-}
-
 function buildAmountCandidates(
   lines: string[],
   overallConfidence: number,
+  context: ReceiptContext,
 ): AmountCandidate[] {
   const candidates: AmountCandidate[] = [];
 
@@ -498,8 +845,8 @@ function buildAmountCandidates(
       contexts.push(`${line} ${lines[index + 1]}`);
     }
 
-    for (const context of contexts) {
-      const tokens = extractAmountCandidates(context);
+    for (const contextLine of contexts) {
+      const tokens = extractAmountCandidates(contextLine);
 
       if (tokens.length === 0) {
         continue;
@@ -524,37 +871,49 @@ function buildAmountCandidates(
         score += 0.04;
       }
 
-      if (NEGATIVE_AMOUNT_PATTERNS.subtotal.test(context)) {
+      if (
+        context.hasCardPaymentMarkers &&
+        CARD_PAYMENT_PATTERN.test(contextLine) &&
+        !NEGATIVE_AMOUNT_PATTERNS.auth.test(contextLine)
+      ) {
+        score += 0.05;
+      }
+
+      if (NEGATIVE_AMOUNT_PATTERNS.subtotal.test(contextLine)) {
         score -= 0.55;
       }
 
-      if (NEGATIVE_AMOUNT_PATTERNS.taxTotal.test(context)) {
+      if (NEGATIVE_AMOUNT_PATTERNS.taxTotal.test(contextLine)) {
         score -= 0.85;
       } else if (
-        NEGATIVE_AMOUNT_PATTERNS.tax.test(context) &&
-        !positiveRule?.pattern.test(context)
+        NEGATIVE_AMOUNT_PATTERNS.tax.test(contextLine) &&
+        !positiveRule?.pattern.test(contextLine)
       ) {
         score -= 0.72;
       }
 
-      if (NEGATIVE_AMOUNT_PATTERNS.tip.test(context)) {
+      if (NEGATIVE_AMOUNT_PATTERNS.tip.test(contextLine)) {
         score -= 0.4;
       }
 
-      if (NEGATIVE_AMOUNT_PATTERNS.change.test(context)) {
+      if (NEGATIVE_AMOUNT_PATTERNS.change.test(contextLine)) {
         score -= 0.7;
       }
 
-      if (NEGATIVE_AMOUNT_PATTERNS.tendered.test(context) && !positiveRule) {
+      if (NEGATIVE_AMOUNT_PATTERNS.tendered.test(contextLine) && !positiveRule) {
         score -= 0.3;
       }
 
-      if (NEGATIVE_AMOUNT_PATTERNS.discount.test(context)) {
+      if (NEGATIVE_AMOUNT_PATTERNS.discount.test(contextLine)) {
         score -= 0.48;
       }
 
-      if (NEGATIVE_AMOUNT_PATTERNS.rounding.test(context)) {
+      if (NEGATIVE_AMOUNT_PATTERNS.rounding.test(contextLine)) {
         score -= 0.28;
+      }
+
+      if (NEGATIVE_AMOUNT_PATTERNS.auth.test(contextLine)) {
+        score -= 0.72;
       }
 
       candidates.push({
@@ -571,8 +930,9 @@ function buildAmountCandidates(
 function findAmount(
   lines: string[],
   overallConfidence: number,
+  context: ReceiptContext,
 ): MatchCandidate<number> {
-  const candidates = buildAmountCandidates(lines, overallConfidence);
+  const candidates = buildAmountCandidates(lines, overallConfidence, context);
 
   if (candidates.length === 0) {
     return null;
@@ -583,11 +943,9 @@ function findAmount(
     hasStrongTotal ? candidate.score >= 0.55 : candidate.score >= 0.18,
   );
 
-  const bestCandidate = pickBestCandidate(
+  return pickBestCandidate(
     eligibleCandidates.length > 0 ? eligibleCandidates : candidates,
   );
-
-  return bestCandidate;
 }
 
 export function createEmptyOcrResult(provider: string): OcrResult {
@@ -613,9 +971,10 @@ export function parseInvoiceFieldsFromText(
   const baseConfidence = clampConfidence(
     overallConfidence > 1 ? overallConfidence / 100 : overallConfidence,
   );
+  const context = buildReceiptContext(lines);
   const invoiceNumber = findInvoiceNumber(lines, baseConfidence);
-  const invoiceDate = findInvoiceDate(lines, baseConfidence);
-  const amount = findAmount(lines, baseConfidence);
+  const invoiceDate = findInvoiceDate(lines, baseConfidence, context);
+  const amount = findAmount(lines, baseConfidence, context);
 
   return {
     invoiceNumber: invoiceNumber?.value ?? "",

@@ -193,6 +193,7 @@ The app will be available at [http://localhost:3000](http://localhost:3000).
 ## OCR setup notes
 
 - Image OCR now runs locally with `tesseract.js`.
+- The parser is tuned first for Canadian receipt patterns, including GST/HST/PST/QST, Interac, and common Canadian POS date/receipt-number layouts, while still keeping US-style receipts supported.
 - On the first OCR run on a machine, Tesseract.js may download the English language file once and cache it in `TESSERACT_CACHE_DIR`.
 - If you want a fully local language setup, place `eng.traineddata.gz` in a local folder and set `TESSERACT_LANG_PATH` to that folder path.
 - In development only, set `OCR_DEBUG=true` to log and store raw OCR text under `OCR_DEBUG_DIR` for parser tuning.

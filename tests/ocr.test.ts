@@ -145,6 +145,143 @@ test("parser detects check and order number labels", () => {
   assert.equal(orderParsed.invoiceNumber, "A-44591");
 });
 
+test("parser handles Canadian grocery receipt patterns", () => {
+  const parsed = parseInvoiceFieldsFromText(
+    `
+      WALMART CANADA
+      Date 23/04/2026 14:53
+      Receipt # 004615-312-001
+      Subtotal 45.12
+      HST 5.87
+      Total 50.99
+      Interac 50.99
+    `,
+    "tesseract",
+    89,
+  );
+
+  assert.equal(parsed.invoiceDate, "2026-04-23");
+  assert.equal(parsed.invoiceNumber, "004615-312-001");
+  assert.equal(parsed.amount, 50.99);
+});
+
+test("parser handles Canadian restaurant receipt patterns", () => {
+  const parsed = parseInvoiceFieldsFromText(
+    `
+      THE KEG
+      Transaction Date Apr 23 2026 19:41
+      Cheque # 142
+      Subtotal 68.00
+      HST 8.84
+      TOTAL 76.84
+      VISA 76.84
+    `,
+    "tesseract",
+    88,
+  );
+
+  assert.equal(parsed.invoiceDate, "2026-04-23");
+  assert.equal(parsed.invoiceNumber, "142");
+  assert.equal(parsed.amount, 76.84);
+});
+
+test("parser handles Canadian pharmacy receipt patterns", () => {
+  const parsed = parseInvoiceFieldsFromText(
+    `
+      SHOPPERS DRUG MART
+      Invoice Date 2026/04/23
+      Ref # RX-22841
+      Subtotal 11.99
+      GST 0.60
+      Total Due 12.59
+    `,
+    "tesseract",
+    87,
+  );
+
+  assert.equal(parsed.invoiceDate, "2026-04-23");
+  assert.equal(parsed.invoiceNumber, "RX-22841");
+  assert.equal(parsed.amount, 12.59);
+});
+
+test("parser handles Canadian gas station receipt patterns", () => {
+  const parsed = parseInvoiceFieldsFromText(
+    `
+      ESSO
+      Purchase Date 23 Apr 2026 07:14
+      Trans No 081552
+      Subtotal 58.15
+      HST 7.56
+      Amount Paid 65.71
+      Interac 65.71
+    `,
+    "tesseract",
+    9,
+  );
+
+  assert.equal(parsed.invoiceDate, "2026-04-23");
+  assert.equal(parsed.invoiceNumber, "081552");
+  assert.equal(parsed.amount, 65.71);
+});
+
+test("parser avoids Canadian tax ids and terminal ids when a receipt number exists", () => {
+  const parsed = parseInvoiceFieldsFromText(
+    `
+      COSTCO WHOLESALE CANADA
+      Store No 567
+      Terminal ID 998211
+      Authorization 123456
+      HST No 123456789RT0001
+      Date 04-23-2026 16:10
+      Receipt Number 456712
+      Subtotal 129.99
+      HST 6.50
+      Total 136.49
+      Mastercard 136.49
+    `,
+    "tesseract",
+    91,
+  );
+
+  assert.equal(parsed.invoiceDate, "2026-04-23");
+  assert.equal(parsed.invoiceNumber, "456712");
+  assert.equal(parsed.amount, 136.49);
+});
+
+test("parser prefers Canadian day-first dates when the receipt context is Canadian", () => {
+  const parsed = parseInvoiceFieldsFromText(
+    `
+      CANADIAN TIRE
+      Transaction Date 05/04/2026
+      Receipt No 00119
+      HST 1.20
+      Total 14.99
+      Interac 14.99
+    `,
+    "tesseract",
+    85,
+  );
+
+  assert.equal(parsed.invoiceDate, "2026-04-05");
+  assert.equal(parsed.invoiceNumber, "00119");
+});
+
+test("parser keeps supporting US-style ambiguous dates when no Canadian context exists", () => {
+  const parsed = parseInvoiceFieldsFromText(
+    `
+      Order Date 05-04-2026
+      Order # A-5512
+      Total Due 19.95
+    `,
+    "tesseract",
+    85,
+  );
+
+  assert.equal(parsed.invoiceDate, "2026-05-04");
+  assert.equal(parsed.invoiceNumber, "A-5512");
+  assert.equal(parsed.amount, 19.95);
+});
+
 test("tesseract provider rejects pdf files with a clear error", async () => {
   const provider = new TesseractOcrProvider();
 

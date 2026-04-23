@@ -1,8 +1,9 @@
 import path from "node:path";
 import { mkdir } from "node:fs/promises";
 import type { Worker, WorkerOptions } from "tesseract.js";
+import { writeOcrDebugArtifact } from "@/lib/ocr/ocr-debug";
 import { OcrProviderError } from "@/lib/ocr/ocr-errors";
-import { createEmptyOcrResult, parseInvoiceFieldsFromText } from "@/lib/ocr/ocr-parsing";
+import { parseInvoiceFieldsFromText } from "@/lib/ocr/ocr-parsing";
 import type { OcrInput, OcrProvider, OcrResult } from "@/lib/ocr/types";
 
 let workerPromise: Promise<Worker> | null = null;
@@ -90,12 +91,20 @@ export class TesseractOcrProvider implements OcrProvider {
     try {
       const worker = await getWorker();
       const { data } = await worker.recognize(imageSource);
-
-      return parseInvoiceFieldsFromText(
+      const result = parseInvoiceFieldsFromText(
         data.text ?? "",
         this.name,
         data.confidence ?? 0,
       );
+
+      await writeOcrDebugArtifact({
+        input,
+        rawText: data.text ?? "",
+        result,
+        overallConfidence: data.confidence ?? 0,
+      });
+
+      return result;
     } catch (error) {
       const message =
         error instanceof Error && error.message

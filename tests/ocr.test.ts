@@ -70,6 +70,81 @@ test("parser returns partial values when only total is found", () => {
   assert.equal(parsed.confidence.invoiceNumber, 0);
 });
 
+test("parser prefers grand total over subtotal and tax lines", () => {
+  const parsed = parseInvoiceFieldsFromText(
+    `
+      Subtotal 12.40
+      Tax 1.60
+      Grand Total 14.00
+    `,
+    "tesseract",
+    88,
+  );
+
+  assert.equal(parsed.amount, 14);
+});
+
+test("parser prefers amount paid over tax-only lines", () => {
+  const parsed = parseInvoiceFieldsFromText(
+    `
+      HST 1.82
+      Amount Paid $15.82
+      Change 0.00
+    `,
+    "tesseract",
+    84,
+  );
+
+  assert.equal(parsed.amount, 15.82);
+});
+
+test("parser supports common receipt date formats", () => {
+  const slashDate = parseInvoiceFieldsFromText(
+    "Transaction Date 04/23/26 09:41",
+    "tesseract",
+    81,
+  );
+  const dayMonthDate = parseInvoiceFieldsFromText(
+    "Receipt Date 23.04.2026",
+    "tesseract",
+    81,
+  );
+
+  assert.equal(slashDate.invoiceDate, "2026-04-23");
+  assert.equal(dayMonthDate.invoiceDate, "2026-04-23");
+});
+
+test("parser detects transaction numbers and ignores store and phone numbers", () => {
+  const parsed = parseInvoiceFieldsFromText(
+    `
+      Store No: 104
+      Phone: 204-555-1212
+      Trans No: 874411
+      Amount Paid: 21.55
+    `,
+    "tesseract",
+    86,
+  );
+
+  assert.equal(parsed.invoiceNumber, "874411");
+});
+
+test("parser detects check and order number labels", () => {
+  const checkParsed = parseInvoiceFieldsFromText(
+    "Check No: 009812\nTotal 42.50",
+    "tesseract",
+    86,
+  );
+  const orderParsed = parseInvoiceFieldsFromText(
+    "Order No. A-44591\nTotal 19.99",
+    "tesseract",
+    86,
+  );
+
+  assert.equal(checkParsed.invoiceNumber, "009812");
+  assert.equal(orderParsed.invoiceNumber, "A-44591");
+});
+
 test("tesseract provider rejects pdf files with a clear error", async () => {
   const provider = new TesseractOcrProvider();
 

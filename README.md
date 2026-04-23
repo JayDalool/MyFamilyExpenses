@@ -7,7 +7,7 @@ This MVP includes:
 - session-based login and logout
 - admin-managed categories
 - invoice upload to local `/uploads`
-- expense saving with a pluggable OCR stub
+- expense saving with a pluggable local OCR provider
 - filtered expense history
 - expense detail pages with secure invoice preview/download
 - dashboard totals for today and this month
@@ -47,6 +47,7 @@ Then edit `.env` and set:
 SESSION_SECRET="use-a-long-random-string-here"
 OCR_PROVIDER="tesseract"
 TESSERACT_CACHE_DIR=".cache/tesseract"
+OCR_DEBUG="false"
 SEED_USER_PASSWORD="Qatarqtr22"
 ```
 
@@ -194,6 +195,7 @@ The app will be available at [http://localhost:3000](http://localhost:3000).
 - Image OCR now runs locally with `tesseract.js`.
 - On the first OCR run on a machine, Tesseract.js may download the English language file once and cache it in `TESSERACT_CACHE_DIR`.
 - If you want a fully local language setup, place `eng.traineddata.gz` in a local folder and set `TESSERACT_LANG_PATH` to that folder path.
+- In development only, set `OCR_DEBUG=true` to log and store raw OCR text under `OCR_DEBUG_DIR` for parser tuning.
 - PDF OCR is not supported in this MVP yet. PDF uploads still work, but users must enter the invoice number, invoice date, and amount manually.
 - The OCR provider seam is still preserved, so a stronger local OCR engine or PDF OCR provider can replace Tesseract later without changing the route contract.
 

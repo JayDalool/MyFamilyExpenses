@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
-import { extractInvoiceData } from "@/lib/ocr/ocr.service";
+import { extractInvoiceData, isOcrProviderError } from "@/lib/ocr/ocr.service";
 import { validateExpenseUploadFile } from "@/lib/uploads";
 import { extractExpenseSchema } from "@/lib/validation/expense";
 
@@ -81,15 +81,40 @@ export async function POST(request: Request) {
     );
   }
 
-  const extraction = await extractInvoiceData({
-    fileName: file.name,
-    mimeType: file.type,
-    fileBytes: new Uint8Array(await file.arrayBuffer()),
-  });
+  try {
+    const extraction = await extractInvoiceData({
+      fileName: file.name,
+      mimeType: file.type,
+      fileBytes: new Uint8Array(await file.arrayBuffer()),
+    });
 
-  return NextResponse.json({
-    data: {
-      extraction,
-    },
-  });
+    return NextResponse.json({
+      data: {
+        extraction,
+      },
+    });
+  } catch (error) {
+    if (isOcrProviderError(error)) {
+      return NextResponse.json(
+        {
+          error: {
+            message: error.message,
+          },
+        },
+        { status: error.code === "PDF_NOT_SUPPORTED" ? 422 : 400 },
+      );
+    }
+
+    console.error(error);
+
+    return NextResponse.json(
+      {
+        error: {
+          message:
+            "Could not read this invoice automatically. You can continue and fill in the fields manually.",
+        },
+      },
+      { status: 500 },
+    );
+  }
 }

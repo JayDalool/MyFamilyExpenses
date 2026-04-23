@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getCurrentUser } from "@/lib/auth/session";
 import { listExpensesForUser, normalizeExpenseHistoryFilters } from "@/lib/expenses";
-import { extractInvoiceData } from "@/lib/ocr/ocr.service";
+import {
+  createFallbackOcrResult,
+  extractInvoiceData,
+  isOcrProviderError,
+} from "@/lib/ocr/ocr.service";
 import { saveUploadedFile } from "@/lib/storage";
 import { validateExpenseUploadFile } from "@/lib/uploads";
 import { expenseInputSchema, finalExpenseSchema } from "@/lib/validation/expense";
@@ -114,21 +118,57 @@ export async function POST(request: Request) {
 
   const fileBytes = new Uint8Array(await file.arrayBuffer());
   const storedFile = await saveUploadedFile(file, fileBytes);
-  const ocrData = await extractInvoiceData({
-    fileName: file.name,
-    mimeType: file.type,
-    absolutePath: storedFile.absolutePath,
-    fileBytes,
-  });
+  const needsOcr =
+    !input.data.invoiceNumber ||
+    !input.data.invoiceDate ||
+    input.data.amount === undefined;
+  let ocrData = createFallbackOcrResult();
+  let ocrErrorMessage: string | null = null;
+
+  if (needsOcr) {
+    try {
+      ocrData = await extractInvoiceData({
+        fileName: file.name,
+        mimeType: file.type,
+        absolutePath: storedFile.absolutePath,
+        fileBytes,
+      });
+    } catch (error) {
+      if (isOcrProviderError(error)) {
+        ocrErrorMessage = error.message;
+      } else {
+        console.error(error);
+        ocrErrorMessage =
+          "Could not read this invoice automatically. Enter the invoice number, date, and amount manually.";
+      }
+    }
+  }
 
   const finalized = finalExpenseSchema.safeParse({
     categoryId: input.data.categoryId,
-    invoiceNumber: input.data.invoiceNumber ?? ocrData.invoiceNumber,
-    invoiceDate: input.data.invoiceDate ?? ocrData.invoiceDate,
-    amount: input.data.amount ?? ocrData.amount,
+    invoiceNumber:
+      input.data.invoiceNumber ??
+      (ocrData.confidence.invoiceNumber > 0 ? ocrData.invoiceNumber : undefined),
+    invoiceDate:
+      input.data.invoiceDate ??
+      (ocrData.confidence.invoiceDate > 0 ? ocrData.invoiceDate : undefined),
+    amount:
+      input.data.amount ??
+      (ocrData.confidence.amount > 0 ? ocrData.amount : undefined),
   });
 
   if (!finalized.success) {
+    if (ocrErrorMessage) {
+      return NextResponse.json(
+        {
+          error: {
+            message: ocrErrorMessage,
+          },
+        },
+        { status: 400 },
+      );
+    }
+
     return NextResponse.json(
       {
         error: {

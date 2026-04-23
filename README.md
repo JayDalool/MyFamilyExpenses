@@ -23,7 +23,7 @@ This MVP includes:
 - Styling: Tailwind CSS
 - Authentication: custom session-based auth
 - Storage: local filesystem
-- OCR: mock provider behind a clean interface
+- OCR: local Tesseract.js provider behind a clean interface
 
 ## Exact local setup
 
@@ -45,6 +45,8 @@ Then edit `.env` and set:
 
 ```env
 SESSION_SECRET="use-a-long-random-string-here"
+OCR_PROVIDER="tesseract"
+TESSERACT_CACHE_DIR=".cache/tesseract"
 SEED_USER_PASSWORD="Qatarqtr22"
 ```
 
@@ -55,6 +57,8 @@ The shared seed password is intentionally supplied through your local `.env` fil
 ```bash
 npm install
 ```
+
+This repo keeps `ignore-scripts=true` in `.npmrc` so `npm install` works cleanly on Windows with `tesseract.js`. Prisma generation still happens when you run the migration command below.
 
 ### 3. Database setup
 
@@ -185,10 +189,18 @@ docker compose up --build
 
 The app will be available at [http://localhost:3000](http://localhost:3000).
 
+## OCR setup notes
+
+- Image OCR now runs locally with `tesseract.js`.
+- On the first OCR run on a machine, Tesseract.js may download the English language file once and cache it in `TESSERACT_CACHE_DIR`.
+- If you want a fully local language setup, place `eng.traineddata.gz` in a local folder and set `TESSERACT_LANG_PATH` to that folder path.
+- PDF OCR is not supported in this MVP yet. PDF uploads still work, but users must enter the invoice number, invoice date, and amount manually.
+- The OCR provider seam is still preserved, so a stronger local OCR engine or PDF OCR provider can replace Tesseract later without changing the route contract.
+
 ## Notes
 
 - Uploaded files are stored in the local `uploads` directory.
-- The current OCR implementation is a stub in [lib/ocr/ocr.service.ts](./lib/ocr/ocr.service.ts).
-- The OCR seam is ready for a real provider via [lib/ocr/types.ts](./lib/ocr/types.ts) and [lib/ocr/mock-ocr-provider.ts](./lib/ocr/mock-ocr-provider.ts).
+- The OCR provider selection is controlled by `OCR_PROVIDER` in `.env`.
+- The OCR seam is ready for future providers via [lib/ocr/types.ts](./lib/ocr/types.ts), [lib/ocr/tesseract-ocr-provider.ts](./lib/ocr/tesseract-ocr-provider.ts), and [lib/ocr/mock-ocr-provider.ts](./lib/ocr/mock-ocr-provider.ts).
 - Architecture and deployment docs are available in the [docs](./docs) folder.
 - Use `npm run prisma:seed` any time you want to safely restore the seeded users and category list on a local machine.

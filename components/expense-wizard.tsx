@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { OcrResult } from "@/lib/ocr/types";
+import { hasAnyOcrField, hasStrongOcrMatch } from "@/lib/ocr/ocr-parsing";
 
 type CategoryOption = {
   id: string;
@@ -32,6 +33,14 @@ type SaveResponse = {
     message?: string;
   };
 };
+
+function applyOcrValue(value: string, confidence: number) {
+  return confidence > 0 ? value : "";
+}
+
+function applyOcrAmount(extraction: OcrResult) {
+  return extraction.confidence.amount > 0 ? String(extraction.amount) : "";
+}
 
 const STEP_ORDER: Step[] = ["category", "upload", "review"];
 const STEP_LABELS: Record<Step, string> = {
@@ -231,10 +240,24 @@ export function ExpenseWizard({ categories }: { categories: CategoryOption[] }) 
         return;
       }
 
+      if (!hasAnyOcrField(extraction)) {
+        setError(
+          "Could not read this invoice automatically. You can still continue and fill in the fields manually.",
+        );
+        return;
+      }
+
       setExtracted(extraction);
-      setInvoiceNumber(extraction.invoiceNumber);
-      setInvoiceDate(extraction.invoiceDate);
-      setAmount(String(extraction.amount));
+      setInvoiceNumber(
+        applyOcrValue(
+          extraction.invoiceNumber,
+          extraction.confidence.invoiceNumber,
+        ),
+      );
+      setInvoiceDate(
+        applyOcrValue(extraction.invoiceDate, extraction.confidence.invoiceDate),
+      );
+      setAmount(applyOcrAmount(extraction));
     } catch {
       setError(
         "Could not read this invoice automatically. You can still continue and fill in the fields manually.",
@@ -544,7 +567,9 @@ export function ExpenseWizard({ categories }: { categories: CategoryOption[] }) 
                   </p>
                 ) : extracted ? (
                   <p className="text-center text-sm text-emerald-700">
-                    Receipt details were auto-filled. Review them on the next step.
+                    {hasStrongOcrMatch(extracted)
+                      ? "Receipt details were auto-filled. Review them on the next step."
+                      : "Receipt details were partially filled. Review and complete them on the next step."}
                   </p>
                 ) : (
                   <p className="text-center text-sm text-slate-500">

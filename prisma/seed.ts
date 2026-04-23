@@ -35,7 +35,7 @@ async function main() {
 
   if (!seedPassword) {
     throw new Error(
-      "SEED_USER_PASSWORD is required before running the seed script.",
+      "SEED_USER_PASSWORD is required before running the seed script so seed-user credentials stay out of the repo.",
     );
   }
 

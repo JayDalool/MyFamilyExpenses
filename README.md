@@ -102,6 +102,16 @@ The seed is idempotent and ensures these users always exist:
 
 Re-running the seed keeps categories in sync and resets both seed-user passwords to the value in `SEED_USER_PASSWORD`.
 
+### Safe reseed for real local use
+
+If you need to restore the seeded users safely:
+
+1. Keep `SEED_USER_PASSWORD="Qatarqtr22"` in your local `.env`
+2. Run `npm run prisma:seed`
+3. Log in again with one of the seeded accounts below
+
+The seed is idempotent. It only upserts the two known users and default categories, so it is safe to re-run without deleting existing expenses.
+
 ### 6. Start the app
 
 ```bash
@@ -124,6 +134,11 @@ Use the password from your local `.env`:
 For the first admin login, use:
 
 - email: `jay16ca@gmail.com`
+- password: `Qatarqtr22`
+
+For the first standard-user login, use:
+
+- email: `osamadaloul@hotmail.com`
 - password: `Qatarqtr22`
 
 ## Project structure
@@ -176,3 +191,4 @@ The app will be available at [http://localhost:3000](http://localhost:3000).
 - The current OCR implementation is a stub in [lib/ocr/ocr.service.ts](./lib/ocr/ocr.service.ts).
 - The OCR seam is ready for a real provider via [lib/ocr/types.ts](./lib/ocr/types.ts) and [lib/ocr/mock-ocr-provider.ts](./lib/ocr/mock-ocr-provider.ts).
 - Architecture and deployment docs are available in the [docs](./docs) folder.
+- Use `npm run prisma:seed` any time you want to safely restore the seeded users and category list on a local machine.

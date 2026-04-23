@@ -71,9 +71,17 @@ export default async function ExpenseDetailsPage({
 
         <div className="grid gap-6 xl:grid-cols-[340px,1fr]">
           <section className="rounded-3xl bg-white p-6 shadow-soft">
-            <h2 className="text-lg font-semibold text-slate-900">Expense details</h2>
+            <h2 className="text-lg font-semibold text-slate-900">Saved invoice fields</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              These are the reviewed invoice values stored with this expense.
+            </p>
 
             <dl className="mt-4 space-y-4">
+              <div>
+                <dt className="text-sm font-medium text-slate-500">Invoice number</dt>
+                <dd className="mt-1 text-slate-900">{expense.invoiceNumber}</dd>
+              </div>
+
               <div>
                 <dt className="text-sm font-medium text-slate-500">Amount</dt>
                 <dd className="mt-1 text-2xl font-semibold text-slate-900">
@@ -92,17 +100,25 @@ export default async function ExpenseDetailsPage({
                 <dt className="text-sm font-medium text-slate-500">Category</dt>
                 <dd className="mt-1 text-slate-900">{expense.category.name}</dd>
               </div>
-
-              <div>
-                <dt className="text-sm font-medium text-slate-500">Stored file</dt>
-                <dd className="mt-1 break-all text-sm text-slate-700">{expense.filePath}</dd>
-              </div>
-
-              <div>
-                <dt className="text-sm font-medium text-slate-500">File type</dt>
-                <dd className="mt-1 text-slate-900">{mimeType}</dd>
-              </div>
             </dl>
+
+            <div className="mt-8 border-t border-slate-200 pt-6">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                Invoice file
+              </h3>
+
+              <dl className="mt-4 space-y-4">
+                <div>
+                  <dt className="text-sm font-medium text-slate-500">Stored file</dt>
+                  <dd className="mt-1 break-all text-sm text-slate-700">{expense.filePath}</dd>
+                </div>
+
+                <div>
+                  <dt className="text-sm font-medium text-slate-500">File type</dt>
+                  <dd className="mt-1 text-slate-900">{mimeType}</dd>
+                </div>
+              </dl>
+            </div>
           </section>
 
           <section className="rounded-3xl bg-white p-6 shadow-soft">

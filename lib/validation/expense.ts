@@ -51,6 +51,10 @@ export const finalExpenseSchema = z.object({
   amount: z.number().finite().nonnegative("Amount must be zero or greater"),
 });
 
+export const extractExpenseSchema = z.object({
+  categoryId: z.string().uuid("Select a category before scanning or uploading"),
+});
+
 export const expenseHistoryFiltersSchema = z
   .object({
     invoiceNumber: z.preprocess(

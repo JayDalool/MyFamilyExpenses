@@ -11,7 +11,6 @@ type AppShellProps = {
 export function AppShell({ user, children }: AppShellProps) {
   return (
     <div className="min-h-screen bg-slate-100">
-      {/* ── Desktop header ──────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
           <Link className="flex items-center gap-2.5" href="/dashboard">
@@ -55,7 +54,6 @@ export function AppShell({ user, children }: AppShellProps) {
             <LogoutButton />
           </div>
 
-          {/* Mobile: user name only in header */}
           <div className="flex items-center gap-2 sm:hidden">
             <span className="text-xs text-slate-500">{user.name}</span>
             <LogoutButton />
@@ -63,10 +61,8 @@ export function AppShell({ user, children }: AppShellProps) {
         </div>
       </header>
 
-      {/* ── Main content ─────────────────────────────────────────────────────── */}
       <main className="mx-auto max-w-6xl px-4 py-6 pb-28 sm:pb-8">{children}</main>
 
-      {/* ── Mobile bottom navigation ─────────────────────────────────────────── */}
       <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-slate-200 bg-white sm:hidden">
         <div className={`grid ${user.role === "ADMIN" ? "grid-cols-3" : "grid-cols-2"}`}>
           <Link

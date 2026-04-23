@@ -8,6 +8,7 @@ export type OcrInput = {
   fileName: string;
   mimeType?: string;
   absolutePath?: string;
+  fileBytes?: Uint8Array;
 };
 
 export type OcrResult = {

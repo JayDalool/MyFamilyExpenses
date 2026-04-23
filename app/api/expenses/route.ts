@@ -4,18 +4,8 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { listExpensesForUser, normalizeExpenseHistoryFilters } from "@/lib/expenses";
 import { extractInvoiceData } from "@/lib/ocr/ocr.service";
 import { saveUploadedFile } from "@/lib/storage";
+import { validateExpenseUploadFile } from "@/lib/uploads";
 import { expenseInputSchema, finalExpenseSchema } from "@/lib/validation/expense";
-
-const ALLOWED_MIME_TYPES = new Set([
-  "application/pdf",
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-]);
-
-function parseMaxUploadBytes() {
-  return Number(process.env.MAX_UPLOAD_MB ?? "10") * 1024 * 1024;
-}
 
 export async function GET(request: Request) {
   const user = await getCurrentUser();
@@ -73,22 +63,13 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!ALLOWED_MIME_TYPES.has(file.type)) {
-    return NextResponse.json(
-      {
-        error: {
-          message: "Only PDF, PNG, JPG, and WEBP files are allowed.",
-        },
-      },
-      { status: 400 },
-    );
-  }
+  const uploadError = validateExpenseUploadFile(file);
 
-  if (file.size > parseMaxUploadBytes()) {
+  if (uploadError) {
     return NextResponse.json(
       {
         error: {
-          message: "The uploaded file is too large.",
+          message: uploadError,
         },
       },
       { status: 400 },
@@ -131,11 +112,13 @@ export async function POST(request: Request) {
     );
   }
 
-  const storedFile = await saveUploadedFile(file);
+  const fileBytes = new Uint8Array(await file.arrayBuffer());
+  const storedFile = await saveUploadedFile(file, fileBytes);
   const ocrData = await extractInvoiceData({
     fileName: file.name,
     mimeType: file.type,
     absolutePath: storedFile.absolutePath,
+    fileBytes,
   });
 
   const finalized = finalExpenseSchema.safeParse({

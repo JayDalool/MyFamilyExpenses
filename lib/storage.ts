@@ -19,14 +19,15 @@ export function getUploadRoot() {
   return path.join(/* turbopackIgnore: true */ process.cwd(), "uploads");
 }
 
-export async function saveUploadedFile(file: File) {
+export async function saveUploadedFile(file: File, fileBytes?: Uint8Array) {
   const uploadRoot = getUploadRoot();
   const extension = MIME_TO_EXTENSION[file.type] ?? path.extname(file.name) ?? "";
   const fileName = `${crypto.randomUUID()}${extension}`;
   const absolutePath = path.join(uploadRoot, fileName);
+  const bytes = fileBytes ?? new Uint8Array(await file.arrayBuffer());
 
   await mkdir(uploadRoot, { recursive: true });
-  await writeFile(absolutePath, Buffer.from(await file.arrayBuffer()));
+  await writeFile(absolutePath, Buffer.from(bytes));
 
   return {
     fileName,

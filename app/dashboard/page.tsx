@@ -28,8 +28,6 @@ export default async function DashboardPage() {
   return (
     <AppShell user={user}>
       <div className="space-y-6">
-
-        {/* Welcome + CTA */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">
@@ -48,7 +46,6 @@ export default async function DashboardPage() {
           </Link>
         </div>
 
-        {/* Stat cards */}
         <section className="grid gap-4 sm:grid-cols-2">
           <div className="rounded-3xl bg-white p-6 shadow-soft">
             <div className="flex items-start justify-between">
@@ -83,7 +80,6 @@ export default async function DashboardPage() {
           </div>
         </section>
 
-        {/* Recent expenses */}
         <section className="rounded-3xl bg-white p-6 shadow-soft">
           <div className="mb-5 flex items-center justify-between">
             <div>
@@ -126,12 +122,17 @@ export default async function DashboardPage() {
                       </svg>
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-slate-900">{expense.invoiceNumber}</p>
+                      <Link
+                        className="text-sm font-medium text-slate-900 hover:text-brand-700"
+                        href={`/expenses/${expense.id}`}
+                      >
+                        {expense.invoiceNumber}
+                      </Link>
                       <p className="text-xs text-slate-400">
                         {expense.category.name}
-                        {" · "}
+                        {" | "}
                         {expense.invoiceDate.toISOString().slice(0, 10)}
-                        {user.role === "ADMIN" ? ` · ${expense.user.name}` : ""}
+                        {user.role === "ADMIN" ? ` | ${expense.user.name}` : ""}
                       </p>
                     </div>
                   </div>

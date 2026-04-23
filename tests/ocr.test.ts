@@ -282,6 +282,88 @@ test("parser keeps supporting US-style ambiguous dates when no Canadian context 
   assert.equal(parsed.amount, 19.95);
 });
 
+test("parser handles Canadian split labels and spaced numeric dates", () => {
+  const parsed = parseInvoiceFieldsFromText(
+    `
+      LOBLAWS
+      Transaction Date
+      2026 04 23 13:14
+      RCPT
+      No. 1234567890
+      Store # 1123
+      HST REG 812345678RT0001
+      Total 64.82
+      Debit 64.82
+    `,
+    "tesseract",
+    87,
+  );
+
+  assert.equal(parsed.invoiceDate, "2026-04-23");
+  assert.equal(parsed.invoiceNumber, "1234567890");
+  assert.equal(parsed.amount, 64.82);
+});
+
+test("parser handles Canadian POS shorthand labels and month-name dates", () => {
+  const parsed = parseInvoiceFieldsFromText(
+    `
+      RONA
+      DATE/TIME 23-APR-2026 16:22
+      TRN# 0098453311
+      Store # 457
+      Terminal ID 000771
+      HST # 123456789RT0001
+      TOTAL 89.22
+      VISA 89.22
+    `,
+    "tesseract",
+    88,
+  );
+
+  assert.equal(parsed.invoiceDate, "2026-04-23");
+  assert.equal(parsed.invoiceNumber, "0098453311");
+  assert.equal(parsed.amount, 89.22);
+});
+
+test("parser tolerates common OCR date character confusion on Canadian receipts", () => {
+  const parsed = parseInvoiceFieldsFromText(
+    `
+      PHARMASAVE
+      Invoice Date 2O26/O4/23
+      Invoice Number INV-33281
+      GST 0.87
+      Total Due 18.44
+    `,
+    "tesseract",
+    82,
+  );
+
+  assert.equal(parsed.invoiceDate, "2026-04-23");
+  assert.equal(parsed.invoiceNumber, "INV-33281");
+  assert.equal(parsed.amount, 18.44);
+});
+
+test("parser prefers receipt ids over payment reference numbers on Canadian card slips", () => {
+  const parsed = parseInvoiceFieldsFromText(
+    `
+      CANADIAN SUPERSTORE
+      Date 23/04/2026
+      Ref # 778899
+      Approval Code 441122
+      Receipt Number 00482155
+      HST 1.33
+      Total 11.49
+      Interac 11.49
+    `,
+    "tesseract",
+    86,
+  );
+
+  assert.equal(parsed.invoiceDate, "2026-04-23");
+  assert.equal(parsed.invoiceNumber, "00482155");
+  assert.equal(parsed.amount, 11.49);
+});
+
 test("tesseract provider rejects pdf files with a clear error", async () => {
   const provider = new TesseractOcrProvider();
 

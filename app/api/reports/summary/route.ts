@@ -1,18 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { getCurrentUser } from "@/lib/auth/session";
+import { getCurrentHousehold } from "@/lib/auth/session";
 import { getStartOfMonth, getStartOfToday } from "@/lib/utils";
 
 export async function GET(request: Request) {
-  const user = await getCurrentUser();
+  const auth = await getCurrentHousehold();
 
-  if (!user) {
+  if (!auth) {
     return NextResponse.json(
-      {
-        error: {
-          message: "Authentication required.",
-        },
-      },
+      { error: { message: "Authentication required." } },
       { status: 401 },
     );
   }
@@ -20,26 +16,16 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const fromDate = searchParams.get("fromDate");
   const toDate = searchParams.get("toDate");
-  const scope = user.role === "ADMIN" ? {} : { userId: user.id };
+  const scope = { householdId: auth.householdId };
 
   const [today, month, customRange] = await Promise.all([
     prisma.expense.aggregate({
-      where: {
-        ...scope,
-        invoiceDate: {
-          gte: getStartOfToday(),
-        },
-      },
+      where: { ...scope, invoiceDate: { gte: getStartOfToday() } },
       _sum: { amount: true },
       _count: { _all: true },
     }),
     prisma.expense.aggregate({
-      where: {
-        ...scope,
-        invoiceDate: {
-          gte: getStartOfMonth(),
-        },
-      },
+      where: { ...scope, invoiceDate: { gte: getStartOfMonth() } },
       _sum: { amount: true },
       _count: { _all: true },
     }),
@@ -60,14 +46,8 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     data: {
-      today: {
-        total: Number(today._sum.amount ?? 0),
-        count: today._count._all,
-      },
-      month: {
-        total: Number(month._sum.amount ?? 0),
-        count: month._count._all,
-      },
+      today: { total: Number(today._sum.amount ?? 0), count: today._count._all },
+      month: { total: Number(month._sum.amount ?? 0), count: month._count._all },
       range: customRange
         ? {
             total: Number(customRange._sum.amount ?? 0),

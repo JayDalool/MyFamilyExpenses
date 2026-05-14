@@ -1,24 +1,25 @@
 import Link from "next/link";
 import { AppShell } from "@/components/app-shell";
 import { prisma } from "@/lib/db/prisma";
-import { requireUser } from "@/lib/auth/session";
+import { requireHouseholdMember, hasHouseholdRole } from "@/lib/auth/session";
 import { formatCurrency, getStartOfMonth, getStartOfToday } from "@/lib/utils";
 
 export default async function DashboardPage() {
-  const user = await requireUser();
-  const expenseScope = user.role === "ADMIN" ? {} : { userId: user.id };
+  const auth = await requireHouseholdMember();
+  const { user, householdId } = auth;
+  const scope = { householdId };
 
   const [today, month, recentExpenses] = await Promise.all([
     prisma.expense.aggregate({
-      where: { ...expenseScope, invoiceDate: { gte: getStartOfToday() } },
+      where: { ...scope, invoiceDate: { gte: getStartOfToday() } },
       _sum: { amount: true },
     }),
     prisma.expense.aggregate({
-      where: { ...expenseScope, invoiceDate: { gte: getStartOfMonth() } },
+      where: { ...scope, invoiceDate: { gte: getStartOfMonth() } },
       _sum: { amount: true },
     }),
     prisma.expense.findMany({
-      where: expenseScope,
+      where: scope,
       include: { category: true, user: true },
       orderBy: { createdAt: "desc" },
       take: 6,
@@ -26,7 +27,7 @@ export default async function DashboardPage() {
   ]);
 
   return (
-    <AppShell user={user}>
+    <AppShell user={user} showCategories={hasHouseholdRole(auth, ["OWNER", "ADMIN"])}>
       <div className="space-y-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -132,7 +133,8 @@ export default async function DashboardPage() {
                         {expense.category.name}
                         {" | "}
                         {expense.invoiceDate.toISOString().slice(0, 10)}
-                        {user.role === "ADMIN" ? ` | ${expense.user.name}` : ""}
+                        {" | "}
+                        {expense.user.name}
                       </p>
                     </div>
                   </div>

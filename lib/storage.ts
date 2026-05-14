@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import path from "node:path";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, unlink, writeFile } from "node:fs/promises";
 
 const MIME_TO_EXTENSION: Record<string, string> = {
   "application/pdf": ".pdf",
@@ -34,4 +34,12 @@ export async function saveUploadedFile(file: File, fileBytes?: Uint8Array) {
     absolutePath,
     relativePath: path.posix.join("uploads", fileName),
   };
+}
+
+export async function deleteUploadedFile(absolutePath: string): Promise<void> {
+  try {
+    await unlink(absolutePath);
+  } catch {
+    // File may already be gone — not an error worth surfacing
+  }
 }

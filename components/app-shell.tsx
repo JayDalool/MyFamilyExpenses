@@ -5,10 +5,11 @@ import { LogoutButton } from "@/components/logout-button";
 
 type AppShellProps = {
   user: CurrentUser;
+  showCategories?: boolean;
   children: ReactNode;
 };
 
-export function AppShell({ user, children }: AppShellProps) {
+export function AppShell({ user, showCategories = false, children }: AppShellProps) {
   return (
     <div className="min-h-screen bg-slate-100">
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80">
@@ -40,7 +41,7 @@ export function AppShell({ user, children }: AppShellProps) {
             >
               Expenses
             </Link>
-            {user.role === "ADMIN" ? (
+            {showCategories ? (
               <Link
                 className="rounded-full px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
                 href="/categories"
@@ -64,7 +65,7 @@ export function AppShell({ user, children }: AppShellProps) {
       <main className="mx-auto max-w-6xl px-4 py-6 pb-28 sm:pb-8">{children}</main>
 
       <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-slate-200 bg-white sm:hidden">
-        <div className={`grid ${user.role === "ADMIN" ? "grid-cols-3" : "grid-cols-2"}`}>
+        <div className={`grid ${showCategories ? "grid-cols-3" : "grid-cols-2"}`}>
           <Link
             href="/dashboard"
             className="flex flex-col items-center gap-1 py-3 text-slate-500 transition hover:text-brand-600"
@@ -95,7 +96,7 @@ export function AppShell({ user, children }: AppShellProps) {
             <span className="text-xs font-medium">Expenses</span>
           </Link>
 
-          {user.role === "ADMIN" ? (
+          {showCategories ? (
             <Link
               href="/categories"
               className="flex flex-col items-center gap-1 py-3 text-slate-500 transition hover:text-brand-600"

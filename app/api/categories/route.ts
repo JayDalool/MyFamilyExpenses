@@ -1,41 +1,39 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { getCurrentUser } from "@/lib/auth/session";
+import { getCurrentHousehold, hasHouseholdRole } from "@/lib/auth/session";
 import { createCategorySchema } from "@/lib/validation/category";
 
 export async function GET() {
-  const user = await getCurrentUser();
+  const auth = await getCurrentHousehold();
 
-  if (!user) {
+  if (!auth) {
     return NextResponse.json(
-      {
-        error: {
-          message: "Authentication required.",
-        },
-      },
+      { error: { message: "Authentication required." } },
       { status: 401 },
     );
   }
 
   const categories = await prisma.category.findMany({
+    where: { householdId: auth.householdId },
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
   });
 
-  return NextResponse.json({
-    data: categories,
-  });
+  return NextResponse.json({ data: categories });
 }
 
 export async function POST(request: Request) {
-  const user = await getCurrentUser();
+  const auth = await getCurrentHousehold();
 
-  if (!user || user.role !== "ADMIN") {
+  if (!auth) {
     return NextResponse.json(
-      {
-        error: {
-          message: "Admin access required.",
-        },
-      },
+      { error: { message: "Authentication required." } },
+      { status: 401 },
+    );
+  }
+
+  if (!hasHouseholdRole(auth, ["OWNER", "ADMIN"])) {
+    return NextResponse.json(
+      { error: { message: "Admin access required." } },
       { status: 403 },
     );
   }
@@ -45,49 +43,39 @@ export async function POST(request: Request) {
 
   if (!parsed.success) {
     return NextResponse.json(
-      {
-        error: {
-          message: parsed.error.issues[0]?.message ?? "Invalid category data.",
-        },
-      },
+      { error: { message: parsed.error.issues[0]?.message ?? "Invalid category data." } },
       { status: 400 },
     );
   }
 
   const existingCategory = await prisma.category.findUnique({
     where: {
-      name: parsed.data.name,
+      householdId_name: {
+        householdId: auth.householdId,
+        name: parsed.data.name,
+      },
     },
   });
 
   if (existingCategory) {
     return NextResponse.json(
-      {
-        error: {
-          message: "Category already exists.",
-        },
-      },
+      { error: { message: "Category already exists." } },
       { status: 409 },
     );
   }
 
   const lastCategory = await prisma.category.findFirst({
-    orderBy: {
-      sortOrder: "desc",
-    },
+    where: { householdId: auth.householdId },
+    orderBy: { sortOrder: "desc" },
   });
 
   const category = await prisma.category.create({
     data: {
+      householdId: auth.householdId,
       name: parsed.data.name,
       sortOrder: (lastCategory?.sortOrder ?? -1) + 1,
     },
   });
 
-  return NextResponse.json(
-    {
-      data: category,
-    },
-    { status: 201 },
-  );
+  return NextResponse.json({ data: category }, { status: 201 });
 }

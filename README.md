@@ -69,27 +69,30 @@ Option A, easiest for local use with Docker:
 docker compose up -d db
 ```
 
-This uses the default `.env.example` connection string:
+Set matching values in `.env` first:
 
 ```env
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/myfamilyexpenses?schema=public"
+POSTGRES_DB=mfe_db
+POSTGRES_USER=mfe_user
+POSTGRES_PASSWORD=CHANGE_ME_strong_password
+DATABASE_URL=postgresql://mfe_user:CHANGE_ME_strong_password@localhost:5432/mfe_db
 ```
 
 Option B, use your own PostgreSQL service:
 
-1. Create a database named `myfamilyexpenses`
+1. Create a database named `mfe_db` or another database name of your choice
 2. Update `DATABASE_URL` in `.env`
 
 Example SQL:
 
 ```sql
-CREATE DATABASE myfamilyexpenses;
+CREATE DATABASE mfe_db;
 ```
 
 ### 4. Run the database migration
 
 ```bash
-npx prisma migrate dev --name init
+npx prisma migrate dev
 ```
 
 This creates the schema and generates the Prisma client.
@@ -189,6 +192,39 @@ docker compose up --build
 ```
 
 The app will be available at [http://localhost:3000](http://localhost:3000).
+
+## Existing database migration
+
+If you are upgrading an existing database that already has users, categories, and expenses:
+
+1. Stop the running app container or service.
+2. Apply migration 1 only:
+
+```bash
+npx prisma db execute --file prisma/migrations/20260501000001_add_household_tables_nullable/migration.sql --schema prisma/schema.prisma
+npx prisma migrate resolve --applied 20260501000001_add_household_tables_nullable
+```
+
+3. Run the backfill:
+
+```bash
+npx tsx prisma/backfill.ts
+```
+
+4. Verify the backfill reports:
+- zero expenses with `NULL household_id`
+- zero categories with `NULL household_id`
+- zero cross-household category references
+- zero expenses missing a matching membership
+
+5. Apply migration 2 and start the app again:
+
+```bash
+npx prisma migrate deploy
+docker compose up -d app
+```
+
+Use [CHECKLIST.md](./CHECKLIST.md) as the full server rollout checklist.
 
 ## OCR setup notes
 

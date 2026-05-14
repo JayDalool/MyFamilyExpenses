@@ -2,6 +2,8 @@ import crypto from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db/prisma";
+import type { HouseholdRole } from "@prisma/client";
+import { getValidatedSessionSecret } from "@/lib/auth/session-secret";
 
 type AppRole = "ADMIN" | "USER";
 
@@ -10,6 +12,12 @@ export type CurrentUser = {
   name: string;
   email: string;
   role: AppRole;
+};
+
+export type AuthContext = {
+  user: CurrentUser;
+  householdId: string;
+  householdRole: HouseholdRole;
 };
 
 const SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME ?? "mfe_session";
@@ -21,7 +29,7 @@ function getSessionExpiry() {
 
 function hashSessionToken(token: string) {
   return crypto
-    .createHmac("sha256", process.env.SESSION_SECRET ?? "dev-session-secret")
+    .createHmac("sha256", getValidatedSessionSecret(process.env.SESSION_SECRET))
     .update(token)
     .digest("hex");
 }
@@ -81,13 +89,9 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   const session = await prisma.session.findFirst({
     where: {
       tokenHash: hashSessionToken(token),
-      expiresAt: {
-        gt: new Date(),
-      },
+      expiresAt: { gt: new Date() },
     },
-    include: {
-      user: true,
-    },
+    include: { user: true },
   });
 
   if (!session) {
@@ -102,6 +106,31 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   };
 }
 
+export async function getCurrentHousehold(): Promise<AuthContext | null> {
+  const user = await getCurrentUser();
+  if (!user) return null;
+
+  // Always pick the oldest membership (createdAt ASC) for deterministic selection.
+  // This is stable for single-household users (the common case) and deterministic
+  // for multi-household users until an explicit household-switcher feature is built.
+  const membership = await prisma.membership.findFirst({
+    where: { userId: user.id },
+    orderBy: { createdAt: "asc" },
+  });
+
+  if (!membership) return null;
+
+  return {
+    user,
+    householdId: membership.householdId,
+    householdRole: membership.role,
+  };
+}
+
+export function hasHouseholdRole(auth: AuthContext, roles: HouseholdRole[]): boolean {
+  return roles.includes(auth.householdRole);
+}
+
 export async function requireUser() {
   const user = await getCurrentUser();
 
@@ -112,12 +141,12 @@ export async function requireUser() {
   return user;
 }
 
-export async function requireAdmin() {
-  const user = await requireUser();
+export async function requireHouseholdMember(): Promise<AuthContext> {
+  const auth = await getCurrentHousehold();
 
-  if (user.role !== "ADMIN") {
-    redirect("/dashboard");
+  if (!auth) {
+    redirect("/auth/login");
   }
 
-  return user;
+  return auth;
 }

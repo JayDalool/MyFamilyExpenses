@@ -7,9 +7,17 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Kept for potential future platform-level superadmin. Not used for data-access decisions.
 enum UserRole {
   ADMIN
   USER
+}
+
+enum HouseholdRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
 }
 
 enum CategoryStatus {
@@ -28,6 +36,7 @@ model User {
 
   sessions     Session[]
   expenses     Expense[]
+  memberships  Membership[]
 
   @@map("users")
 }
@@ -46,22 +55,58 @@ model Session {
   @@map("sessions")
 }
 
+model Household {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  memberships Membership[]
+  expenses    Expense[]
+  categories  Category[]
+
+  @@map("households")
+}
+
+model Membership {
+  id          String        @id @default(uuid()) @db.Uuid
+  userId      String        @map("user_id") @db.Uuid
+  householdId String        @map("household_id") @db.Uuid
+  role        HouseholdRole @default(MEMBER)
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  expenses  Expense[] @relation("ExpenseMembership")
+
+  @@unique([userId, householdId])
+  @@index([householdId])
+  @@index([userId])
+  @@map("memberships")
+}
+
 model Category {
-  id         String         @id @default(uuid()) @db.Uuid
-  name       String         @unique
-  status     CategoryStatus @default(ACTIVE)
-  sortOrder  Int            @default(0) @map("sort_order")
-  createdAt  DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt  DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id          String         @id @default(uuid()) @db.Uuid
+  householdId String         @map("household_id") @db.Uuid
+  name        String
+  status      CategoryStatus @default(ACTIVE)
+  sortOrder   Int            @default(0) @map("sort_order")
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  expenses   Expense[]
+  household   Household      @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  expenses    Expense[]
 
+  @@unique([id, householdId])   // enables compound FK from Expense for tenant integrity
+  @@unique([householdId, name])
+  @@index([householdId])
   @@map("categories")
 }
 
 model Expense {
   id            String    @id @default(uuid()) @db.Uuid
   userId        String    @map("user_id") @db.Uuid
+  householdId   String    @map("household_id") @db.Uuid
   categoryId    String    @map("category_id") @db.Uuid
   invoiceNumber String    @map("invoice_number")
   invoiceDate   DateTime  @map("invoice_date") @db.Date
@@ -71,9 +116,26 @@ model Expense {
   updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  category      Category  @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  household     Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  // Compound FK: ensures category belongs to the same household as this expense
+  category      Category  @relation(fields: [categoryId, householdId], references: [id, householdId], onDelete: Restrict)
+  // Composite FK: ensures the expense owner is a member of the same household.
+  membership    Membership @relation("ExpenseMembership", fields: [userId, householdId], references: [userId, householdId], onDelete: Restrict)
 
+  @@index([householdId, invoiceDate])
   @@index([userId, invoiceDate])
   @@index([categoryId, invoiceDate])
   @@map("expenses")
+}
+
+model LoginAttempt {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String?
+  ip        String?
+  success   Boolean
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([email, createdAt])
+  @@index([ip, createdAt])
+  @@map("login_attempts")
 }

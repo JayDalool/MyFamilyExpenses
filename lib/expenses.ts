@@ -1,5 +1,5 @@
 import type { Prisma } from "@prisma/client";
-import type { CurrentUser } from "@/lib/auth/session";
+import type { AuthContext } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import {
   expenseHistoryFiltersSchema,
@@ -30,17 +30,15 @@ export function normalizeExpenseHistoryFilters(
 }
 
 export function buildExpenseWhereInput(
-  user: CurrentUser,
+  auth: AuthContext,
   filters: ExpenseHistoryFilters = {},
 ): Prisma.ExpenseWhereInput {
-  const where: Prisma.ExpenseWhereInput =
-    user.role === "ADMIN" ? {} : { userId: user.id };
+  const where: Prisma.ExpenseWhereInput = {
+    householdId: auth.householdId,
+  };
 
   if (filters.invoiceNumber) {
-    where.invoiceNumber = {
-      contains: filters.invoiceNumber,
-      mode: "insensitive",
-    };
+    where.invoiceNumber = { contains: filters.invoiceNumber, mode: "insensitive" };
   }
 
   if (filters.categoryId) {
@@ -63,28 +61,22 @@ export function buildExpenseWhereInput(
 }
 
 export async function listExpensesForUser(
-  user: CurrentUser,
+  auth: AuthContext,
   filters: ExpenseHistoryFilters = {},
 ) {
   return prisma.expense.findMany({
-    where: buildExpenseWhereInput(user, filters),
-    include: {
-      category: true,
-      user: true,
-    },
+    where: buildExpenseWhereInput(auth, filters),
+    include: { category: true, user: true },
     orderBy: [{ invoiceDate: "desc" }, { createdAt: "desc" }],
   });
 }
 
-export async function getExpenseForUser(user: CurrentUser, expenseId: string) {
+export async function getExpenseForUser(auth: AuthContext, expenseId: string) {
   return prisma.expense.findFirst({
     where: {
       id: expenseId,
-      ...(user.role === "ADMIN" ? {} : { userId: user.id }),
+      householdId: auth.householdId,
     },
-    include: {
-      category: true,
-      user: true,
-    },
+    include: { category: true, user: true },
   });
 }

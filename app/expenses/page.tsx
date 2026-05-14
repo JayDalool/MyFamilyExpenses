@@ -6,7 +6,7 @@ import {
   normalizeExpenseHistoryFilters,
 } from "@/lib/expenses";
 import { prisma } from "@/lib/db/prisma";
-import { requireUser } from "@/lib/auth/session";
+import { requireHouseholdMember, hasHouseholdRole } from "@/lib/auth/session";
 import { formatCurrency } from "@/lib/utils";
 
 type ExpensesPageProps = {
@@ -14,27 +14,25 @@ type ExpensesPageProps = {
 };
 
 export default async function ExpensesPage({ searchParams }: ExpensesPageProps) {
-  const user = await requireUser();
+  const auth = await requireHouseholdMember();
+  const { user, householdId } = auth;
   const filters = normalizeExpenseHistoryFilters(
     ((await searchParams) ?? {}) as Record<string, string | string[] | undefined>,
   );
 
   const categories = await prisma.category.findMany({
-    where: { status: "ACTIVE" },
+    where: { householdId, status: "ACTIVE" },
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-    select: {
-      id: true,
-      name: true,
-    },
+    select: { id: true, name: true },
   });
 
-  const expenses = await listExpensesForUser(user, filters);
+  const expenses = await listExpensesForUser(auth, filters);
   const hasActiveFilters = Boolean(
     filters.invoiceNumber || filters.categoryId || filters.fromDate || filters.toDate,
   );
 
   return (
-    <AppShell user={user}>
+    <AppShell user={user} showCategories={hasHouseholdRole(auth, ["OWNER", "ADMIN"])}>
       <div className="grid gap-6 xl:grid-cols-[1fr,1fr]">
         <div>
           <div className="mb-4">
@@ -161,8 +159,7 @@ export default async function ExpensesPage({ searchParams }: ExpensesPageProps) 
                         {expense.invoiceNumber}
                       </Link>
                       <p className="text-sm text-slate-500">
-                        {expense.category.name} | {expense.invoiceDate.toISOString().slice(0, 10)}
-                        {user.role === "ADMIN" ? ` | ${expense.user.name}` : ""}
+                        {expense.category.name} | {expense.invoiceDate.toISOString().slice(0, 10)} | {expense.user.name}
                       </p>
                     </div>
 

@@ -5,14 +5,16 @@ const prisma = new PrismaClient();
 
 const seedUsers = [
   {
-    name: "Osama Daloul",
-    email: "osamadaloul@hotmail.com",
-    role: "USER" as const,
-  },
-  {
     name: "Jay Daloul",
     email: "jay16ca@gmail.com",
     role: "ADMIN" as const,
+    householdRole: "OWNER" as const,
+  },
+  {
+    name: "Osama Daloul",
+    email: "osamadaloul@hotmail.com",
+    role: "USER" as const,
+    householdRole: "MEMBER" as const,
   },
 ];
 
@@ -41,40 +43,47 @@ async function main() {
 
   const passwordHash = await hashPassword(seedPassword);
 
-  await Promise.all(
-    seedUsers.map((user) =>
+  // Upsert all users
+  const users = await Promise.all(
+    seedUsers.map((u) =>
       prisma.user.upsert({
-        where: {
-          email: user.email.toLowerCase(),
-        },
-        update: {
-          name: user.name,
-          role: user.role,
-          passwordHash,
-        },
-        create: {
-          name: user.name,
-          email: user.email.toLowerCase(),
-          role: user.role,
-          passwordHash,
-        },
+        where: { email: u.email.toLowerCase() },
+        update: { name: u.name, role: u.role, passwordHash },
+        create: { name: u.name, email: u.email.toLowerCase(), role: u.role, passwordHash },
       }),
     ),
   );
 
+  // Create or find the shared family household
+  let household = await prisma.household.findFirst({
+    where: { name: "Daloul Family" },
+  });
+
+  if (!household) {
+    household = await prisma.household.create({
+      data: { name: "Daloul Family" },
+    });
+  }
+
+  // Upsert memberships
+  await Promise.all(
+    users.map((user, index) => {
+      const householdRole = seedUsers[index]!.householdRole;
+      return prisma.membership.upsert({
+        where: { userId_householdId: { userId: user.id, householdId: household!.id } },
+        update: { role: householdRole },
+        create: { userId: user.id, householdId: household!.id, role: householdRole },
+      });
+    }),
+  );
+
+  // Upsert categories scoped to the household
   await Promise.all(
     defaultCategories.map((name, index) =>
       prisma.category.upsert({
-        where: { name },
-        update: {
-          sortOrder: index,
-          status: "ACTIVE",
-        },
-        create: {
-          name,
-          sortOrder: index,
-          status: "ACTIVE",
-        },
+        where: { householdId_name: { householdId: household!.id, name } },
+        update: { sortOrder: index, status: "ACTIVE" },
+        create: { householdId: household!.id, name, sortOrder: index, status: "ACTIVE" },
       }),
     ),
   );

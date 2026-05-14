@@ -1,16 +1,23 @@
+import { redirect } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { CategoryForm } from "@/components/category-form";
-import { requireAdmin } from "@/lib/auth/session";
+import { requireHouseholdMember, hasHouseholdRole } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 
 export default async function CategoriesPage() {
-  const user = await requireAdmin();
+  const auth = await requireHouseholdMember();
+
+  if (!hasHouseholdRole(auth, ["OWNER", "ADMIN"])) {
+    redirect("/dashboard");
+  }
+
   const categories = await prisma.category.findMany({
+    where: { householdId: auth.householdId },
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
   });
 
   return (
-    <AppShell user={user}>
+    <AppShell user={auth.user} showCategories={true}>
       <div className="grid gap-6 lg:grid-cols-[360px,1fr]">
         <CategoryForm />
 

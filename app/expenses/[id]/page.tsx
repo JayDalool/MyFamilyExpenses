@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
-import { requireUser } from "@/lib/auth/session";
+import { requireHouseholdMember, hasHouseholdRole } from "@/lib/auth/session";
 import { getExpenseForUser } from "@/lib/expenses";
 import {
   getStoredExpenseMimeType,
@@ -19,9 +19,9 @@ type ExpenseDetailsPageProps = {
 export default async function ExpenseDetailsPage({
   params,
 }: ExpenseDetailsPageProps) {
-  const user = await requireUser();
+  const auth = await requireHouseholdMember();
   const { id } = await params;
-  const expense = await getExpenseForUser(user, id);
+  const expense = await getExpenseForUser(auth, id);
 
   if (!expense) {
     notFound();
@@ -32,7 +32,7 @@ export default async function ExpenseDetailsPage({
   const mimeType = getStoredExpenseMimeType(expense.filePath);
 
   return (
-    <AppShell user={user}>
+    <AppShell user={auth.user} showCategories={hasHouseholdRole(auth, ["OWNER", "ADMIN"])}>
       <div className="space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -46,8 +46,7 @@ export default async function ExpenseDetailsPage({
               {expense.invoiceNumber}
             </h1>
             <p className="text-sm text-slate-500">
-              {expense.category.name} | {expense.invoiceDate.toISOString().slice(0, 10)}
-              {user.role === "ADMIN" ? ` | ${expense.user.name}` : ""}
+              {expense.category.name} | {expense.invoiceDate.toISOString().slice(0, 10)} | {expense.user.name}
             </p>
           </div>
 

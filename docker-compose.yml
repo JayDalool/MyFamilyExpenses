@@ -1,34 +1,49 @@
+# Copy .env.example to .env and fill in all values before running.
+# Never commit .env or change the placeholder values here.
+
 services:
   db:
     image: postgres:17
     restart: unless-stopped
     environment:
-      POSTGRES_DB: myfamilyexpenses
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "5432:5432"
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    # Postgres is NOT exposed on the host. Only the app container can reach it.
+    # If you need psql access, use: docker compose exec db psql -U $POSTGRES_USER $POSTGRES_DB
+    expose:
+      - "5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   app:
     build:
       context: .
       dockerfile: Dockerfile
+    restart: unless-stopped
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@db:5432/myfamilyexpenses?schema=public
-      SESSION_COOKIE_NAME: mfe_session
-      SESSION_SECRET: replace-this-before-production
-      SESSION_TTL_DAYS: "7"
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?schema=public
+      SESSION_SECRET: ${SESSION_SECRET}
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-mfe_session}
+      SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-7}
       UPLOAD_DIR: /app/uploads
-      MAX_UPLOAD_MB: "10"
-      OCR_PROVIDER: mock
-      SEED_USER_PASSWORD: change-me-before-seeding
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-10}
+      OCR_PROVIDER: ${OCR_PROVIDER}
+      TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-false}
+      ALLOW_LOGIN_HOUSEHOLD_BOOTSTRAP: ${ALLOW_LOGIN_HOUSEHOLD_BOOTSTRAP:-false}
       NODE_ENV: production
+    # SEED_USER_PASSWORD is intentionally absent from the long-running app container.
+    # Run seed separately: docker compose run --rm app npx tsx prisma/seed.ts
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     volumes:
       - uploads-data:/app/uploads
 

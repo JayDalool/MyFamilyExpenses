@@ -153,5 +153,5 @@ pnpm build
 - Multi-household users always get their **oldest** household as the active context.
   A household-switcher UI/API (`POST /api/households/active`) is needed to make
   multi-household fully usable. Not required for the single-family use case.
-- `ALLOW_LOGIN_HOUSEHOLD_BOOTSTRAP=true` must be set during fresh-user onboarding
-  until a proper signup flow is built.
+- `ALLOW_LOGIN_HOUSEHOLD_BOOTSTRAP=true` is only for legacy/manual account repair.
+  Normal public signup and OAuth onboarding should keep it `false`.

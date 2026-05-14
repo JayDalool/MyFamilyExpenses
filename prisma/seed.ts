@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "../lib/auth/password";
+import { DEFAULT_CATEGORY_NAMES } from "../lib/categories/default-categories";
 
 const prisma = new PrismaClient();
 
@@ -16,20 +17,6 @@ const seedUsers = [
     role: "USER" as const,
     householdRole: "MEMBER" as const,
   },
-];
-
-const defaultCategories = [
-  "Restaurant",
-  "Travel",
-  "Education",
-  "Groceries",
-  "Utilities",
-  "Medical",
-  "Transportation",
-  "Household",
-  "Entertainment",
-  "Personal",
-  "Miscellaneous",
 ];
 
 async function main() {
@@ -79,7 +66,7 @@ async function main() {
 
   // Upsert categories scoped to the household
   await Promise.all(
-    defaultCategories.map((name, index) =>
+    DEFAULT_CATEGORY_NAMES.map((name, index) =>
       prisma.category.upsert({
         where: { householdId_name: { householdId: household!.id, name } },
         update: { sortOrder: index, status: "ACTIVE" },

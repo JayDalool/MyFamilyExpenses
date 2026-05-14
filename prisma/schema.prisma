@@ -26,17 +26,20 @@ enum CategoryStatus {
 }
 
 model User {
-  id           String    @id @default(uuid()) @db.Uuid
-  name         String
-  email        String    @unique
-  passwordHash String    @map("password_hash")
-  role         UserRole  @default(USER)
-  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id              String    @id @default(uuid()) @db.Uuid
+  name            String
+  email           String    @unique
+  passwordHash    String?   @map("password_hash")
+  role            UserRole  @default(USER)
+  emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz(6)
+  imageUrl        String?   @map("image_url")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   sessions     Session[]
   expenses     Expense[]
   memberships  Membership[]
+  authAccounts AuthAccount[]
 
   @@map("users")
 }
@@ -126,6 +129,42 @@ model Expense {
   @@index([userId, invoiceDate])
   @@index([categoryId, invoiceDate])
   @@map("expenses")
+}
+
+enum AuthProvider {
+  GOOGLE
+  MICROSOFT
+}
+
+model AuthAccount {
+  id                String       @id @default(cuid())
+  userId            String       @map("user_id") @db.Uuid
+  provider          AuthProvider
+  providerAccountId String       @map("provider_account_id")
+  providerEmail     String       @map("provider_email")
+  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@unique([userId, provider])
+  @@index([providerEmail])
+  @@map("auth_accounts")
+}
+
+model PendingSignup {
+  id                   String   @id @default(uuid()) @db.Uuid
+  email                String   @unique
+  name                 String
+  passwordHash         String   @map("password_hash")
+  verificationTokenHash String  @unique @map("verification_token_hash")
+  expiresAt            DateTime @map("expires_at") @db.Timestamptz(6)
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([expiresAt])
+  @@map("pending_signups")
 }
 
 model LoginAttempt {

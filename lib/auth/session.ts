@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db/prisma";
 import type { HouseholdRole } from "@prisma/client";
 import { getValidatedSessionSecret } from "@/lib/auth/session-secret";
+import { shouldUseSecureCookies } from "@/lib/auth/cookies";
 
 type AppRole = "ADMIN" | "USER";
 
@@ -53,7 +54,7 @@ export async function createSession(userId: string) {
   cookieStore.set(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: shouldUseSecureCookies(),
     path: "/",
     expires: getSessionExpiry(),
   });
@@ -72,7 +73,7 @@ export async function clearSession() {
   cookieStore.set(SESSION_COOKIE_NAME, "", {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: shouldUseSecureCookies(),
     path: "/",
     maxAge: 0,
   });

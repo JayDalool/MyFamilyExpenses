@@ -3,6 +3,8 @@ import { prisma } from "@/lib/db/prisma";
 const WINDOW_MS = 15 * 60 * 1000;
 const MAX_FAILURES_PER_EMAIL = 5;
 const MAX_FAILURES_PER_IP = 20;
+const MAX_SIGNUPS_PER_EMAIL = 3;
+const MAX_SIGNUPS_PER_IP = 10;
 
 function windowStart() {
   return new Date(Date.now() - WINDOW_MS);
@@ -23,6 +25,23 @@ export async function isRateLimited(email: string, ip: string | null): Promise<b
   ]);
 
   return emailCount >= MAX_FAILURES_PER_EMAIL || ipCount >= MAX_FAILURES_PER_IP;
+}
+
+export async function isSignupRateLimited(email: string, ip: string | null): Promise<boolean> {
+  const since = windowStart();
+
+  const [emailCount, ipCount] = await Promise.all([
+    prisma.loginAttempt.count({
+      where: { email, createdAt: { gte: since } },
+    }),
+    ip
+      ? prisma.loginAttempt.count({
+          where: { ip, createdAt: { gte: since } },
+        })
+      : Promise.resolve(0),
+  ]);
+
+  return emailCount >= MAX_SIGNUPS_PER_EMAIL || ipCount >= MAX_SIGNUPS_PER_IP;
 }
 
 export async function recordLoginAttempt(

@@ -41,6 +41,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: { message: GENERIC_ERROR } }, { status: 401 });
   }
 
+  // OAuth-only users have no password — reject with the generic message to avoid leaking
+  // information about which auth method an account uses.
+  if (!user.passwordHash) {
+    await recordLoginAttempt(email, ip, false);
+    return NextResponse.json({ error: { message: GENERIC_ERROR } }, { status: 401 });
+  }
+
   const isValidPassword = await verifyPassword(password, user.passwordHash);
 
   if (!isValidPassword) {

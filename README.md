@@ -5,6 +5,8 @@ MyFamilyExpenses is a self-hosted family expense tracker built with Next.js, Typ
 This MVP includes:
 
 - session-based login and logout
+- public signup with email verification
+- optional Google and Microsoft OAuth sign-in
 - admin-managed categories
 - invoice upload to local `/uploads`
 - expense saving with a pluggable local OCR provider
@@ -45,13 +47,16 @@ Then edit `.env` and set:
 
 ```env
 SESSION_SECRET="use-a-long-random-string-here"
+APP_BASE_URL="http://localhost:3000"
 OCR_PROVIDER="tesseract"
 TESSERACT_CACHE_DIR=".cache/tesseract"
 OCR_DEBUG="false"
-SEED_USER_PASSWORD="Qatarqtr22"
+SMTP_ENABLED="false"
+SEED_USER_PASSWORD="CHANGE_ME_seed_password"
 ```
 
 The shared seed password is intentionally supplied through your local `.env` file so it is not committed to the repository.
+If you want public password signup outside local development, also configure the SMTP variables from [.env.example](./.env.example) so verification emails can be delivered.
 
 ### 2. Install dependencies
 
@@ -114,7 +119,7 @@ Re-running the seed keeps categories in sync and resets both seed-user passwords
 
 If you need to restore the seeded users safely:
 
-1. Keep `SEED_USER_PASSWORD="Qatarqtr22"` in your local `.env`
+1. Keep `SEED_USER_PASSWORD="CHANGE_ME_seed_password"` in your local `.env`
 2. Run `npm run prisma:seed`
 3. Log in again with one of the seeded accounts below
 
@@ -128,6 +133,13 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+### 7. Public signup and OAuth setup
+
+- Password signup now sends a verification link before the real account is activated.
+- In local development, if `SMTP_ENABLED=false`, the signup response shows a local preview link instead of sending email.
+- For real public signup, set `SMTP_ENABLED=true` and fill in `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, and `SMTP_FROM`.
+- Google and Microsoft sign-in stay hidden unless their `*_OAUTH_ENABLED` flag is `true` and the required client ID, client secret, and redirect URI are configured.
+
 ## First login instructions
 
 Use either seeded email:
@@ -137,17 +149,17 @@ Use either seeded email:
 
 Use the password from your local `.env`:
 
-- `Qatarqtr22`
+- `CHANGE_ME_seed_password`
 
 For the first admin login, use:
 
 - email: `jay16ca@gmail.com`
-- password: `Qatarqtr22`
+- password: `CHANGE_ME_seed_password`
 
 For the first standard-user login, use:
 
 - email: `osamadaloul@hotmail.com`
-- password: `Qatarqtr22`
+- password: `CHANGE_ME_seed_password`
 
 ## Project structure
 
@@ -175,6 +187,12 @@ tests/
 
 - `POST /api/auth/login`
 - `POST /api/auth/logout`
+- `POST /api/auth/signup`
+- `GET /api/auth/signup/verify`
+- `GET /api/auth/oauth/google/start`
+- `GET /api/auth/oauth/google/callback`
+- `GET /api/auth/oauth/microsoft/start`
+- `GET /api/auth/oauth/microsoft/callback`
 - `GET /api/categories`
 - `POST /api/categories`
 - `GET /api/expenses`

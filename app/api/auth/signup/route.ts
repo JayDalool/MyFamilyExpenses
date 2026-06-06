@@ -11,11 +11,21 @@ import {
   savePendingSignup,
 } from "@/lib/auth/signup-verification";
 import { EmailDeliveryUnavailableError, sendSignupVerificationEmail } from "@/lib/email";
+import { writeAuditLog } from "@/lib/audit";
+import {
+  isNativeFormRequest,
+  readJsonOrFormPayload,
+  redirectNativeForm,
+} from "@/lib/http/form-request";
 
 const SIGNUP_SUCCESS_MSG =
   "Check your email for a verification link to finish creating your account.";
 
-function verificationSentResponse(previewUrl?: string) {
+function verificationSentResponse(request: Request, previewUrl?: string) {
+  if (isNativeFormRequest(request)) {
+    return redirectNativeForm(request, "/auth/signup?status=verification_sent");
+  }
+
   return NextResponse.json(
     {
       data: {
@@ -28,25 +38,46 @@ function verificationSentResponse(previewUrl?: string) {
   );
 }
 
+function signupErrorResponse(
+  request: Request,
+  message: string,
+  status: number,
+  errorCode: string,
+) {
+  if (isNativeFormRequest(request)) {
+    return redirectNativeForm(request, `/auth/signup?error=${errorCode}`);
+  }
+
+  return NextResponse.json({ error: { message } }, { status });
+}
+
 export async function POST(request: Request) {
   const ip = extractClientIp(request);
-  const payload = await request.json().catch(() => null);
+  const payload = await readJsonOrFormPayload(request);
   const parsed = signupSchema.safeParse(payload);
 
   if (!parsed.success) {
     const first = parsed.error.issues[0];
-    return NextResponse.json(
-      { error: { message: first?.message ?? "Invalid input." } },
-      { status: 400 },
+    return signupErrorResponse(
+      request,
+      first?.message ?? "Invalid input.",
+      400,
+      "signup_invalid",
     );
   }
 
   const { name, email, password } = parsed.data;
 
   if (await isSignupRateLimited(email, ip)) {
-    return NextResponse.json(
-      { error: { message: "Too many attempts. Please try again later." } },
-      { status: 429 },
+    await writeAuditLog({
+      action: "auth.signup.rate_limited",
+      metadata: { email, ip },
+    });
+    return signupErrorResponse(
+      request,
+      "Too many attempts. Please try again later.",
+      429,
+      "signup_rate_limited",
     );
   }
 
@@ -62,7 +93,12 @@ export async function POST(request: Request) {
   if (existing) {
     await hashPassword(password).catch(() => undefined);
     await recordLoginAttempt(email, ip, false);
-    return verificationSentResponse();
+    await writeAuditLog({
+      userId: existing.id,
+      action: "auth.signup.existing_email",
+      metadata: { email, ip },
+    });
+    return verificationSentResponse(request);
   }
 
   const passwordHash = await hashPassword(password);
@@ -86,18 +122,26 @@ export async function POST(request: Request) {
     verificationReady = true;
 
     await recordLoginAttempt(email, ip, true);
-    return verificationSentResponse(emailResult.previewUrl);
+    await writeAuditLog({
+      action: "auth.signup.pending",
+      metadata: { email, ip },
+    });
+    return verificationSentResponse(request, emailResult.previewUrl);
   } catch (err) {
     // Race: pre-check passed but a concurrent signup just created the user.
     // Treat the same as the existing-user case to avoid leaking via status.
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
       await recordLoginAttempt(email, ip, false);
-      return verificationSentResponse();
+      await writeAuditLog({
+        action: "auth.signup.existing_email",
+        metadata: { email, ip, reason: "race" },
+      });
+      return verificationSentResponse(request);
     }
 
     if (err instanceof EmailDeliveryUnavailableError) {
       await deletePendingSignupByEmail(email);
-      return NextResponse.json({ error: { message: err.message } }, { status: 503 });
+      return signupErrorResponse(request, err.message, 503, "signup_unavailable");
     }
 
     if (!verificationReady) {

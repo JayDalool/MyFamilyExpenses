@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getCurrentHousehold } from "@/lib/auth/session";
 import { getStartOfMonth, getStartOfToday } from "@/lib/utils";
+import { getActiveExpenseScope } from "@/lib/expenses";
 
 export async function GET(request: Request) {
   const auth = await getCurrentHousehold();
@@ -16,7 +17,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const fromDate = searchParams.get("fromDate");
   const toDate = searchParams.get("toDate");
-  const scope = { householdId: auth.householdId };
+  const scope = getActiveExpenseScope(auth.householdId);
 
   const [today, month, customRange] = await Promise.all([
     prisma.expense.aggregate({

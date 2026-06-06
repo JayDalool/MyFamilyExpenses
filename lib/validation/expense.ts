@@ -35,6 +35,12 @@ const optionalAmountField = z.preprocess((value) => {
   return normalized;
 }, z.number().finite().nonnegative("Amount must be zero or greater").optional());
 
+const optionalPositiveIntegerField = (max: number) =>
+  z.preprocess(
+    emptyStringToUndefined,
+    z.coerce.number().int().min(1).max(max).optional(),
+  );
+
 export const expenseInputSchema = z.object({
   categoryId: z.string().uuid("Select a category"),
   invoiceNumber: optionalTextField,
@@ -79,6 +85,8 @@ export const expenseHistoryFiltersSchema = z
         .regex(/^\d{4}-\d{2}-\d{2}$/, "To date must be in YYYY-MM-DD format")
         .optional(),
     ),
+    page: optionalPositiveIntegerField(9999),
+    pageSize: optionalPositiveIntegerField(50),
   })
   .refine(
     (value) =>

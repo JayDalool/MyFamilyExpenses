@@ -4,11 +4,23 @@ import type { FormEvent } from "react";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { csrfFetch } from "@/lib/auth/csrf-client";
+import { CSRF_FORM_FIELD_NAME } from "@/lib/auth/csrf";
 
-export function SignupForm() {
+type SignupFormProps = {
+  csrfToken: string;
+  initialError?: string | null;
+  initialSuccessMessage?: string | null;
+};
+
+export function SignupForm({
+  csrfToken,
+  initialError = null,
+  initialSuccessMessage = null,
+}: SignupFormProps) {
   const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError);
+  const [successMessage, setSuccessMessage] = useState<string | null>(initialSuccessMessage);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -28,7 +40,7 @@ export function SignupForm() {
         setSuccessMessage(null);
         setPreviewUrl(null);
 
-        const response = await fetch("/api/auth/signup", {
+        const response = await csrfFetch("/api/auth/signup", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -101,9 +113,12 @@ export function SignupForm() {
 
   return (
     <form
+      action="/api/auth/signup"
       className="space-y-5 rounded-3xl bg-white p-7 shadow-soft"
+      method="post"
       onSubmit={handleSubmit}
     >
+      <input name={CSRF_FORM_FIELD_NAME} type="hidden" value={csrfToken} />
       <div className="space-y-1">
         <label className="block text-sm font-semibold text-slate-700" htmlFor="name">
           Full name

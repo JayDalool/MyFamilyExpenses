@@ -16,6 +16,10 @@ export default defineConfig({
       GOOGLE_OAUTH_ENABLED: "false",
       MICROSOFT_OAUTH_ENABLED: "false",
       APP_BASE_URL: "http://localhost:3001",
+      SESSION_SECRET: "playwright-session-secret-32-characters-minimum",
+      ...(process.env.TEST_DATABASE_URL
+        ? { DATABASE_URL: process.env.TEST_DATABASE_URL }
+        : {}),
     },
   },
   projects: [

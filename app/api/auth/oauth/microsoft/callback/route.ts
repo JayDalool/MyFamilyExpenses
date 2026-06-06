@@ -12,6 +12,7 @@ import {
   OAuthUnverifiedEmailError,
 } from "@/lib/auth/oauth";
 import { clearOAuthFlowCookies, getOAuthCookieNames } from "@/lib/auth/oauth-cookies";
+import { writeAuditLog } from "@/lib/audit";
 
 function errRedirect(requestUrl: string, code: string): NextResponse {
   const response = NextResponse.redirect(buildInternalUrl(`/auth/login?error=${code}`, requestUrl));
@@ -63,6 +64,16 @@ export async function GET(request: Request) {
   });
   if (existingAccount) {
     await createSession(existingAccount.userId);
+    const membership = await prisma.membership.findFirst({
+      where: { userId: existingAccount.userId },
+      orderBy: { createdAt: "asc" },
+    });
+    await writeAuditLog({
+      userId: existingAccount.userId,
+      householdId: membership?.householdId ?? null,
+      action: "auth.login.oauth",
+      metadata: { provider: "MICROSOFT", email: userInfo.email },
+    });
     const response = NextResponse.redirect(buildInternalUrl("/dashboard", request.url));
     clearOAuthFlowCookies(response, "microsoft");
     return response;
@@ -86,6 +97,12 @@ export async function GET(request: Request) {
       },
     });
     await createSession(newUser.id);
+    await writeAuditLog({
+      userId: newUser.id,
+      householdId: newUser.householdId,
+      action: "auth.signup.oauth",
+      metadata: { provider: "MICROSOFT", email: userInfo.email },
+    });
     const response = NextResponse.redirect(buildInternalUrl("/dashboard", request.url));
     clearOAuthFlowCookies(response, "microsoft");
     return response;

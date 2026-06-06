@@ -2,6 +2,25 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getCurrentHousehold, hasHouseholdRole } from "@/lib/auth/session";
 import { createCategorySchema } from "@/lib/validation/category";
+import { writeAuditLog } from "@/lib/audit";
+import {
+  isNativeFormRequest,
+  readJsonOrFormPayload,
+  redirectNativeForm,
+} from "@/lib/http/form-request";
+
+function categoryErrorResponse(
+  request: Request,
+  message: string,
+  status: number,
+  errorCode: string,
+) {
+  if (isNativeFormRequest(request)) {
+    return redirectNativeForm(request, `/categories?error=${errorCode}`);
+  }
+
+  return NextResponse.json({ error: { message } }, { status });
+}
 
 export async function GET() {
   const auth = await getCurrentHousehold();
@@ -25,26 +44,22 @@ export async function POST(request: Request) {
   const auth = await getCurrentHousehold();
 
   if (!auth) {
-    return NextResponse.json(
-      { error: { message: "Authentication required." } },
-      { status: 401 },
-    );
+    return categoryErrorResponse(request, "Authentication required.", 401, "category_forbidden");
   }
 
   if (!hasHouseholdRole(auth, ["OWNER", "ADMIN"])) {
-    return NextResponse.json(
-      { error: { message: "Admin access required." } },
-      { status: 403 },
-    );
+    return categoryErrorResponse(request, "Admin access required.", 403, "category_forbidden");
   }
 
-  const payload = await request.json().catch(() => null);
+  const payload = await readJsonOrFormPayload(request);
   const parsed = createCategorySchema.safeParse(payload);
 
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: { message: parsed.error.issues[0]?.message ?? "Invalid category data." } },
-      { status: 400 },
+    return categoryErrorResponse(
+      request,
+      parsed.error.issues[0]?.message ?? "Invalid category data.",
+      400,
+      "category_invalid",
     );
   }
 
@@ -58,10 +73,7 @@ export async function POST(request: Request) {
   });
 
   if (existingCategory) {
-    return NextResponse.json(
-      { error: { message: "Category already exists." } },
-      { status: 409 },
-    );
+    return categoryErrorResponse(request, "Category already exists.", 409, "category_exists");
   }
 
   const lastCategory = await prisma.category.findFirst({
@@ -76,6 +88,17 @@ export async function POST(request: Request) {
       sortOrder: (lastCategory?.sortOrder ?? -1) + 1,
     },
   });
+
+  await writeAuditLog({
+    userId: auth.user.id,
+    householdId: auth.householdId,
+    action: "category.create",
+    metadata: { categoryId: category.id, name: category.name },
+  });
+
+  if (isNativeFormRequest(request)) {
+    return redirectNativeForm(request, "/categories?status=created");
+  }
 
   return NextResponse.json({ data: category }, { status: 201 });
 }

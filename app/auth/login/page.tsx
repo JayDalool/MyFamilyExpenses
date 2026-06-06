@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/login-form";
 import { getCurrentUser } from "@/lib/auth/session";
 import { isOAuthEnabled } from "@/lib/auth/oauth";
+import { getRequestCsrfToken } from "@/lib/auth/csrf-server";
 
 const OAUTH_ERRORS: Record<string, string> = {
   oauth_denied: "Authorization was cancelled.",
@@ -17,6 +18,9 @@ const OAUTH_ERRORS: Record<string, string> = {
     "That verification link has expired. Please sign up again to get a new one.",
   signup_email_exists:
     "An account with this email already exists. Please sign in or reset your password.",
+  login_failed: "Invalid email or password.",
+  login_rate_limited: "Too many failed login attempts. Please try again later.",
+  login_incomplete: "Account setup is incomplete. Please contact an administrator.",
 };
 
 type SearchParams = Promise<{ [key: string]: string | string[] | undefined }>;
@@ -33,6 +37,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
 
   const googleEnabled = isOAuthEnabled("google");
   const microsoftEnabled = isOAuthEnabled("microsoft");
+  const csrfToken = await getRequestCsrfToken();
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-brand-50 via-white to-slate-100 px-4 py-12">
@@ -65,6 +70,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
         </div>
 
         <LoginForm
+          csrfToken={csrfToken}
           googleEnabled={googleEnabled}
           microsoftEnabled={microsoftEnabled}
           oauthError={oauthError}

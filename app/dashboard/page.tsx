@@ -3,11 +3,12 @@ import { AppShell } from "@/components/app-shell";
 import { prisma } from "@/lib/db/prisma";
 import { requireHouseholdMember, hasHouseholdRole } from "@/lib/auth/session";
 import { formatCurrency, getStartOfMonth, getStartOfToday } from "@/lib/utils";
+import { getActiveExpenseScope } from "@/lib/expenses";
 
 export default async function DashboardPage() {
   const auth = await requireHouseholdMember();
   const { user, householdId } = auth;
-  const scope = { householdId };
+  const scope = getActiveExpenseScope(householdId);
 
   const [today, month, recentExpenses] = await Promise.all([
     prisma.expense.aggregate({

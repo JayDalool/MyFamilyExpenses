@@ -48,10 +48,14 @@ test("expense history filters schema accepts invoice and date filters", () => {
     categoryId: "6dd5ab70-6866-4ae1-a0c0-567c1714d062",
     fromDate: "2026-04-01",
     toDate: "2026-04-30",
+    page: "2",
+    pageSize: "25",
   });
 
   assert.equal(parsed.invoiceNumber, "INV-1001");
   assert.equal(parsed.categoryId, "6dd5ab70-6866-4ae1-a0c0-567c1714d062");
   assert.equal(parsed.fromDate, "2026-04-01");
   assert.equal(parsed.toDate, "2026-04-30");
+  assert.equal(parsed.page, 2);
+  assert.equal(parsed.pageSize, 25);
 });

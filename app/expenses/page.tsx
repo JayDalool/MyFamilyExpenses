@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AppShell } from "@/components/app-shell";
 import { ExpenseWizard } from "@/components/expense-wizard";
 import {
-  listExpensesForUser,
+  listExpensesPageForUser,
   normalizeExpenseHistoryFilters,
 } from "@/lib/expenses";
 import { prisma } from "@/lib/db/prisma";
@@ -12,6 +12,23 @@ import { formatCurrency } from "@/lib/utils";
 type ExpensesPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
+
+function buildExpensesHref(
+  filters: ReturnType<typeof normalizeExpenseHistoryFilters>,
+  page: number,
+) {
+  const params = new URLSearchParams();
+
+  if (filters.invoiceNumber) params.set("invoiceNumber", filters.invoiceNumber);
+  if (filters.categoryId) params.set("categoryId", filters.categoryId);
+  if (filters.fromDate) params.set("fromDate", filters.fromDate);
+  if (filters.toDate) params.set("toDate", filters.toDate);
+  if (filters.pageSize) params.set("pageSize", String(filters.pageSize));
+  if (page > 1) params.set("page", String(page));
+
+  const query = params.toString();
+  return query ? `/expenses?${query}` : "/expenses";
+}
 
 export default async function ExpensesPage({ searchParams }: ExpensesPageProps) {
   const auth = await requireHouseholdMember();
@@ -26,7 +43,8 @@ export default async function ExpensesPage({ searchParams }: ExpensesPageProps) 
     select: { id: true, name: true },
   });
 
-  const expenses = await listExpensesForUser(auth, filters);
+  const expensePage = await listExpensesPageForUser(auth, filters);
+  const { expenses, pagination } = expensePage;
   const hasActiveFilters = Boolean(
     filters.invoiceNumber || filters.categoryId || filters.fromDate || filters.toDate,
   );
@@ -131,7 +149,7 @@ export default async function ExpensesPage({ searchParams }: ExpensesPageProps) 
                 Reset
               </Link>
               <p className="text-sm text-slate-500">
-                Showing {expenses.length} expense{expenses.length === 1 ? "" : "s"}
+                Showing {expenses.length} of {pagination.total} expense{pagination.total === 1 ? "" : "s"}
                 {hasActiveFilters ? " with filters applied." : "."}
               </p>
             </div>
@@ -179,6 +197,36 @@ export default async function ExpensesPage({ searchParams }: ExpensesPageProps) 
               ))
             )}
           </div>
+
+          {pagination.totalPages > 1 ? (
+            <div className="mt-6 flex items-center justify-between gap-3 border-t border-slate-200 pt-4">
+              <Link
+                aria-disabled={pagination.page <= 1}
+                className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${
+                  pagination.page <= 1
+                    ? "pointer-events-none border-slate-200 text-slate-300"
+                    : "border-slate-300 text-slate-700 hover:border-slate-400 hover:text-slate-900"
+                }`}
+                href={buildExpensesHref(filters, pagination.page - 1)}
+              >
+                Previous
+              </Link>
+              <p className="text-sm text-slate-500">
+                Page {pagination.page} of {pagination.totalPages}
+              </p>
+              <Link
+                aria-disabled={pagination.page >= pagination.totalPages}
+                className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${
+                  pagination.page >= pagination.totalPages
+                    ? "pointer-events-none border-slate-200 text-slate-300"
+                    : "border-slate-300 text-slate-700 hover:border-slate-400 hover:text-slate-900"
+                }`}
+                href={buildExpensesHref(filters, pagination.page + 1)}
+              >
+                Next
+              </Link>
+            </div>
+          ) : null}
         </section>
       </div>
     </AppShell>

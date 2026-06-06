@@ -4,14 +4,18 @@ import type { FormEvent } from "react";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { csrfFetch } from "@/lib/auth/csrf-client";
+import { CSRF_FORM_FIELD_NAME } from "@/lib/auth/csrf";
 
 interface LoginFormProps {
+  csrfToken: string;
   googleEnabled?: boolean;
   microsoftEnabled?: boolean;
   oauthError?: string | null;
 }
 
 export function LoginForm({
+  csrfToken,
   googleEnabled = false,
   microsoftEnabled = false,
   oauthError,
@@ -33,7 +37,7 @@ export function LoginForm({
       void (async () => {
         setError(null);
 
-        const response = await fetch("/api/auth/login", {
+        const response = await csrfFetch("/api/auth/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -56,9 +60,12 @@ export function LoginForm({
   return (
     <div className="space-y-4">
       <form
+        action="/api/auth/login"
         className="space-y-5 rounded-3xl bg-white p-7 shadow-soft"
+        method="post"
         onSubmit={handleSubmit}
       >
+        <input name={CSRF_FORM_FIELD_NAME} type="hidden" value={csrfToken} />
         <div className="space-y-1">
           <label className="block text-sm font-semibold text-slate-700" htmlFor="email">
             Email address

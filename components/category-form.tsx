@@ -3,11 +3,23 @@
 import type { FormEvent } from "react";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { csrfFetch } from "@/lib/auth/csrf-client";
+import { CSRF_FORM_FIELD_NAME } from "@/lib/auth/csrf";
 
-export function CategoryForm() {
+type CategoryFormProps = {
+  csrfToken: string;
+  initialError?: string | null;
+  initialSuccess?: string | null;
+};
+
+export function CategoryForm({
+  csrfToken,
+  initialError = null,
+  initialSuccess = null,
+}: CategoryFormProps) {
   const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError);
+  const [success, setSuccess] = useState<string | null>(initialSuccess);
   const [isPending, startTransition] = useTransition();
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -23,7 +35,7 @@ export function CategoryForm() {
         setError(null);
         setSuccess(null);
 
-        const response = await fetch("/api/categories", {
+        const response = await csrfFetch("/api/categories", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -48,7 +60,13 @@ export function CategoryForm() {
   };
 
   return (
-    <form className="space-y-3 rounded-3xl bg-white p-6 shadow-soft" onSubmit={handleSubmit}>
+    <form
+      action="/api/categories"
+      className="space-y-3 rounded-3xl bg-white p-6 shadow-soft"
+      method="post"
+      onSubmit={handleSubmit}
+    >
+      <input name={CSRF_FORM_FIELD_NAME} type="hidden" value={csrfToken} />
       <div>
         <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="name">
           New category

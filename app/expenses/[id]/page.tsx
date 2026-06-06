@@ -2,8 +2,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
+import { ExpenseActions } from "@/components/expense-actions";
 import { requireHouseholdMember, hasHouseholdRole } from "@/lib/auth/session";
 import { getExpenseForUser } from "@/lib/expenses";
+import { prisma } from "@/lib/db/prisma";
 import {
   getStoredExpenseMimeType,
   isPreviewableImage,
@@ -26,6 +28,15 @@ export default async function ExpenseDetailsPage({
   if (!expense) {
     notFound();
   }
+
+  const categories = await prisma.category.findMany({
+    where: {
+      householdId: auth.householdId,
+      OR: [{ status: "ACTIVE" }, { id: expense.categoryId }],
+    },
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    select: { id: true, name: true },
+  });
 
   const previewUrl = `/api/expenses/${expense.id}/file`;
   const downloadUrl = `${previewUrl}?download=1`;
@@ -69,56 +80,69 @@ export default async function ExpenseDetailsPage({
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[340px,1fr]">
-          <section className="rounded-3xl bg-white p-6 shadow-soft">
-            <h2 className="text-lg font-semibold text-slate-900">Saved invoice fields</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              These are the reviewed invoice values stored with this expense.
-            </p>
-
-            <dl className="mt-4 space-y-4">
-              <div>
-                <dt className="text-sm font-medium text-slate-500">Invoice number</dt>
-                <dd className="mt-1 text-slate-900">{expense.invoiceNumber}</dd>
-              </div>
-
-              <div>
-                <dt className="text-sm font-medium text-slate-500">Amount</dt>
-                <dd className="mt-1 text-2xl font-semibold text-slate-900">
-                  {formatCurrency(expense.amount.toString())}
-                </dd>
-              </div>
-
-              <div>
-                <dt className="text-sm font-medium text-slate-500">Invoice date</dt>
-                <dd className="mt-1 text-slate-900">
-                  {expense.invoiceDate.toISOString().slice(0, 10)}
-                </dd>
-              </div>
-
-              <div>
-                <dt className="text-sm font-medium text-slate-500">Category</dt>
-                <dd className="mt-1 text-slate-900">{expense.category.name}</dd>
-              </div>
-            </dl>
-
-            <div className="mt-8 border-t border-slate-200 pt-6">
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-                Invoice file
-              </h3>
+          <div className="space-y-6">
+            <section className="rounded-3xl bg-white p-6 shadow-soft">
+              <h2 className="text-lg font-semibold text-slate-900">Saved invoice fields</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                These are the reviewed invoice values stored with this expense.
+              </p>
 
               <dl className="mt-4 space-y-4">
                 <div>
-                  <dt className="text-sm font-medium text-slate-500">Stored file</dt>
-                  <dd className="mt-1 break-all text-sm text-slate-700">{expense.filePath}</dd>
+                  <dt className="text-sm font-medium text-slate-500">Invoice number</dt>
+                  <dd className="mt-1 text-slate-900">{expense.invoiceNumber}</dd>
                 </div>
 
                 <div>
-                  <dt className="text-sm font-medium text-slate-500">File type</dt>
-                  <dd className="mt-1 text-slate-900">{mimeType}</dd>
+                  <dt className="text-sm font-medium text-slate-500">Amount</dt>
+                  <dd className="mt-1 text-2xl font-semibold text-slate-900">
+                    {formatCurrency(expense.amount.toString())}
+                  </dd>
+                </div>
+
+                <div>
+                  <dt className="text-sm font-medium text-slate-500">Invoice date</dt>
+                  <dd className="mt-1 text-slate-900">
+                    {expense.invoiceDate.toISOString().slice(0, 10)}
+                  </dd>
+                </div>
+
+                <div>
+                  <dt className="text-sm font-medium text-slate-500">Category</dt>
+                  <dd className="mt-1 text-slate-900">{expense.category.name}</dd>
                 </div>
               </dl>
-            </div>
-          </section>
+
+              <div className="mt-8 border-t border-slate-200 pt-6">
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                  Invoice file
+                </h3>
+
+                <dl className="mt-4 space-y-4">
+                  <div>
+                    <dt className="text-sm font-medium text-slate-500">Stored file</dt>
+                    <dd className="mt-1 break-all text-sm text-slate-700">{expense.filePath}</dd>
+                  </div>
+
+                  <div>
+                    <dt className="text-sm font-medium text-slate-500">File type</dt>
+                    <dd className="mt-1 text-slate-900">{mimeType}</dd>
+                  </div>
+                </dl>
+              </div>
+            </section>
+
+            <ExpenseActions
+              categories={categories}
+              expense={{
+                id: expense.id,
+                categoryId: expense.categoryId,
+                invoiceNumber: expense.invoiceNumber,
+                invoiceDate: expense.invoiceDate.toISOString().slice(0, 10),
+                amount: expense.amount.toString(),
+              }}
+            />
+          </div>
 
           <section className="rounded-3xl bg-white p-6 shadow-soft">
             <h2 className="text-lg font-semibold text-slate-900">Invoice preview</h2>

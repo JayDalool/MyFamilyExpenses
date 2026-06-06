@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { csrfFetch } from "@/lib/auth/csrf-client";
 import type { OcrResult } from "@/lib/ocr/types";
 import { hasAnyOcrField, hasStrongOcrMatch } from "@/lib/ocr/ocr-parsing";
 
@@ -320,7 +321,7 @@ export function ExpenseWizard({ categories }: { categories: CategoryOption[] }) 
       fd.append("categoryId", category.id);
       fd.append("file", selectedFile);
 
-      const res = await fetch("/api/expenses/extract", { method: "POST", body: fd });
+      const res = await csrfFetch("/api/expenses/extract", { method: "POST", body: fd });
       const payload = (await res.json().catch(() => null)) as ExtractResponse | null;
 
       if (!res.ok) {
@@ -367,7 +368,7 @@ export function ExpenseWizard({ categories }: { categories: CategoryOption[] }) 
     if (amount) fd.append("amount", amount);
 
     try {
-      const res = await fetch("/api/expenses", { method: "POST", body: fd });
+      const res = await csrfFetch("/api/expenses", { method: "POST", body: fd });
       const payload = (await res.json().catch(() => null)) as SaveResponse | null;
 
       if (!res.ok) {

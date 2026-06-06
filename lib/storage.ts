@@ -19,9 +19,14 @@ export function getUploadRoot() {
   return path.join(/* turbopackIgnore: true */ process.cwd(), "uploads");
 }
 
-export async function saveUploadedFile(file: File, fileBytes?: Uint8Array) {
+export async function saveUploadedFile(
+  file: File,
+  fileBytes?: Uint8Array,
+  detectedMimeType?: string | null,
+) {
   const uploadRoot = getUploadRoot();
-  const extension = MIME_TO_EXTENSION[file.type] ?? path.extname(file.name) ?? "";
+  const extension =
+    MIME_TO_EXTENSION[detectedMimeType ?? file.type] ?? path.extname(file.name) ?? "";
   const fileName = `${crypto.randomUUID()}${extension}`;
   const absolutePath = path.join(uploadRoot, fileName);
   const bytes = fileBytes ?? new Uint8Array(await file.arrayBuffer());

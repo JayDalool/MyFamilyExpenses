@@ -1,10 +1,28 @@
 import { redirect } from "next/navigation";
 import { SignupForm } from "@/components/signup-form";
 import { getCurrentUser } from "@/lib/auth/session";
+import { getRequestCsrfToken } from "@/lib/auth/csrf-server";
 
-export default async function SignupPage() {
+type SearchParams = Promise<{ [key: string]: string | string[] | undefined }>;
+
+const SIGNUP_ERRORS: Record<string, string> = {
+  signup_invalid: "Check the form fields and try again.",
+  signup_rate_limited: "Too many attempts. Please try again later.",
+  signup_unavailable: "Sign up is temporarily unavailable. Please try again later.",
+};
+
+export default async function SignupPage({ searchParams }: { searchParams: SearchParams }) {
   const user = await getCurrentUser();
   if (user) redirect("/dashboard");
+
+  const params = await searchParams;
+  const errorKey = typeof params.error === "string" ? params.error : undefined;
+  const initialError = errorKey ? (SIGNUP_ERRORS[errorKey] ?? "Sign up failed.") : null;
+  const initialSuccessMessage =
+    params.status === "verification_sent"
+      ? "Check your email for a verification link to finish creating your account."
+      : null;
+  const csrfToken = await getRequestCsrfToken();
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-brand-50 via-white to-slate-100 px-4 py-12">
@@ -36,7 +54,11 @@ export default async function SignupPage() {
           </div>
         </div>
 
-        <SignupForm />
+        <SignupForm
+          csrfToken={csrfToken}
+          initialError={initialError}
+          initialSuccessMessage={initialSuccessMessage}
+        />
 
         <p className="text-center text-xs text-slate-400">
           Self-hosted &middot; Private &middot; Family-first

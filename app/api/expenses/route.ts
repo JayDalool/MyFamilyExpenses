@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getCurrentHousehold } from "@/lib/auth/session";
-import { listExpensesForUser, normalizeExpenseHistoryFilters } from "@/lib/expenses";
+import { listExpensesPageForUser, normalizeExpenseHistoryFilters } from "@/lib/expenses";
 import {
   createFallbackOcrResult,
   extractInvoiceData,
   isOcrProviderError,
 } from "@/lib/ocr/ocr.service";
 import { saveUploadedFile, deleteUploadedFile } from "@/lib/storage";
-import { validateExpenseUploadFile } from "@/lib/uploads";
+import { detectExpenseUploadMimeType, validateExpenseUploadFile } from "@/lib/uploads";
 import { expenseInputSchema, finalExpenseSchema } from "@/lib/validation/expense";
+import { writeAuditLog } from "@/lib/audit";
 
 export async function GET(request: Request) {
   const auth = await getCurrentHousehold();
@@ -27,10 +28,15 @@ export async function GET(request: Request) {
     categoryId: searchParams.get("categoryId") ?? undefined,
     fromDate: searchParams.get("fromDate") ?? undefined,
     toDate: searchParams.get("toDate") ?? undefined,
+    page: searchParams.get("page") ?? undefined,
+    pageSize: searchParams.get("pageSize") ?? undefined,
   });
-  const expenses = await listExpensesForUser(auth, filters);
+  const expensePage = await listExpensesPageForUser(auth, filters);
 
-  return NextResponse.json({ data: expenses });
+  return NextResponse.json({
+    data: expensePage.expenses,
+    meta: { pagination: expensePage.pagination },
+  });
 }
 
 export async function POST(request: Request) {
@@ -90,7 +96,14 @@ export async function POST(request: Request) {
   }
 
   const fileBytes = new Uint8Array(await file.arrayBuffer());
-  const storedFile = await saveUploadedFile(file, fileBytes);
+  const contentError = validateExpenseUploadFile(file, fileBytes);
+
+  if (contentError) {
+    return NextResponse.json({ error: { message: contentError } }, { status: 400 });
+  }
+
+  const detectedMimeType = detectExpenseUploadMimeType(fileBytes);
+  const storedFile = await saveUploadedFile(file, fileBytes, detectedMimeType);
 
   try {
     const needsOcr =
@@ -104,7 +117,7 @@ export async function POST(request: Request) {
       try {
         ocrData = await extractInvoiceData({
           fileName: file.name,
-          mimeType: file.type,
+          mimeType: detectedMimeType ?? file.type,
           absolutePath: storedFile.absolutePath,
           fileBytes,
         });
@@ -113,6 +126,17 @@ export async function POST(request: Request) {
           ocrErrorMessage = error.message;
         } else {
           console.error(error);
+          await writeAuditLog({
+            userId: auth.user.id,
+            householdId: auth.householdId,
+            action: "expense.upload.ocr_failed",
+            metadata: {
+              categoryId: input.data.categoryId,
+              fileSize: file.size,
+              mimeType: detectedMimeType ?? file.type,
+              errorCode: "UNEXPECTED_ERROR",
+            },
+          });
           ocrErrorMessage =
             "Could not read this invoice automatically. Enter the invoice number, date, and amount manually.";
         }
@@ -158,9 +182,44 @@ export async function POST(request: Request) {
       include: { category: true, user: true },
     });
 
+    await writeAuditLog({
+      userId: auth.user.id,
+      householdId: auth.householdId,
+      action: "expense.create",
+      metadata: {
+        expenseId: expense.id,
+        categoryId: expense.categoryId,
+        amount: expense.amount.toString(),
+        fileSize: file.size,
+        mimeType: detectedMimeType ?? file.type,
+      },
+    });
+    await writeAuditLog({
+      userId: auth.user.id,
+      householdId: auth.householdId,
+      action: "expense.upload.saved",
+      metadata: {
+        expenseId: expense.id,
+        filePath: storedFile.relativePath,
+        fileSize: file.size,
+        mimeType: detectedMimeType ?? file.type,
+      },
+    });
+
     return NextResponse.json({ data: { expense, ocr: ocrData } }, { status: 201 });
   } catch (error) {
     await deleteUploadedFile(storedFile.absolutePath);
+    await writeAuditLog({
+      userId: auth.user.id,
+      householdId: auth.householdId,
+      action: "expense.upload.save_failed",
+      metadata: {
+        categoryId: input.data.categoryId,
+        fileSize: file.size,
+        mimeType: detectedMimeType ?? file.type,
+        errorCode: error instanceof Error ? error.name : "UNKNOWN_ERROR",
+      },
+    });
     throw error;
   }
 }

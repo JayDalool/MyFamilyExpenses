@@ -4,6 +4,7 @@ import { createSession } from "@/lib/auth/session";
 import { buildInternalUrl } from "@/lib/auth/app-url";
 import { hashSignupVerificationToken } from "@/lib/auth/signup-verification";
 import { onboardNewUserInTransaction } from "@/lib/auth/onboarding";
+import { writeAuditLog } from "@/lib/audit";
 
 function redirectWithCode(requestUrl: string, code: string) {
   return NextResponse.redirect(buildInternalUrl(`/auth/login?error=${code}`, requestUrl));
@@ -67,6 +68,12 @@ export async function GET(request: Request) {
     }
 
     await createSession(user.id);
+    await writeAuditLog({
+      userId: user.id,
+      householdId: user.householdId,
+      action: "auth.signup.verified",
+      metadata: { email: user.email },
+    });
 
     return NextResponse.redirect(buildInternalUrl("/dashboard", request.url));
   } catch (error) {

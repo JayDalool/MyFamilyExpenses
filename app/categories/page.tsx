@@ -2,9 +2,18 @@ import { redirect } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { CategoryForm } from "@/components/category-form";
 import { requireHouseholdMember, hasHouseholdRole } from "@/lib/auth/session";
+import { getRequestCsrfToken } from "@/lib/auth/csrf-server";
 import { prisma } from "@/lib/db/prisma";
 
-export default async function CategoriesPage() {
+type SearchParams = Promise<{ [key: string]: string | string[] | undefined }>;
+
+const CATEGORY_ERRORS: Record<string, string> = {
+  category_invalid: "Enter a valid category name.",
+  category_exists: "Category already exists.",
+  category_forbidden: "Admin access required.",
+};
+
+export default async function CategoriesPage({ searchParams }: { searchParams: SearchParams }) {
   const auth = await requireHouseholdMember();
 
   if (!hasHouseholdRole(auth, ["OWNER", "ADMIN"])) {
@@ -15,11 +24,20 @@ export default async function CategoriesPage() {
     where: { householdId: auth.householdId },
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
   });
+  const params = await searchParams;
+  const errorKey = typeof params.error === "string" ? params.error : undefined;
+  const initialError = errorKey ? (CATEGORY_ERRORS[errorKey] ?? "Unable to create category.") : null;
+  const initialSuccess = params.status === "created" ? "Category created." : null;
+  const csrfToken = await getRequestCsrfToken();
 
   return (
     <AppShell user={auth.user} showCategories={true}>
       <div className="grid gap-6 lg:grid-cols-[360px,1fr]">
-        <CategoryForm />
+        <CategoryForm
+          csrfToken={csrfToken}
+          initialError={initialError}
+          initialSuccess={initialSuccess}
+        />
 
         <section className="rounded-3xl bg-white p-6 shadow-soft">
           <div className="mb-4">

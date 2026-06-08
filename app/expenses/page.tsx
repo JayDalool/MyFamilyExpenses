@@ -6,7 +6,7 @@ import {
   normalizeExpenseHistoryFilters,
 } from "@/lib/expenses";
 import { prisma } from "@/lib/db/prisma";
-import { requireHouseholdMember, hasHouseholdRole } from "@/lib/auth/session";
+import { requireHouseholdMember } from "@/lib/auth/session";
 import { formatCurrency } from "@/lib/utils";
 
 type ExpensesPageProps = {
@@ -32,7 +32,7 @@ function buildExpensesHref(
 
 export default async function ExpensesPage({ searchParams }: ExpensesPageProps) {
   const auth = await requireHouseholdMember();
-  const { user, householdId } = auth;
+  const { householdId } = auth;
   const filters = normalizeExpenseHistoryFilters(
     ((await searchParams) ?? {}) as Record<string, string | string[] | undefined>,
   );
@@ -50,7 +50,7 @@ export default async function ExpensesPage({ searchParams }: ExpensesPageProps) 
   );
 
   return (
-    <AppShell user={user} showCategories={hasHouseholdRole(auth, ["OWNER", "ADMIN"])}>
+    <AppShell auth={auth}>
       <div className="grid gap-6 xl:grid-cols-[1fr,1fr]">
         <div>
           <div className="mb-4">

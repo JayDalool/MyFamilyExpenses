@@ -11,6 +11,7 @@ import { saveUploadedFile, deleteUploadedFile } from "@/lib/storage";
 import { detectExpenseUploadMimeType, validateExpenseUploadFile } from "@/lib/uploads";
 import { expenseInputSchema, finalExpenseSchema } from "@/lib/validation/expense";
 import { writeAuditLog } from "@/lib/audit";
+import { revalidateExpenseViews } from "@/lib/revalidation";
 
 export async function GET(request: Request) {
   const auth = await getCurrentHousehold();
@@ -205,6 +206,7 @@ export async function POST(request: Request) {
         mimeType: detectedMimeType ?? file.type,
       },
     });
+    revalidateExpenseViews(expense.id);
 
     return NextResponse.json({ data: { expense, ocr: ocrData } }, { status: 201 });
   } catch (error) {

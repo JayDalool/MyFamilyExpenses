@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { ExpenseActions } from "@/components/expense-actions";
-import { requireHouseholdMember, hasHouseholdRole } from "@/lib/auth/session";
+import { requireHouseholdMember } from "@/lib/auth/session";
 import { getExpenseForUser } from "@/lib/expenses";
 import { prisma } from "@/lib/db/prisma";
 import {
@@ -43,7 +43,7 @@ export default async function ExpenseDetailsPage({
   const mimeType = getStoredExpenseMimeType(expense.filePath);
 
   return (
-    <AppShell user={auth.user} showCategories={hasHouseholdRole(auth, ["OWNER", "ADMIN"])}>
+    <AppShell auth={auth}>
       <div className="space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>

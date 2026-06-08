@@ -8,6 +8,7 @@ import {
 } from "@/lib/expenses";
 import { finalExpenseSchema } from "@/lib/validation/expense";
 import { writeAuditLog } from "@/lib/audit";
+import { revalidateExpenseViews } from "@/lib/revalidation";
 
 type RouteContext = {
   params: Promise<{
@@ -115,6 +116,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       },
     },
   });
+  revalidateExpenseViews(id);
 
   return NextResponse.json({ data: expense });
 }
@@ -158,6 +160,7 @@ export async function DELETE(_: Request, context: RouteContext) {
       invoiceNumber: existingExpense.invoiceNumber,
     },
   });
+  revalidateExpenseViews(id);
 
   return NextResponse.json({ data: { expense, success: true } });
 }

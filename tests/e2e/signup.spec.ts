@@ -339,32 +339,64 @@ test("category form sends a protected native POST without JavaScript", async ({ 
     });
     const csrfToken = (await context.cookies()).find((cookie) => cookie.name === "mfe_csrf")?.value;
     expect(csrfToken).toBeTruthy();
+    const renamedCategoryName = `Renamed ${crypto.randomUUID()}`;
     expect(
       (
         await context.request.patch(`/api/categories/${category.id}`, {
           headers: { "x-csrf-token": csrfToken! },
-          data: { sortOrder: 9 },
+          data: { name: renamedCategoryName },
         })
       ).ok(),
     ).toBe(true);
-    expect(
+    await expect.poll(async () =>
       (
-        await context.request.delete(`/api/categories/${category.id}`, {
-          headers: { "x-csrf-token": csrfToken! },
-        })
-      ).ok(),
-    ).toBe(true);
+        await db.category.findUniqueOrThrow({ where: { id: category.id } })
+      ).name,
+    ).toBe(renamedCategoryName);
+
+    const usedCategory = await db.category.create({
+      data: { householdId: fixture.household.id, name: `Used ${crypto.randomUUID()}` },
+    });
+    await db.expense.create({
+      data: {
+        userId: fixture.user.id,
+        householdId: fixture.household.id,
+        categoryId: usedCategory.id,
+        invoiceNumber: "CATEGORY-IN-USE",
+        invoiceDate: new Date("2026-06-07T00:00:00.000Z"),
+        amount: 1,
+        filePath: "uploads/category-in-use.pdf",
+      },
+    });
+    const hardDeleteResponse = await context.request.delete(`/api/categories/${category.id}`, {
+      headers: { "x-csrf-token": csrfToken! },
+    });
+    expect(hardDeleteResponse.ok()).toBe(true);
+    expect((await hardDeleteResponse.json()).meta.mode).toBe("deleted");
+    expect(await db.category.findUnique({ where: { id: category.id } })).toBeNull();
+
+    const disableResponse = await context.request.delete(`/api/categories/${usedCategory.id}`, {
+      headers: { "x-csrf-token": csrfToken! },
+    });
+    expect(disableResponse.ok()).toBe(true);
+    expect((await disableResponse.json()).meta.mode).toBe("disabled");
+    expect(
+      (await db.category.findUniqueOrThrow({ where: { id: usedCategory.id } })).status,
+    ).toBe("DISABLED");
 
     const categoryAuditActions = await db.auditLog.findMany({
       where: {
         householdId: fixture.household.id,
-        action: { in: ["category.create", "category.update", "category.delete"] },
+        action: {
+          in: ["category.create", "category.update", "category.delete", "category.disable"],
+        },
       },
       select: { action: true },
     });
     expect(categoryAuditActions.map((entry) => entry.action).sort()).toEqual([
       "category.create",
       "category.delete",
+      "category.disable",
       "category.update",
     ]);
   } finally {
@@ -541,6 +573,168 @@ test("expense create, update, and soft delete routes create audit logs", async (
     if (uploadedPath) {
       await unlink(path.join(process.cwd(), uploadedPath)).catch(() => undefined);
     }
+    await cleanupE2EAccount(db, fixture);
+    await db.$disconnect();
+  }
+});
+
+test("dashboard totals update after expense create, edit, and delete", async ({ page }) => {
+  test.skip(!process.env.TEST_DATABASE_URL, "TEST_DATABASE_URL is required.");
+
+  const db = new PrismaClient({ datasourceUrl: process.env.TEST_DATABASE_URL });
+  const fixture = await createE2EAccount(db);
+  const category = await db.category.create({
+    data: { householdId: fixture.household.id, name: `Dashboard ${crypto.randomUUID()}` },
+  });
+  let uploadedPath: string | null = null;
+  const today = new Date().toISOString().slice(0, 10);
+
+  try {
+    await page.goto("/auth/login");
+    await page.getByLabel("Email address").fill(fixture.email);
+    await page.getByLabel("Password").fill(fixture.password);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await page.waitForURL("**/dashboard");
+
+    const csrfToken = (await page.context().cookies()).find(
+      (cookie) => cookie.name === "mfe_csrf",
+    )?.value;
+    expect(csrfToken).toBeTruthy();
+
+    const createResponse = await page.request.post("/api/expenses", {
+      headers: { "x-csrf-token": csrfToken! },
+      multipart: {
+        categoryId: category.id,
+        invoiceNumber: "DASH-CREATE",
+        invoiceDate: today,
+        amount: "11.25",
+        file: {
+          name: "dashboard.pdf",
+          mimeType: "application/pdf",
+          buffer: Buffer.from("%PDF-1.4\n%%EOF\n"),
+        },
+      },
+    });
+    expect(createResponse.status()).toBe(201);
+    const created = (await createResponse.json()) as {
+      data: { expense: { id: string; filePath: string } };
+    };
+    uploadedPath = created.data.expense.filePath;
+
+    await page.goto("/dashboard");
+    await expect(page.getByText("$11.25").first()).toBeVisible();
+
+    const updateResponse = await page.request.patch(
+      `/api/expenses/${created.data.expense.id}`,
+      {
+        headers: { "x-csrf-token": csrfToken! },
+        data: {
+          categoryId: category.id,
+          invoiceNumber: "DASH-UPDATE",
+          invoiceDate: today,
+          amount: 22.5,
+        },
+      },
+    );
+    expect(updateResponse.ok()).toBe(true);
+    await page.reload();
+    await expect(page.getByText("$22.50").first()).toBeVisible();
+
+    const deleteResponse = await page.request.delete(
+      `/api/expenses/${created.data.expense.id}`,
+      { headers: { "x-csrf-token": csrfToken! } },
+    );
+    expect(deleteResponse.ok()).toBe(true);
+    await page.reload();
+    await expect(page.getByText("$0.00").first()).toBeVisible();
+  } finally {
+    if (uploadedPath) {
+      await unlink(path.join(process.cwd(), uploadedPath)).catch(() => undefined);
+    }
+    await cleanupE2EAccount(db, fixture);
+    await db.$disconnect();
+  }
+});
+
+test("multi-household users only see the selected household on dashboard and reports", async ({
+  page,
+}) => {
+  test.skip(!process.env.TEST_DATABASE_URL, "TEST_DATABASE_URL is required.");
+
+  const db = new PrismaClient({ datasourceUrl: process.env.TEST_DATABASE_URL });
+  const fixture = await createE2EAccount(db);
+  const secondHousehold = await db.household.create({
+    data: { name: `Second Household ${crypto.randomUUID()}` },
+  });
+  await db.membership.create({
+    data: { userId: fixture.user.id, householdId: secondHousehold.id, role: "MEMBER" },
+  });
+  const [categoryA, categoryB] = await Promise.all([
+    db.category.create({
+      data: { householdId: fixture.household.id, name: `First ${crypto.randomUUID()}` },
+    }),
+    db.category.create({
+      data: { householdId: secondHousehold.id, name: `Second ${crypto.randomUUID()}` },
+    }),
+  ]);
+  const today = new Date().toISOString().slice(0, 10);
+
+  await db.expense.createMany({
+    data: [
+      {
+        userId: fixture.user.id,
+        householdId: fixture.household.id,
+        categoryId: categoryA.id,
+        invoiceNumber: "HOUSEHOLD-A",
+        invoiceDate: new Date(`${today}T00:00:00.000Z`),
+        amount: 10,
+        filePath: "uploads/household-a.pdf",
+      },
+      {
+        userId: fixture.user.id,
+        householdId: secondHousehold.id,
+        categoryId: categoryB.id,
+        invoiceNumber: "HOUSEHOLD-B",
+        invoiceDate: new Date(`${today}T00:00:00.000Z`),
+        amount: 100,
+        filePath: "uploads/household-b.pdf",
+      },
+    ],
+  });
+
+  try {
+    await page.goto("/auth/login");
+    await page.getByLabel("Email address").fill(fixture.email);
+    await page.getByLabel("Password").fill(fixture.password);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await page.waitForURL("**/dashboard");
+
+    await expect(page.getByLabel("Current household")).toHaveValue(fixture.household.id);
+    await expect(
+      page.getByText(`Spending summary for ${fixture.household.name}`),
+    ).toBeVisible();
+    await expect(page.getByText("$10.00").first()).toBeVisible();
+
+    await page.getByLabel("Current household").selectOption(secondHousehold.id);
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByLabel("Current household")).toHaveValue(secondHousehold.id);
+    await expect(
+      page.getByText(`Spending summary for ${secondHousehold.name}`),
+    ).toBeVisible();
+    await expect(page.getByText("$100.00").first()).toBeVisible();
+
+    await page.goto("/reports?period=today");
+    await expect(
+      page.getByText(`${secondHousehold.name} | Invoice dates`),
+    ).toBeVisible();
+    await expect(page.getByText("$100.00").first()).toBeVisible();
+    await expect(page.getByText("$10.00")).toHaveCount(0);
+  } finally {
+    await db.auditLog.deleteMany({ where: { householdId: secondHousehold.id } });
+    await db.expense.deleteMany({ where: { householdId: secondHousehold.id } });
+    await db.category.deleteMany({ where: { householdId: secondHousehold.id } });
+    await db.membership.deleteMany({ where: { householdId: secondHousehold.id } });
+    await db.household.delete({ where: { id: secondHousehold.id } });
     await cleanupE2EAccount(db, fixture);
     await db.$disconnect();
   }

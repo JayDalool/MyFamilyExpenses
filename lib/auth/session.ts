@@ -18,10 +18,20 @@ export type CurrentUser = {
 export type AuthContext = {
   user: CurrentUser;
   householdId: string;
+  householdName: string;
   householdRole: HouseholdRole;
+  households: HouseholdOption[];
+};
+
+export type HouseholdOption = {
+  id: string;
+  name: string;
+  role: HouseholdRole;
 };
 
 const SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME ?? "mfe_session";
+export const ACTIVE_HOUSEHOLD_COOKIE_NAME =
+  process.env.ACTIVE_HOUSEHOLD_COOKIE_NAME ?? "mfe_household";
 const SESSION_TTL_DAYS = Number(process.env.SESSION_TTL_DAYS ?? "7");
 
 function getSessionExpiry() {
@@ -77,6 +87,13 @@ export async function clearSession() {
     path: "/",
     maxAge: 0,
   });
+  cookieStore.set(ACTIVE_HOUSEHOLD_COOKIE_NAME, "", {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: shouldUseSecureCookies(),
+    path: "/",
+    maxAge: 0,
+  });
 }
 
 export async function getCurrentUser(): Promise<CurrentUser | null> {
@@ -111,20 +128,27 @@ export async function getCurrentHousehold(): Promise<AuthContext | null> {
   const user = await getCurrentUser();
   if (!user) return null;
 
-  // Always pick the oldest membership (createdAt ASC) for deterministic selection.
-  // This is stable for single-household users (the common case) and deterministic
-  // for multi-household users until an explicit household-switcher feature is built.
-  const membership = await prisma.membership.findFirst({
+  const cookieStore = await cookies();
+  const requestedHouseholdId = cookieStore.get(ACTIVE_HOUSEHOLD_COOKIE_NAME)?.value;
+  const memberships = await prisma.membership.findMany({
     where: { userId: user.id },
+    include: { household: { select: { id: true, name: true } } },
     orderBy: { createdAt: "asc" },
   });
-
+  const membership =
+    memberships.find((item) => item.householdId === requestedHouseholdId) ?? memberships[0];
   if (!membership) return null;
 
   return {
     user,
     householdId: membership.householdId,
+    householdName: membership.household.name,
     householdRole: membership.role,
+    households: memberships.map((item) => ({
+      id: item.householdId,
+      name: item.household.name,
+      role: item.role,
+    })),
   };
 }
 

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import { getCurrentHousehold, hasHouseholdRole } from "@/lib/auth/session";
 import { createCategorySchema } from "@/lib/validation/category";
 import { writeAuditLog } from "@/lib/audit";
+import { revalidateCategoryViews } from "@/lib/revalidation";
 import {
   isNativeFormRequest,
   readJsonOrFormPayload,
@@ -95,6 +96,7 @@ export async function POST(request: Request) {
     action: "category.create",
     metadata: { categoryId: category.id, name: category.name },
   });
+  revalidateCategoryViews();
 
   if (isNativeFormRequest(request)) {
     return redirectNativeForm(request, "/categories?status=created");

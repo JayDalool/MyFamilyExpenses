@@ -1,41 +1,27 @@
 import Link from "next/link";
 import { AppShell } from "@/components/app-shell";
-import { prisma } from "@/lib/db/prisma";
-import { requireHouseholdMember, hasHouseholdRole } from "@/lib/auth/session";
-import { formatCurrency, getStartOfMonth, getStartOfToday } from "@/lib/utils";
-import { getActiveExpenseScope } from "@/lib/expenses";
+import { requireHouseholdMember } from "@/lib/auth/session";
+import { formatCurrency } from "@/lib/utils";
+import { getDashboardSummary } from "@/lib/reporting";
+
+export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const auth = await requireHouseholdMember();
   const { user, householdId } = auth;
-  const scope = getActiveExpenseScope(householdId);
-
-  const [today, month, recentExpenses] = await Promise.all([
-    prisma.expense.aggregate({
-      where: { ...scope, invoiceDate: { gte: getStartOfToday() } },
-      _sum: { amount: true },
-    }),
-    prisma.expense.aggregate({
-      where: { ...scope, invoiceDate: { gte: getStartOfMonth() } },
-      _sum: { amount: true },
-    }),
-    prisma.expense.findMany({
-      where: scope,
-      include: { category: true, user: true },
-      orderBy: { createdAt: "desc" },
-      take: 6,
-    }),
-  ]);
+  const { today, month, allTime, recentExpenses } = await getDashboardSummary(householdId);
 
   return (
-    <AppShell user={user} showCategories={hasHouseholdRole(auth, ["OWNER", "ADMIN"])}>
+    <AppShell auth={auth}>
       <div className="space-y-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">
               Hi, {user.name.split(" ")[0]}
             </h1>
-            <p className="text-sm text-slate-500">Here is your spending summary.</p>
+            <p className="text-sm text-slate-500">
+              Spending summary for {auth.householdName}, based on invoice date.
+            </p>
           </div>
           <Link
             href="/expenses"
@@ -48,11 +34,11 @@ export default async function DashboardPage() {
           </Link>
         </div>
 
-        <section className="grid gap-4 sm:grid-cols-2">
+        <section className="grid gap-4 sm:grid-cols-3">
           <div className="rounded-3xl bg-white p-6 shadow-soft">
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-sm font-medium text-slate-500">Today</p>
+                <p className="text-sm font-medium text-slate-500">Today by invoice date</p>
                 <p className="mt-2 text-3xl font-bold text-slate-900">
                   {formatCurrency(today._sum.amount?.toString() ?? 0)}
                 </p>
@@ -68,7 +54,7 @@ export default async function DashboardPage() {
           <div className="rounded-3xl bg-brand-600 p-6 text-white shadow-soft">
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-sm font-medium text-brand-100">This month</p>
+                <p className="text-sm font-medium text-brand-100">This month by invoice date</p>
                 <p className="mt-2 text-3xl font-bold text-white">
                   {formatCurrency(month._sum.amount?.toString() ?? 0)}
                 </p>
@@ -78,6 +64,18 @@ export default async function DashboardPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                 </svg>
               </div>
+            </div>
+          </div>
+
+          <div className="rounded-3xl bg-white p-6 shadow-soft">
+            <div>
+              <p className="text-sm font-medium text-slate-500">All active expenses</p>
+              <p className="mt-2 text-3xl font-bold text-slate-900">
+                {formatCurrency(allTime._sum.amount?.toString() ?? 0)}
+              </p>
+              <p className="mt-2 text-xs text-slate-500">
+                {allTime._count._all} expense{allTime._count._all === 1 ? "" : "s"} in this household
+              </p>
             </div>
           </div>
         </section>

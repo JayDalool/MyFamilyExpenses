@@ -1,15 +1,17 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import type { CurrentUser } from "@/lib/auth/session";
+import { hasHouseholdRole, type AuthContext } from "@/lib/auth/session";
 import { LogoutButton } from "@/components/logout-button";
+import { HouseholdSwitcher } from "@/components/household-switcher";
 
 type AppShellProps = {
-  user: CurrentUser;
-  showCategories?: boolean;
+  auth: AuthContext;
   children: ReactNode;
 };
 
-export function AppShell({ user, showCategories = false, children }: AppShellProps) {
+export function AppShell({ auth, children }: AppShellProps) {
+  const showCategories = hasHouseholdRole(auth, ["OWNER", "ADMIN"]);
+
   return (
     <div className="min-h-screen bg-slate-100">
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80">
@@ -25,7 +27,9 @@ export function AppShell({ user, showCategories = false, children }: AppShellPro
                 />
               </svg>
             </div>
-            <span className="font-semibold text-slate-900">MyFamilyExpenses</span>
+            <span className="hidden font-semibold text-slate-900 sm:inline">
+              MyFamilyExpenses
+            </span>
           </Link>
 
           <div className="hidden items-center gap-1 sm:flex">
@@ -41,6 +45,12 @@ export function AppShell({ user, showCategories = false, children }: AppShellPro
             >
               Expenses
             </Link>
+            <Link
+              className="rounded-full px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+              href="/reports"
+            >
+              Reports
+            </Link>
             {showCategories ? (
               <Link
                 className="rounded-full px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
@@ -50,13 +60,20 @@ export function AppShell({ user, showCategories = false, children }: AppShellPro
               </Link>
             ) : null}
             <div className="ml-2 border-l border-slate-200 pl-3">
-              <p className="text-xs text-slate-500">{user.name}</p>
+              <HouseholdSwitcher
+                currentHouseholdId={auth.householdId}
+                households={auth.households}
+              />
+              <p className="text-xs text-slate-500">{auth.user.name}</p>
             </div>
             <LogoutButton />
           </div>
 
           <div className="flex items-center gap-2 sm:hidden">
-            <span className="text-xs text-slate-500">{user.name}</span>
+            <HouseholdSwitcher
+              currentHouseholdId={auth.householdId}
+              households={auth.households}
+            />
             <LogoutButton />
           </div>
         </div>
@@ -65,7 +82,7 @@ export function AppShell({ user, showCategories = false, children }: AppShellPro
       <main className="mx-auto max-w-6xl px-4 py-6 pb-28 sm:pb-8">{children}</main>
 
       <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-slate-200 bg-white sm:hidden">
-        <div className={`grid ${showCategories ? "grid-cols-3" : "grid-cols-2"}`}>
+        <div className={`grid ${showCategories ? "grid-cols-4" : "grid-cols-3"}`}>
           <Link
             href="/dashboard"
             className="flex flex-col items-center gap-1 py-3 text-slate-500 transition hover:text-brand-600"
@@ -94,6 +111,21 @@ export function AppShell({ user, showCategories = false, children }: AppShellPro
               />
             </svg>
             <span className="text-xs font-medium">Expenses</span>
+          </Link>
+
+          <Link
+            href="/reports"
+            className="flex flex-col items-center gap-1 py-3 text-slate-500 transition hover:text-brand-600"
+          >
+            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.8}
+                d="M9 17v-6m6 6V7m4 14H5a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2z"
+              />
+            </svg>
+            <span className="text-xs font-medium">Reports</span>
           </Link>
 
           {showCategories ? (

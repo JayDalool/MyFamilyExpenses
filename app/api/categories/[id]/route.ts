@@ -3,6 +3,11 @@ import { prisma } from "@/lib/db/prisma";
 import { getCurrentHousehold, hasHouseholdRole } from "@/lib/auth/session";
 import { updateCategorySchema } from "@/lib/validation/category";
 import { writeAuditLog } from "@/lib/audit";
+import {
+  deleteOrDisableCategoryForHousehold,
+  updateCategoryForHousehold,
+} from "@/lib/categories";
+import { revalidateCategoryViews } from "@/lib/revalidation";
 
 type RouteContext = {
   params: Promise<{
@@ -80,17 +85,32 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
   }
 
-  const updatedCategory = await prisma.category.update({
-    where: { id },
-    data: parsed.data,
-  });
+  const updatedCategory = await updateCategoryForHousehold(
+    auth.householdId,
+    id,
+    parsed.data,
+  );
 
+  if (!updatedCategory) {
+    return NextResponse.json(
+      { error: { message: "Category not found." } },
+      { status: 404 },
+    );
+  }
+
+  const action =
+    parsed.data.status === "DISABLED"
+      ? "category.disable"
+      : parsed.data.status === "ACTIVE"
+        ? "category.enable"
+        : "category.update";
   await writeAuditLog({
     userId: auth.user.id,
     householdId: auth.householdId,
-    action: "category.update",
+    action,
     metadata: { categoryId: id, changes: parsed.data },
   });
+  revalidateCategoryViews();
 
   return NextResponse.json({ data: updatedCategory });
 }
@@ -111,17 +131,29 @@ export async function DELETE(_: Request, context: RouteContext) {
     );
   }
 
-  const updatedCategory = await prisma.category.update({
-    where: { id },
-    data: { status: "DISABLED" },
-  });
+  const result = await deleteOrDisableCategoryForHousehold(auth.householdId, id);
+
+  if (!result) {
+    return NextResponse.json(
+      { error: { message: "Category not found." } },
+      { status: 404 },
+    );
+  }
+
+  const action = result.mode === "deleted" ? "category.delete" : "category.disable";
 
   await writeAuditLog({
     userId: auth.user.id,
     householdId: auth.householdId,
-    action: "category.delete",
-    metadata: { categoryId: id, name: category.name, mode: "soft_disable" },
+    action,
+    metadata: {
+      categoryId: id,
+      name: category.name,
+      mode: result.mode === "deleted" ? "hard_delete" : "disabled_in_use",
+      expenseCount: result.expenseCount,
+    },
   });
+  revalidateCategoryViews();
 
-  return NextResponse.json({ data: updatedCategory });
+  return NextResponse.json({ data: result.category, meta: { mode: result.mode } });
 }

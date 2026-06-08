@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { CategoryForm } from "@/components/category-form";
+import { CategoryActions } from "@/components/category-actions";
 import { requireHouseholdMember, hasHouseholdRole } from "@/lib/auth/session";
 import { getRequestCsrfToken } from "@/lib/auth/csrf-server";
 import { prisma } from "@/lib/db/prisma";
@@ -31,7 +32,7 @@ export default async function CategoriesPage({ searchParams }: { searchParams: S
   const csrfToken = await getRequestCsrfToken();
 
   return (
-    <AppShell user={auth.user} showCategories={true}>
+    <AppShell auth={auth}>
       <div className="grid gap-6 lg:grid-cols-[360px,1fr]">
         <CategoryForm
           csrfToken={csrfToken}
@@ -48,22 +49,25 @@ export default async function CategoriesPage({ searchParams }: { searchParams: S
           <div className="space-y-3">
             {categories.map((category) => (
               <div
-                className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-4"
+                className="rounded-2xl border border-slate-200 px-4 py-4"
                 key={category.id}
               >
-                <div>
-                  <p className="font-medium text-slate-900">{category.name}</p>
-                  <p className="text-sm text-slate-500">Sort order: {category.sortOrder}</p>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-slate-900">{category.name}</p>
+                    <p className="text-sm text-slate-500">Sort order: {category.sortOrder}</p>
+                  </div>
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                      category.status === "ACTIVE"
+                        ? "bg-emerald-100 text-emerald-700"
+                        : "bg-slate-200 text-slate-600"
+                    }`}
+                  >
+                    {category.status}
+                  </span>
                 </div>
-                <span
-                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                    category.status === "ACTIVE"
-                      ? "bg-emerald-100 text-emerald-700"
-                      : "bg-slate-200 text-slate-600"
-                  }`}
-                >
-                  {category.status}
-                </span>
+                <CategoryActions category={category} />
               </div>
             ))}
           </div>

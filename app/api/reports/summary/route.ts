@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db/prisma";
 import { getCurrentHousehold } from "@/lib/auth/session";
-import { getStartOfMonth, getStartOfToday } from "@/lib/utils";
-import { getActiveExpenseScope } from "@/lib/expenses";
+import { getDashboardSummary, getReportData, normalizeReportFilters } from "@/lib/reporting";
+
+export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const auth = await getCurrentHousehold();
@@ -17,44 +17,36 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const fromDate = searchParams.get("fromDate");
   const toDate = searchParams.get("toDate");
-  const scope = getActiveExpenseScope(auth.householdId);
-
-  const [today, month, customRange] = await Promise.all([
-    prisma.expense.aggregate({
-      where: { ...scope, invoiceDate: { gte: getStartOfToday() } },
-      _sum: { amount: true },
-      _count: { _all: true },
-    }),
-    prisma.expense.aggregate({
-      where: { ...scope, invoiceDate: { gte: getStartOfMonth() } },
-      _sum: { amount: true },
-      _count: { _all: true },
-    }),
+  const [dashboard, customRange] = await Promise.all([
+    getDashboardSummary(auth.householdId),
     fromDate && toDate
-      ? prisma.expense.aggregate({
-          where: {
-            ...scope,
-            invoiceDate: {
-              gte: new Date(`${fromDate}T00:00:00.000Z`),
-              lte: new Date(`${toDate}T23:59:59.999Z`),
-            },
-          },
-          _sum: { amount: true },
-          _count: { _all: true },
-        })
+      ? getReportData(
+          auth.householdId,
+          normalizeReportFilters({ period: "custom", fromDate, toDate, pageSize: "1" }),
+        )
       : Promise.resolve(null),
   ]);
 
   return NextResponse.json({
     data: {
-      today: { total: Number(today._sum.amount ?? 0), count: today._count._all },
-      month: { total: Number(month._sum.amount ?? 0), count: month._count._all },
+      today: {
+        total: Number(dashboard.today._sum.amount ?? 0),
+        count: dashboard.today._count._all,
+      },
+      month: {
+        total: Number(dashboard.month._sum.amount ?? 0),
+        count: dashboard.month._count._all,
+      },
+      allTime: {
+        total: Number(dashboard.allTime._sum.amount ?? 0),
+        count: dashboard.allTime._count._all,
+      },
       range: customRange
         ? {
-            total: Number(customRange._sum.amount ?? 0),
-            count: customRange._count._all,
-            fromDate,
-            toDate,
+            total: Number(customRange.summary.total ?? 0),
+            count: customRange.summary.count,
+            fromDate: customRange.range.from.toISOString().slice(0, 10),
+            toDate: customRange.range.to.toISOString().slice(0, 10),
           }
         : null,
     },

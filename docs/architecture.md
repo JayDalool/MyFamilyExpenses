@@ -1,1407 +1,1056 @@
-# MyFamilyExpenses Architecture Blueprint
+# MyFamilyExpenses Architecture
 
-## 1. System architecture
+## 1. Purpose
 
-### Recommended architecture style
+MyFamilyExpenses is a household-based expense, receipt, invoice, and reporting system.
 
-Use a modular monolith for the web application, plus one small local OCR worker service:
+The app is designed to support:
 
-- `Next.js` handles UI, API, authentication, authorization, reporting, and file access.
-- `PostgreSQL` stores users, categories, expenses, sessions, drafts, OCR logs, and audit history.
-- Local filesystem storage stores original invoice files outside the web root.
-- A local `Python OCR worker` handles OCR and field extraction because the strongest self-hosted OCR tooling is Python-first.
+* Personal and family expense tracking
+* Multiple households/families per user
+* Invite-only household membership
+* Receipt and invoice uploads
+* OCR-assisted receipt/invoice recognition
+* Manual user review before saving extracted data
+* Category-based expense organization
+* Daily, weekly, monthly, yearly, and custom reports
+* Future subscription plans and usage limits
 
-This keeps the deployment simple for a self-hosted personal server while still separating the OCR runtime from the main web app.
+The system must stay reliable on a small self-hosted server before moving to larger infrastructure.
 
-### Why this is the best fit
+---
 
-- Self-hosted first: no paid cloud dependency is required.
-- Solo developer friendly: one main app, one database, one OCR worker.
-- Clean upgrade path: local storage can later move to object storage, and OCR providers can later be swapped without rewriting the expense domain.
-- Production-ready enough: authentication, audit logging, draft workflow enforcement, and background OCR jobs are designed in from the start.
+## 2. Current Server Assumptions
 
-### High-level component diagram
+Current deployment target:
 
-```mermaid
-flowchart LR
-    U["Browser / Mobile Browser"] --> C["Caddy Reverse Proxy"]
-    C --> W["Next.js Web App + REST API"]
-    W --> P["PostgreSQL"]
-    W --> F["Local Invoice Storage"]
-    W --> Q["OCR Job Queue (Postgres Tables)"]
-    Q --> O["Local OCR Worker (FastAPI + PaddleOCR)"]
-    O --> F
-    O --> P
-```
+* Dell OptiPlex XE3 class machine
+* Intel i5-8500 / i5-9600 class CPU
+* 6 cores / 6 threads
+* 14–16 GB RAM
+* 250 GB NVMe boot/app storage
+* Ubuntu Server
+* Docker-based deployment
+* PostgreSQL database
+* Nginx Proxy Manager / Cloudflare tunnel
+* Existing apps running beside MyFamilyExpenses
 
-### Core request flow
+Expected short-term capacity:
 
-1. User logs in.
-2. User opens `New Expense`.
-3. User must select a category first.
-4. Server creates an `expense_draft` in status `CATEGORY_SELECTED`.
-5. Only then does the UI allow camera capture or file upload.
-6. Uploaded file is stored in a temporary draft path.
-7. OCR worker processes the file and writes extracted fields plus confidence scores.
-8. User reviews and edits the extracted fields.
-9. User clicks `Save`.
-10. Server validates reviewed fields and creates the final `expense` record.
+* 150 registered users
+* Small number of concurrent active users
+* OCR processed asynchronously
+* OCR worker concurrency starts at 1 job at a time
+* Uploads limited by file size and page count
+* Storage growth monitored closely
 
-### Workflow enforcement rule
+Important rule:
 
-Do not allow direct upload to `/api/expenses`.
+> The web app must never run heavy OCR directly inside a user-facing request.
 
-Instead:
+OCR must run through a background job system.
 
-- `POST /api/expense-drafts` creates a draft with the selected category.
-- `POST /api/expense-drafts/:id/upload` only works for a valid draft owned by the current user.
-- `POST /api/expenses` only accepts a reviewed `draftId`.
+---
 
-This is the simplest reliable way to enforce the required business sequence.
-
-## 2. Technology recommendation
-
-| Layer | Recommendation | Why |
-| --- | --- | --- |
-| Frontend | Next.js App Router + TypeScript | One codebase for UI and API, strong DX, simple self-hosting |
-| Backend | Next.js route handlers + server service layer | Avoids an unnecessary second backend service for the core app |
-| Database | Self-hosted PostgreSQL 16/17 | Strong relational model, reporting-friendly, excellent Prisma support |
-| ORM | Prisma | Fast development, migrations, typed queries |
-| Styling | Tailwind CSS | Fast UI delivery, mobile-first, consistent design system |
-| Forms and validation | React Hook Form + Zod | Good UX with strong shared validation |
-| Authentication | App-owned credentials auth using Argon2id + DB-backed sessions | Best fit for local family accounts, roles, and self-hosted password reset flows |
-| Reverse proxy | Caddy | Simpler HTTPS and reverse proxy setup than nginx for personal self-hosting |
-| File storage | Local filesystem outside web root | Fits the self-hosted requirement and keeps costs at zero |
-| OCR | Python FastAPI worker + PaddleOCR provider | Better local OCR ecosystem, PDF support, cleaner separation from Node |
-| Background jobs | Postgres-backed job table | Keeps the MVP simple and avoids adding Redis first |
-| Reporting | SQL aggregates via Prisma + server-side charts/tables | Simple, fast, enough for family scale |
-
-### Key architectural decisions
-
-#### 2.1 Next.js full-stack over split frontend/backend
-
-Choose a single Next.js application for the MVP because:
-
-- the business domain is small and well-bounded
-- deployment is easier on a home or personal server
-- Prisma, REST endpoints, and server-rendered dashboards live comfortably together
-
-Do not split into a separate Node API unless:
-
-- you later add multiple clients beyond the web app
-- OCR and reporting loads become large
-- you need independent release cycles
-
-#### 2.2 Custom credentials auth over OAuth-first auth
-
-For this app, a light in-app auth module is the most practical choice because requirements are:
-
-- email + password only
-- admin-created family users
-- admin and standard roles
-- password reset
-- self-hosted deployment
-
-This keeps the auth experience predictable and avoids provider complexity that does not help the family use case.
-
-#### 2.3 OCR sidecar over pure Node OCR
-
-Use a separate OCR service because:
-
-- PaddleOCR and related document tooling are Python-first
-- native OCR dependencies are easier to isolate from the Next.js runtime
-- OCR failures or heavy CPU work will not destabilize the web app process
-
-## 3. Domain model and business rules
-
-### Primary domain entities
-
-- `User`
-- `Category`
-- `ExpenseDraft`
-- `Expense`
-- `UserSession`
-- `PasswordResetToken`
-- `OcrJob`
-- `OcrExtraction`
-- `AuditLog`
-
-### Core business rules
-
-1. Every expense belongs to exactly one category.
-2. Category selection must happen before scan/upload.
-3. A standard user can only view and manage their own expenses.
-4. An admin can view all users, all expenses, all categories, and reports across users.
-5. Disabled categories remain visible on old expenses but cannot be chosen for new drafts.
-6. Expense save is allowed only after user review.
-7. Invoice files are never served directly from disk paths.
-8. Invoice number, invoice date, and amount must be present before final save.
-9. If OCR fails or confidence is low, the user can manually correct the values.
-10. Deleting an expense should be a soft delete for safety and auditability.
-
-## 4. Database schema
-
-### Schema notes
-
-- Use UUID primary keys.
-- Use `TIMESTAMPTZ` for all timestamps.
-- Use `NUMERIC(12,2)` for money values.
-- Normalize emails to lowercase before write.
-- Treat `invoice_number` as the user-reviewed invoice or receipt reference.
-
-### SQL schema
-
-```sql
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
-CREATE TYPE user_role AS ENUM ('ADMIN', 'USER');
-CREATE TYPE category_status AS ENUM ('ACTIVE', 'DISABLED');
-CREATE TYPE draft_status AS ENUM (
-  'CATEGORY_SELECTED',
-  'FILE_UPLOADED',
-  'OCR_PROCESSING',
-  'REVIEW_READY',
-  'COMPLETED',
-  'CANCELLED',
-  'EXPIRED'
-);
-CREATE TYPE ocr_job_status AS ENUM ('PENDING', 'PROCESSING', 'SUCCEEDED', 'FAILED');
-
-CREATE OR REPLACE FUNCTION set_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = NOW();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TABLE users (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name VARCHAR(100) NOT NULL,
-  email VARCHAR(320) NOT NULL,
-  password_hash TEXT NOT NULL,
-  role user_role NOT NULL DEFAULT 'USER',
-  is_active BOOLEAN NOT NULL DEFAULT TRUE,
-  must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
-  last_login_at TIMESTAMPTZ NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE UNIQUE INDEX users_email_ci_unique_idx ON users (LOWER(email));
-
-CREATE TABLE user_sessions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  session_token_hash TEXT NOT NULL,
-  ip_address INET NULL,
-  user_agent TEXT NULL,
-  expires_at TIMESTAMPTZ NOT NULL,
-  last_used_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  revoked_at TIMESTAMPTZ NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE UNIQUE INDEX user_sessions_token_hash_unique_idx ON user_sessions (session_token_hash);
-CREATE INDEX user_sessions_user_id_idx ON user_sessions (user_id);
-CREATE INDEX user_sessions_expires_at_idx ON user_sessions (expires_at);
-
-CREATE TABLE password_reset_tokens (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  token_hash TEXT NOT NULL,
-  expires_at TIMESTAMPTZ NOT NULL,
-  used_at TIMESTAMPTZ NULL,
-  requested_ip INET NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE UNIQUE INDEX password_reset_tokens_hash_unique_idx ON password_reset_tokens (token_hash);
-CREATE INDEX password_reset_tokens_user_id_idx ON password_reset_tokens (user_id);
-CREATE INDEX password_reset_tokens_expires_at_idx ON password_reset_tokens (expires_at);
-
-CREATE TABLE categories (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name VARCHAR(80) NOT NULL,
-  status category_status NOT NULL DEFAULT 'ACTIVE',
-  sort_order INTEGER NOT NULL CHECK (sort_order >= 0),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE UNIQUE INDEX categories_name_ci_unique_idx ON categories (LOWER(name));
-CREATE INDEX categories_sort_order_idx ON categories (sort_order);
-
-CREATE TABLE expense_drafts (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  category_id UUID NOT NULL REFERENCES categories(id),
-  status draft_status NOT NULL DEFAULT 'CATEGORY_SELECTED',
-  temp_file_path TEXT NULL,
-  temp_original_filename TEXT NULL,
-  temp_mime_type VARCHAR(100) NULL,
-  temp_file_size_bytes BIGINT NULL CHECK (temp_file_size_bytes IS NULL OR temp_file_size_bytes >= 0),
-  extracted_invoice_number VARCHAR(120) NULL,
-  extracted_invoice_date DATE NULL,
-  extracted_amount NUMERIC(12,2) NULL CHECK (extracted_amount IS NULL OR extracted_amount >= 0),
-  field_confidence JSONB NOT NULL DEFAULT '{}'::jsonb,
-  last_error TEXT NULL,
-  expires_at TIMESTAMPTZ NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX expense_drafts_user_id_idx ON expense_drafts (user_id);
-CREATE INDEX expense_drafts_status_idx ON expense_drafts (status);
-CREATE INDEX expense_drafts_expires_at_idx ON expense_drafts (expires_at);
-
-CREATE TABLE ocr_jobs (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  draft_id UUID NOT NULL REFERENCES expense_drafts(id) ON DELETE CASCADE,
-  provider VARCHAR(50) NOT NULL,
-  status ocr_job_status NOT NULL DEFAULT 'PENDING',
-  attempt_number SMALLINT NOT NULL DEFAULT 1,
-  started_at TIMESTAMPTZ NULL,
-  completed_at TIMESTAMPTZ NULL,
-  error_message TEXT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX ocr_jobs_draft_id_idx ON ocr_jobs (draft_id);
-CREATE INDEX ocr_jobs_status_idx ON ocr_jobs (status);
-
-CREATE TABLE ocr_extractions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  draft_id UUID NOT NULL REFERENCES expense_drafts(id) ON DELETE CASCADE,
-  ocr_job_id UUID NOT NULL REFERENCES ocr_jobs(id) ON DELETE CASCADE,
-  provider VARCHAR(50) NOT NULL,
-  raw_text TEXT NOT NULL,
-  raw_payload JSONB NOT NULL,
-  invoice_number VARCHAR(120) NULL,
-  invoice_number_confidence NUMERIC(5,4) NULL,
-  invoice_date DATE NULL,
-  invoice_date_confidence NUMERIC(5,4) NULL,
-  amount NUMERIC(12,2) NULL,
-  amount_confidence NUMERIC(5,4) NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX ocr_extractions_draft_id_idx ON ocr_extractions (draft_id);
-CREATE INDEX ocr_extractions_ocr_job_id_idx ON ocr_extractions (ocr_job_id);
-
-CREATE TABLE expenses (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES users(id),
-  category_id UUID NOT NULL REFERENCES categories(id),
-  ocr_extraction_id UUID NULL REFERENCES ocr_extractions(id) ON DELETE SET NULL,
-  invoice_number VARCHAR(120) NOT NULL,
-  invoice_date DATE NOT NULL,
-  amount NUMERIC(12,2) NOT NULL CHECK (amount >= 0),
-  file_path TEXT NOT NULL,
-  original_filename TEXT NOT NULL,
-  mime_type VARCHAR(100) NOT NULL,
-  file_size_bytes BIGINT NOT NULL CHECK (file_size_bytes >= 0),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  deleted_at TIMESTAMPTZ NULL,
-  deleted_by_user_id UUID NULL REFERENCES users(id) ON DELETE SET NULL
-);
-
-CREATE INDEX expenses_user_date_idx ON expenses (user_id, invoice_date DESC) WHERE deleted_at IS NULL;
-CREATE INDEX expenses_category_date_idx ON expenses (category_id, invoice_date DESC) WHERE deleted_at IS NULL;
-CREATE INDEX expenses_invoice_number_ci_idx ON expenses (LOWER(invoice_number)) WHERE deleted_at IS NULL;
-CREATE INDEX expenses_created_at_idx ON expenses (created_at DESC) WHERE deleted_at IS NULL;
-CREATE INDEX expenses_amount_idx ON expenses (amount) WHERE deleted_at IS NULL;
-
-CREATE TABLE audit_logs (
-  id BIGSERIAL PRIMARY KEY,
-  actor_user_id UUID NULL REFERENCES users(id) ON DELETE SET NULL,
-  entity_type VARCHAR(50) NOT NULL,
-  entity_id UUID NULL,
-  action VARCHAR(50) NOT NULL,
-  details JSONB NOT NULL DEFAULT '{}'::jsonb,
-  ip_address INET NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX audit_logs_actor_user_id_idx ON audit_logs (actor_user_id);
-CREATE INDEX audit_logs_entity_idx ON audit_logs (entity_type, entity_id);
-CREATE INDEX audit_logs_created_at_idx ON audit_logs (created_at DESC);
-
-CREATE TRIGGER users_set_updated_at
-BEFORE UPDATE ON users
-FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
-CREATE TRIGGER categories_set_updated_at
-BEFORE UPDATE ON categories
-FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
-CREATE TRIGGER expense_drafts_set_updated_at
-BEFORE UPDATE ON expense_drafts
-FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
-CREATE TRIGGER ocr_jobs_set_updated_at
-BEFORE UPDATE ON ocr_jobs
-FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
-CREATE TRIGGER expenses_set_updated_at
-BEFORE UPDATE ON expenses
-FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-```
-
-### Table responsibilities
-
-| Table | Purpose |
-| --- | --- |
-| `users` | Family member accounts and roles |
-| `user_sessions` | Server-side sessions for login/logout and session revocation |
-| `password_reset_tokens` | Password reset token lifecycle |
-| `categories` | Admin-managed expense categories and order |
-| `expense_drafts` | Enforced category-first workflow and pre-save review state |
-| `ocr_jobs` | OCR processing queue and retry state |
-| `ocr_extractions` | Raw OCR text, extracted fields, confidence, provider metadata |
-| `expenses` | Final saved expense records |
-| `audit_logs` | Administrative and security-sensitive audit trail |
-
-## 5. Prisma schema outline
-
-This is the recommended Prisma shape. Use application-side lowercase normalization for `email` and category `name`.
-
-```prisma
-enum UserRole {
-  ADMIN
-  USER
-}
-
-enum CategoryStatus {
-  ACTIVE
-  DISABLED
-}
-
-enum DraftStatus {
-  CATEGORY_SELECTED
-  FILE_UPLOADED
-  OCR_PROCESSING
-  REVIEW_READY
-  COMPLETED
-  CANCELLED
-  EXPIRED
-}
-
-enum OcrJobStatus {
-  PENDING
-  PROCESSING
-  SUCCEEDED
-  FAILED
-}
-
-model User {
-  id                 String               @id @default(uuid()) @db.Uuid
-  name               String               @db.VarChar(100)
-  email              String               @unique @db.VarChar(320)
-  passwordHash       String               @map("password_hash")
-  role               UserRole             @default(USER)
-  isActive           Boolean              @default(true) @map("is_active")
-  mustChangePassword Boolean              @default(false) @map("must_change_password")
-  lastLoginAt        DateTime?            @map("last_login_at") @db.Timestamptz
-  createdAt          DateTime             @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt          DateTime             @updatedAt @map("updated_at") @db.Timestamptz
-
-  sessions           UserSession[]
-  passwordResets     PasswordResetToken[]
-  drafts             ExpenseDraft[]
-  expenses           Expense[]            @relation("ExpenseOwner")
-  deletedExpenses    Expense[]            @relation("ExpenseDeletedBy")
-  auditLogs          AuditLog[]
-
-  @@map("users")
-}
-
-model UserSession {
-  id               String    @id @default(uuid()) @db.Uuid
-  userId           String    @map("user_id") @db.Uuid
-  sessionTokenHash String    @unique @map("session_token_hash")
-  ipAddress        String?   @map("ip_address") @db.Inet
-  userAgent        String?   @map("user_agent")
-  expiresAt        DateTime  @map("expires_at") @db.Timestamptz
-  lastUsedAt       DateTime  @default(now()) @map("last_used_at") @db.Timestamptz
-  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz
-  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
-
-  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([expiresAt])
-  @@map("user_sessions")
-}
-
-model PasswordResetToken {
-  id          String    @id @default(uuid()) @db.Uuid
-  userId      String    @map("user_id") @db.Uuid
-  tokenHash   String    @unique @map("token_hash")
-  expiresAt   DateTime  @map("expires_at") @db.Timestamptz
-  usedAt      DateTime? @map("used_at") @db.Timestamptz
-  requestedIp String?   @map("requested_ip") @db.Inet
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
-
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([expiresAt])
-  @@map("password_reset_tokens")
-}
-
-model Category {
-  id         String          @id @default(uuid()) @db.Uuid
-  name       String          @db.VarChar(80)
-  status     CategoryStatus  @default(ACTIVE)
-  sortOrder  Int             @map("sort_order")
-  createdAt  DateTime        @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt  DateTime        @updatedAt @map("updated_at") @db.Timestamptz
-
-  drafts     ExpenseDraft[]
-  expenses   Expense[]
-
-  @@index([sortOrder])
-  @@map("categories")
-}
-
-model ExpenseDraft {
-  id                   String         @id @default(uuid()) @db.Uuid
-  userId               String         @map("user_id") @db.Uuid
-  categoryId           String         @map("category_id") @db.Uuid
-  status               DraftStatus    @default(CATEGORY_SELECTED)
-  tempFilePath         String?        @map("temp_file_path")
-  tempOriginalFilename String?        @map("temp_original_filename")
-  tempMimeType         String?        @map("temp_mime_type") @db.VarChar(100)
-  tempFileSizeBytes    BigInt?        @map("temp_file_size_bytes")
-  extractedInvoiceNumber String?      @map("extracted_invoice_number") @db.VarChar(120)
-  extractedInvoiceDate DateTime?      @map("extracted_invoice_date") @db.Date
-  extractedAmount      Decimal?       @map("extracted_amount") @db.Decimal(12, 2)
-  fieldConfidence      Json           @map("field_confidence")
-  lastError            String?        @map("last_error")
-  expiresAt            DateTime       @map("expires_at") @db.Timestamptz
-  createdAt            DateTime       @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt            DateTime       @updatedAt @map("updated_at") @db.Timestamptz
-
-  user                 User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  category             Category       @relation(fields: [categoryId], references: [id])
-  ocrJobs              OcrJob[]
-  ocrExtractions       OcrExtraction[]
-
-  @@index([userId])
-  @@index([status])
-  @@index([expiresAt])
-  @@map("expense_drafts")
-}
-
-model OcrJob {
-  id           String        @id @default(uuid()) @db.Uuid
-  draftId      String        @map("draft_id") @db.Uuid
-  provider     String        @db.VarChar(50)
-  status       OcrJobStatus  @default(PENDING)
-  attemptNumber Int          @default(1) @map("attempt_number") @db.SmallInt
-  startedAt    DateTime?     @map("started_at") @db.Timestamptz
-  completedAt  DateTime?     @map("completed_at") @db.Timestamptz
-  errorMessage String?       @map("error_message")
-  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz
-
-  draft        ExpenseDraft  @relation(fields: [draftId], references: [id], onDelete: Cascade)
-  extractions  OcrExtraction[]
-
-  @@index([draftId])
-  @@index([status])
-  @@map("ocr_jobs")
-}
-
-model OcrExtraction {
-  id                      String      @id @default(uuid()) @db.Uuid
-  draftId                 String      @map("draft_id") @db.Uuid
-  ocrJobId                String      @map("ocr_job_id") @db.Uuid
-  provider                String      @db.VarChar(50)
-  rawText                 String      @map("raw_text")
-  rawPayload              Json        @map("raw_payload")
-  invoiceNumber           String?     @map("invoice_number") @db.VarChar(120)
-  invoiceNumberConfidence Decimal?    @map("invoice_number_confidence") @db.Decimal(5, 4)
-  invoiceDate             DateTime?   @map("invoice_date") @db.Date
-  invoiceDateConfidence   Decimal?    @map("invoice_date_confidence") @db.Decimal(5, 4)
-  amount                  Decimal?    @db.Decimal(12, 2)
-  amountConfidence        Decimal?    @map("amount_confidence") @db.Decimal(5, 4)
-  createdAt               DateTime    @default(now()) @map("created_at") @db.Timestamptz
-
-  draft                   ExpenseDraft @relation(fields: [draftId], references: [id], onDelete: Cascade)
-  ocrJob                  OcrJob       @relation(fields: [ocrJobId], references: [id], onDelete: Cascade)
-  expenses                Expense[]
-
-  @@index([draftId])
-  @@index([ocrJobId])
-  @@map("ocr_extractions")
-}
-
-model Expense {
-  id               String       @id @default(uuid()) @db.Uuid
-  userId           String       @map("user_id") @db.Uuid
-  categoryId       String       @map("category_id") @db.Uuid
-  ocrExtractionId  String?      @map("ocr_extraction_id") @db.Uuid
-  invoiceNumber    String       @map("invoice_number") @db.VarChar(120)
-  invoiceDate      DateTime     @map("invoice_date") @db.Date
-  amount           Decimal      @db.Decimal(12, 2)
-  filePath         String       @map("file_path")
-  originalFilename String       @map("original_filename")
-  mimeType         String       @map("mime_type") @db.VarChar(100)
-  fileSizeBytes    BigInt       @map("file_size_bytes")
-  createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt        DateTime     @updatedAt @map("updated_at") @db.Timestamptz
-  deletedAt        DateTime?    @map("deleted_at") @db.Timestamptz
-  deletedByUserId  String?      @map("deleted_by_user_id") @db.Uuid
-
-  user             User         @relation("ExpenseOwner", fields: [userId], references: [id])
-  category         Category     @relation(fields: [categoryId], references: [id])
-  ocrExtraction    OcrExtraction? @relation(fields: [ocrExtractionId], references: [id], onDelete: SetNull)
-  deletedByUser    User?        @relation("ExpenseDeletedBy", fields: [deletedByUserId], references: [id], onDelete: SetNull)
-
-  @@index([userId, invoiceDate(sort: Desc)])
-  @@index([categoryId, invoiceDate(sort: Desc)])
-  @@index([createdAt(sort: Desc)])
-  @@index([amount])
-  @@map("expenses")
-}
-
-model AuditLog {
-  id          BigInt    @id @default(autoincrement())
-  actorUserId String?   @map("actor_user_id") @db.Uuid
-  entityType  String    @map("entity_type") @db.VarChar(50)
-  entityId    String?   @map("entity_id") @db.Uuid
-  action      String    @db.VarChar(50)
-  details     Json
-  ipAddress   String?   @map("ip_address") @db.Inet
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
-
-  actorUser   User?     @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
-
-  @@index([actorUserId])
-  @@index([entityType, entityId])
-  @@index([createdAt(sort: Desc)])
-  @@map("audit_logs")
-}
-```
-
-## 6. Recommended folder structure
+## 3. High-Level Architecture
 
 ```text
-MyFamilyExpenses/
-├─ docs/
-│  ├─ architecture.md
-│  ├─ development-roadmap.md
-│  └─ deployment-self-hosted.md
-├─ prisma/
-│  ├─ schema.prisma
-│  ├─ migrations/
-│  └─ seed.ts
-├─ public/
-├─ src/
-│  ├─ app/
-│  │  ├─ (auth)/
-│  │  │  ├─ login/page.tsx
-│  │  │  ├─ forgot-password/page.tsx
-│  │  │  └─ reset-password/page.tsx
-│  │  ├─ (app)/
-│  │  │  ├─ dashboard/page.tsx
-│  │  │  ├─ expenses/
-│  │  │  │  ├─ new/category/page.tsx
-│  │  │  │  ├─ new/upload/page.tsx
-│  │  │  │  ├─ new/review/page.tsx
-│  │  │  │  ├─ history/page.tsx
-│  │  │  │  └─ [id]/page.tsx
-│  │  │  ├─ reports/page.tsx
-│  │  │  ├─ profile/page.tsx
-│  │  │  └─ admin/
-│  │  │     ├─ categories/page.tsx
-│  │  │     └─ users/page.tsx
-│  │  └─ api/
-│  │     ├─ auth/
-│  │     ├─ users/
-│  │     ├─ categories/
-│  │     ├─ expense-drafts/
-│  │     ├─ expenses/
-│  │     └─ reports/
-│  ├─ components/
-│  │  ├─ ui/
-│  │  ├─ layout/
-│  │  ├─ dashboard/
-│  │  ├─ expenses/
-│  │  ├─ reports/
-│  │  └─ admin/
-│  ├─ features/
-│  │  ├─ auth/
-│  │  ├─ users/
-│  │  ├─ categories/
-│  │  ├─ expenses/
-│  │  ├─ reports/
-│  │  └─ dashboard/
-│  ├─ lib/
-│  │  ├─ auth/
-│  │  ├─ db/
-│  │  ├─ permissions/
-│  │  ├─ validation/
-│  │  ├─ storage/
-│  │  ├─ audit/
-│  │  ├─ pagination/
-│  │  └─ utils/
-│  ├─ server/
-│  │  ├─ repositories/
-│  │  ├─ services/
-│  │  │  ├─ auth/
-│  │  │  ├─ categories/
-│  │  │  ├─ expenses/
-│  │  │  ├─ reports/
-│  │  │  └─ ocr/
-│  │  │     ├─ adapters/
-│  │  │     ├─ parsers/
-│  │  │     └─ jobs/
-│  │  └─ policies/
-│  ├─ styles/
-│  └─ middleware.ts
-├─ services/
-│  └─ ocr-worker/
-│     ├─ app/
-│     │  ├─ main.py
-│     │  ├─ providers/
-│     │  ├─ extractors/
-│     │  ├─ preprocess/
-│     │  └─ schemas/
-│     ├─ requirements.txt
-│     └─ Dockerfile
-├─ storage/
-│  └─ .gitkeep
-├─ tests/
-│  ├─ unit/
-│  ├─ integration/
-│  └─ e2e/
-├─ docker/
-│  ├─ web.Dockerfile
-│  ├─ ocr-worker.Dockerfile
-│  └─ Caddyfile
-├─ .env.example
-└─ package.json
+Browser
+  |
+  v
+Next.js Web App
+  |
+  |-- Auth / Sessions
+  |-- Household / Membership logic
+  |-- Expense CRUD
+  |-- Category management
+  |-- Reports
+  |-- Upload API
+  |
+  v
+PostgreSQL
+  |
+  |-- users
+  |-- households
+  |-- memberships
+  |-- invitations
+  |-- categories
+  |-- expenses
+  |-- document_files
+  |-- ocr_jobs
+  |-- ocr_results
+  |-- audit_logs
+  |-- usage_counters
+  |
+  v
+Private File Storage
+  |
+  |-- receipt/invoice originals
+  |-- generated previews
+  |-- OCR artifacts if needed
+
+Background OCR Worker
+  |
+  |-- Picks queued OCR jobs
+  |-- Runs PaddleOCR / fallback OCR
+  |-- Normalizes extracted fields
+  |-- Calculates confidence
+  |-- Flags duplicates
+  |-- Saves result for user review
 ```
 
-### Structure rules
+---
 
-- Keep domain logic in `src/server/services`, not inside route handlers.
-- Keep Prisma calls in repositories or service boundaries.
-- Keep storage operations in `lib/storage`.
-- Keep OCR provider contracts isolated from the rest of the expense domain.
+## 4. Core Services
 
-## 7. UI layout and screen descriptions
+### 4.1 Next.js App
 
-### Global UX direction
+Responsibilities:
 
-- Mobile-first, large tap targets, minimal text.
-- One primary action per screen.
-- Use a 3-step expense wizard with visible progress:
-  - `1. Category`
-  - `2. Upload`
-  - `3. Review`
-- Keep navigation simple:
-  - Dashboard
-  - New Expense
-  - History
-  - Reports
-  - Admin for admins only
+* User interface
+* Authentication
+* Session handling
+* Household switching
+* Expense creation/edit/delete
+* Category management
+* Reports
+* Receipt/invoice upload
+* OCR result review UI
+* Subscription-gating foundation later
 
-### Screen-by-screen blueprint
+The Next.js app should stay fast and lightweight.
 
-#### Login page
+It should not:
 
-- Simple email and password form
-- `Forgot password` link
-- Large `Sign in` button
-- Friendly empty state text
+* Run heavy OCR inside API requests
+* Block users while documents are being processed
+* Trust OCR output without user confirmation
+* Expose uploaded files publicly
 
-#### Dashboard
+---
 
-- Cards:
-  - total today
-  - total this month
-  - top categories this month
-- Recent invoices list
-- Large sticky `Add Expense` button
+### 4.2 PostgreSQL Database
 
-#### Select Category screen
+PostgreSQL is the source of truth.
 
-- Grid or stacked list of active categories
-- Search box only if category list grows beyond 12-15 entries
-- Selected category highlighted clearly
-- Continue button disabled until a category is selected
+It stores:
 
-#### Scan Invoice screen
+* Users
+* Households
+* Memberships
+* Invitations
+* Expenses
+* Categories
+* Document file metadata
+* OCR jobs
+* OCR results
+* Audit logs
+* Usage counters
+* Subscription state later
 
-- Camera capture button
-- Upload image/PDF button
-- Short helper text:
-  - `Step 1 complete: category selected`
-- Show selected category at the top
-- Do not show upload controls if no draft exists
+Tenant isolation must be enforced at the database query level using `household_id`.
 
-#### Review Extracted Data screen
+Every household-owned table must include `household_id`.
 
-- File preview at the top
-- Editable fields:
-  - invoice number
-  - invoice date
-  - amount
-  - category
-- Confidence indicators:
-  - green for high confidence
-  - amber for medium
-  - red for missing/low confidence
-- `Save Expense` primary button
-- `Retake / Replace File` secondary action
+---
 
-#### Expense History page
+### 4.3 Private File Storage
 
-- Filters:
-  - invoice number
-  - single date
-  - date range
-  - category
-  - user for admins
-  - amount range
-- Sortable table/list
-- Mobile cards on small screens
-- File preview action for each item
+Receipt and invoice files must be stored outside the public web directory.
 
-#### Reports page
+Files should be accessed only through authenticated routes.
 
-- Date range picker
-- Summary total
-- Totals by category
-- Totals by user
-- Monthly totals chart
-- Export CSV later, not required for MVP
+File metadata should be stored in the database.
 
-#### Admin Category Management page
+Required metadata:
 
-- Reorder categories
-- Add category
-- Edit category
-- Disable category
-- Show which categories are disabled but still referenced historically
+* `id`
+* `household_id`
+* `uploaded_by_user_id`
+* `expense_id` if linked
+* `original_filename`
+* `stored_filename`
+* `file_path`
+* `mime_type`
+* `detected_type`
+* `file_size`
+* `sha256_hash`
+* `page_count`
+* `created_at`
 
-#### User Management page
+Future storage options:
 
-- User list with role and status
-- Create user
-- Edit user
-- Disable user
-- Reset password
+1. Local disk
+2. Mounted larger drive
+3. NAS
+4. S3-compatible object storage
 
-## 8. REST API design
+For 150 users, local disk is acceptable only if storage is monitored and backed up.
 
-### API standards
+---
 
-- Base path: `/api`
-- Response envelope on success:
+## 5. Multi-Household / Family Model
+
+### 5.1 Concept
+
+A user can belong to multiple households.
+
+Example:
+
+* Jay owns the “Dalool Family” household.
+* Jay invites his brother, parents, or spouse.
+* Jay may also belong to another household, such as “Business Expenses” or “Rental Property.”
+* Each household has separate expenses, categories, reports, files, and OCR usage.
+
+A user must not see another household’s data unless they are a member.
+
+---
+
+### 5.2 Household Membership
+
+Recommended roles:
+
+```text
+OWNER
+ADMIN
+MEMBER
+VIEWER
+```
+
+Role permissions:
+
+| Action                   | OWNER |         ADMIN |   MEMBER | VIEWER |
+| ------------------------ | ----: | ------------: | -------: | -----: |
+| View dashboard           |   Yes |           Yes |      Yes |    Yes |
+| View reports             |   Yes |           Yes |      Yes |    Yes |
+| Add expense              |   Yes |           Yes |      Yes |     No |
+| Edit own expense         |   Yes |           Yes |      Yes |     No |
+| Edit any expense         |   Yes |           Yes | Optional |     No |
+| Delete expense           |   Yes |           Yes | Optional |     No |
+| Manage categories        |   Yes |           Yes |       No |     No |
+| Invite members           |   Yes |           Yes |       No |     No |
+| Remove members           |   Yes |           Yes |       No |     No |
+| Change billing           |   Yes | No by default |       No |     No |
+| Delete/archive household |   Yes |            No |       No |     No |
+
+---
+
+### 5.3 Invite-Only Access
+
+Households should be invite-only.
+
+A user should not be able to join a household manually by guessing an ID.
+
+Invite flow:
+
+```text
+Owner/Admin creates invite
+  |
+  v
+System creates invitation token
+  |
+  v
+Invite link is generated
+  |
+  v
+User opens link
+  |
+  v
+If logged out: user signs up/logs in
+  |
+  v
+User accepts invite
+  |
+  v
+Membership is created
+```
+
+Example invite link:
+
+```text
+https://app.example.com/invite/abc123securetoken
+```
+
+Similar to Discord-style invites, but with stricter financial-data security.
+
+Invite fields:
+
+* `id`
+* `household_id`
+* `email` nullable
+* `token_hash`
+* `role`
+* `created_by_user_id`
+* `expires_at`
+* `max_uses`
+* `used_count`
+* `revoked_at`
+* `created_at`
+* `accepted_at`
+
+Security rules:
+
+* Store only hashed invite tokens.
+* Invite links expire.
+* Owner/Admin can revoke invites.
+* Optional email-restricted invites.
+* Audit every invite created, accepted, revoked, or expired.
+* Never expose household data before invite acceptance.
+
+---
+
+### 5.4 Active Household Selection
+
+Because a user can belong to multiple households, the app needs an active household selector.
+
+Rules:
+
+* User has one active household at a time.
+* Dashboard, expenses, reports, categories, uploads, and OCR all use the active household.
+* The active household can be stored in:
+
+  * session metadata, or
+  * user preference, or
+  * signed cookie
+
+Required UI:
+
+* Current household name visible in the sidebar/topbar
+* Household switcher dropdown
+* “Create household” button if allowed
+* “Manage household” page for owners/admins
+
+No route should infer household only from the frontend.
+
+Backend must always verify membership.
+
+---
+
+## 6. Subscription-Ready Household Model
+
+Subscriptions should be attached to the household, not only the user.
+
+Reason:
+
+* A household may have multiple members.
+* Billing should unlock features for the whole household.
+* The owner pays, members use.
+
+Future plan examples:
+
+| Plan     | Households | Members | OCR scans/month | Reports      | Storage |
+| -------- | ---------: | ------: | --------------: | ------------ | ------- |
+| Free     |          1 |       2 |              25 | Basic        | Low     |
+| Basic    |          1 |       3 |             100 | Basic        | Medium  |
+| Pro      |          3 |      10 |             500 | Advanced     | Higher  |
+| Business |     Custom |  Custom |          Custom | Advanced/API | Custom  |
+
+Subscription checks should eventually control:
+
+* Number of households
+* Members per household
+* OCR scans per month
+* Storage limit
+* Advanced reports
+* Export features
+* Multi-household support
+* Retention period
+* Priority processing
+
+Do not implement Stripe before the household, usage, and entitlement model is stable.
+
+---
+
+## 7. OCR Architecture
+
+### 7.1 OCR Goals
+
+The OCR system should support:
+
+* Receipts
+* Invoices
+* Images
+* PDFs
+* Better recognition accuracy
+* Structured extraction
+* Duplicate detection
+* User review before saving
+* Usage tracking for future plans
+
+OCR must be asynchronous.
+
+---
+
+### 7.2 OCR Providers
+
+Recommended provider order:
+
+```text
+1. Local basic extractor
+2. PaddleOCR worker
+3. invoice2data templates for recurring invoices
+4. Optional paid cloud OCR fallback later
+```
+
+Initial self-hosted stack:
+
+* PaddleOCR for image/PDF text extraction
+* OCRmyPDF/Tesseract as fallback where useful
+* invoice2data for known recurring invoice templates
+
+Paid cloud OCR should remain optional and only be added later for low-confidence scans or paid plans.
+
+---
+
+### 7.3 OCR Job Flow
+
+```text
+User uploads receipt/invoice
+  |
+  v
+Upload API validates file signature, size, and type
+  |
+  v
+File saved privately
+  |
+  v
+document_files row created
+  |
+  v
+ocr_jobs row created with status = queued
+  |
+  v
+Background worker picks job
+  |
+  v
+Worker runs OCR provider
+  |
+  v
+Worker stores raw OCR result
+  |
+  v
+Worker normalizes fields
+  |
+  v
+Worker calculates confidence score
+  |
+  v
+Worker checks for possible duplicates
+  |
+  v
+ocr_results row saved
+  |
+  v
+User reviews extracted data
+  |
+  v
+User confirms/edits
+  |
+  v
+Expense is created or updated
+```
+
+---
+
+### 7.4 OCR Job Statuses
+
+```text
+uploaded
+queued
+processing
+needs_review
+completed
+failed
+cancelled
+```
+
+Meaning:
+
+* `uploaded`: file is saved but OCR has not started
+* `queued`: job is waiting for the worker
+* `processing`: worker is currently processing
+* `needs_review`: OCR finished and user must confirm/edit
+* `completed`: user confirmed and linked result to expense
+* `failed`: OCR failed
+* `cancelled`: user/system cancelled job
+
+---
+
+### 7.5 OCR Concurrency
+
+For the current server:
+
+```text
+OCR_CONCURRENCY=1
+OCR_MAX_FILE_SIZE_MB=10
+OCR_MAX_PAGES=3
+OCR_JOB_TIMEOUT_SECONDS=120
+```
+
+Why:
+
+* OCR is CPU-heavy.
+* The server has limited CPU/RAM.
+* The web app must remain responsive.
+* Users can wait for OCR, but the app should not crash.
+
+Future scaling:
+
+```text
+If CPU/RAM usage is acceptable:
+  OCR_CONCURRENCY=2
+
+If OCR demand grows:
+  Move OCR worker to another machine
+
+If accuracy/speed becomes critical:
+  Add paid cloud OCR fallback for paid plans
+```
+
+---
+
+### 7.6 OCR Result Fields
+
+Normalized result:
 
 ```json
 {
-  "data": {},
-  "meta": {}
-}
-```
-
-- Response envelope on error:
-
-```json
-{
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "Request validation failed",
-    "fieldErrors": {
-      "email": ["Email is required"]
+  "documentType": "receipt",
+  "vendorName": "Example Store",
+  "invoiceNumber": "INV-123",
+  "invoiceDate": "2026-06-06",
+  "dueDate": null,
+  "subtotal": "100.00",
+  "tax": "12.00",
+  "total": "112.00",
+  "currency": "CAD",
+  "lineItems": [
+    {
+      "description": "Item name",
+      "quantity": "1",
+      "unitPrice": "100.00",
+      "total": "100.00"
     }
-  }
+  ],
+  "confidence": 0.91,
+  "warnings": []
 }
 ```
 
-- Auth: secure HTTP-only cookie session
-- Pagination defaults:
-  - `page=1`
-  - `pageSize=20`
-  - max `pageSize=100`
-
-### Additional recommended endpoints for enforced workflow
-
-These are required even though they were not in the minimum list:
-
-- `POST /api/expense-drafts`
-- `GET /api/expense-drafts/:id`
-- `POST /api/expense-drafts/:id/upload`
-- `POST /api/expense-drafts/:id/reprocess`
-- `DELETE /api/expense-drafts/:id`
-- `GET /api/expenses/:id/file`
-
-### Authentication endpoints
-
-#### POST /api/auth/login
-
-| Item | Details |
-| --- | --- |
-| Purpose | Authenticate with email and password and create a server-side session |
-| Request | `{ "email": "user@example.com", "password": "string" }` |
-| Response | `200` with user summary and session expiry |
-| Permissions | Public |
-| Validation | Valid email format, password required, rate limited, generic error on failure |
-
-#### POST /api/auth/logout
-
-| Item | Details |
-| --- | --- |
-| Purpose | Revoke current session and clear session cookie |
-| Request | No body |
-| Response | `200 { "data": { "success": true } }` |
-| Permissions | Authenticated user |
-| Validation | Current session must exist or be safely ignored |
-
-#### POST /api/auth/forgot-password
-
-| Item | Details |
-| --- | --- |
-| Purpose | Start self-service password reset when SMTP is configured |
-| Request | `{ "email": "user@example.com" }` |
-| Response | Always `200 { "data": { "message": "If the account exists, reset instructions have been sent." } }` |
-| Permissions | Public |
-| Validation | Valid email format, generic response to prevent enumeration, rate limited per IP and email |
-
-#### POST /api/auth/reset-password
-
-| Item | Details |
-| --- | --- |
-| Purpose | Complete password reset with token |
-| Request | `{ "token": "raw-token", "newPassword": "string" }` |
-| Response | `200 { "data": { "success": true } }` |
-| Permissions | Public |
-| Validation | Token must be valid, unused, unexpired; password must meet policy |
-
-### Category endpoints
-
-#### GET /api/categories
-
-| Item | Details |
-| --- | --- |
-| Purpose | List categories in display order |
-| Request | Optional query: `includeDisabled=true` for admin |
-| Response | Ordered category list |
-| Permissions | Authenticated user; only admins can include disabled categories |
-| Validation | Non-admins cannot request disabled categories for creation flow |
-
-#### POST /api/categories
-
-| Item | Details |
-| --- | --- |
-| Purpose | Create a category |
-| Request | `{ "name": "Groceries", "sortOrder": 3 }` |
-| Response | Created category |
-| Permissions | Admin only |
-| Validation | Unique name, trimmed length, sort order >= 0 |
-
-#### PUT /api/categories/:id
-
-| Item | Details |
-| --- | --- |
-| Purpose | Rename or reorder a category |
-| Request | `{ "name": "Household", "sortOrder": 5 }` |
-| Response | Updated category |
-| Permissions | Admin only |
-| Validation | Unique name, valid category id, disabled category can still be renamed/reordered |
-
-#### PATCH /api/categories/:id/status
-
-| Item | Details |
-| --- | --- |
-| Purpose | Activate or disable a category |
-| Request | `{ "status": "ACTIVE" }` or `{ "status": "DISABLED" }` |
-| Response | Updated category status |
-| Permissions | Admin only |
-| Validation | Valid enum, category must exist |
-
-### User endpoints
-
-#### GET /api/users
-
-| Item | Details |
-| --- | --- |
-| Purpose | List users |
-| Request | Optional query: `status=active|inactive`, `page`, `pageSize` |
-| Response | Paginated user list |
-| Permissions | Admin only |
-| Validation | Pagination bounds enforced |
-
-#### POST /api/users
-
-| Item | Details |
-| --- | --- |
-| Purpose | Create a new user |
-| Request | `{ "name": "Alex", "email": "alex@example.com", "password": "string", "role": "USER" }` |
-| Response | Created user summary |
-| Permissions | Admin only |
-| Validation | Unique email, password policy, valid role |
-
-#### PUT /api/users/:id
-
-| Item | Details |
-| --- | --- |
-| Purpose | Update user profile or role |
-| Request | `{ "name": "Alex Smith", "role": "ADMIN", "isActive": true }` |
-| Response | Updated user summary |
-| Permissions | Admin only, except `/api/me` would be used for self-profile later |
-| Validation | Prevent deleting own last admin privileges without another admin present |
-
-### Draft workflow endpoints
-
-#### POST /api/expense-drafts
-
-| Item | Details |
-| --- | --- |
-| Purpose | Start the new expense workflow after category selection |
-| Request | `{ "categoryId": "uuid" }` |
-| Response | Draft id and next step URL |
-| Permissions | Authenticated user |
-| Validation | Category must exist and be `ACTIVE`, user must be allowed to use it |
-
-#### GET /api/expense-drafts/:id
-
-| Item | Details |
-| --- | --- |
-| Purpose | Read draft status and OCR results |
-| Request | No body |
-| Response | Draft status, extracted fields, confidence, errors |
-| Permissions | Draft owner or admin |
-| Validation | Draft must exist and not belong to another standard user |
-
-#### POST /api/expense-drafts/:id/upload
-
-| Item | Details |
-| --- | --- |
-| Purpose | Upload invoice file and queue OCR |
-| Request | `multipart/form-data` with file |
-| Response | Draft status `OCR_PROCESSING` and job id |
-| Permissions | Draft owner or admin |
-| Validation | Draft status must be `CATEGORY_SELECTED`; allowed types `image/jpeg`, `image/png`, `image/webp`, `application/pdf`; size limit enforced |
-
-#### POST /api/expense-drafts/:id/reprocess
-
-| Item | Details |
-| --- | --- |
-| Purpose | Retry OCR on the existing file |
-| Request | No body |
-| Response | New OCR job id |
-| Permissions | Draft owner or admin |
-| Validation | File must already exist for draft; retry cap enforced |
-
-#### DELETE /api/expense-drafts/:id
-
-| Item | Details |
-| --- | --- |
-| Purpose | Cancel draft and clean up temporary file |
-| Request | No body |
-| Response | `204 No Content` |
-| Permissions | Draft owner or admin |
-| Validation | Safe idempotent cleanup |
-
-### Expense endpoints
-
-#### GET /api/expenses
-
-| Item | Details |
-| --- | --- |
-| Purpose | Search and browse expenses |
-| Request | Query params: `invoiceNumber`, `date`, `fromDate`, `toDate`, `categoryId`, `userId`, `minAmount`, `maxAmount`, `sortBy`, `sortDir`, `page`, `pageSize` |
-| Response | Paginated expenses list with preview metadata |
-| Permissions | Users see own expenses; admins can filter by any user |
-| Validation | Date ranges must be valid; amount range must be sane; non-admin `userId` filter ignored unless self |
-
-#### GET /api/expenses/:id
-
-| Item | Details |
-| --- | --- |
-| Purpose | Get expense detail |
-| Request | No body |
-| Response | Expense detail plus file preview URL |
-| Permissions | Owner or admin |
-| Validation | Expense must exist and not be soft-deleted |
-
-#### POST /api/expenses
-
-| Item | Details |
-| --- | --- |
-| Purpose | Save final reviewed expense from a completed draft |
-| Request | `{ "draftId": "uuid", "invoiceNumber": "INV-1002", "invoiceDate": "2026-04-22", "amount": 54.90 }` |
-| Response | Created expense |
-| Permissions | Draft owner or admin |
-| Validation | Draft must belong to caller, have uploaded file, have completed OCR or manual review state, all required fields valid |
-
-#### PUT /api/expenses/:id
-
-| Item | Details |
-| --- | --- |
-| Purpose | Edit an existing expense |
-| Request | `{ "categoryId": "uuid", "invoiceNumber": "INV-1002", "invoiceDate": "2026-04-22", "amount": 49.90 }` |
-| Response | Updated expense |
-| Permissions | Owner or admin |
-| Validation | Category must exist; amount >= 0; invoice number required; invoice date valid |
-
-#### DELETE /api/expenses/:id
-
-| Item | Details |
-| --- | --- |
-| Purpose | Soft delete an expense |
-| Request | No body |
-| Response | `204 No Content` |
-| Permissions | Owner or admin, depending on final policy |
-| Validation | Already deleted expense returns idempotent success |
-
-#### GET /api/expenses/:id/file
-
-| Item | Details |
-| --- | --- |
-| Purpose | Stream invoice file securely for preview/download |
-| Request | No body |
-| Response | File stream with correct content type |
-| Permissions | Owner or admin |
-| Validation | Resolve file path from DB only, never accept arbitrary path input |
-
-### Report endpoints
-
-#### GET /api/reports/summary
-
-| Item | Details |
-| --- | --- |
-| Purpose | Total expenses in a date range |
-| Request | Query: `fromDate`, `toDate`, optional `userId` |
-| Response | `{ "total": 1234.56, "count": 27 }` |
-| Permissions | User for own data, admin for all or selected user |
-| Validation | Valid date range, user scope enforced |
-
-#### GET /api/reports/by-category
-
-| Item | Details |
-| --- | --- |
-| Purpose | Totals grouped by category |
-| Request | Query: `fromDate`, `toDate`, optional `userId` |
-| Response | Array of category totals |
-| Permissions | Same as summary |
-| Validation | Same as summary |
-
-#### GET /api/reports/by-user
-
-| Item | Details |
-| --- | --- |
-| Purpose | Totals grouped by user |
-| Request | Query: `fromDate`, `toDate` |
-| Response | Array of user totals |
-| Permissions | Admin only |
-| Validation | Valid date range |
-
-#### GET /api/reports/monthly
-
-| Item | Details |
-| --- | --- |
-| Purpose | Totals grouped by month |
-| Request | Query: `fromDate`, `toDate`, optional `userId` |
-| Response | Array like `{ "month": "2026-04", "total": 560.00 }` |
-| Permissions | Same as summary |
-| Validation | Range should be bounded, such as max 24 months for MVP |
-
-## 9. OCR and AI workflow
-
-### MVP local-first recommendation
-
-Use this stack first:
-
-- `PaddleOCR` as the primary OCR engine
-- `FastAPI` as the OCR worker HTTP interface
-- Postgres-backed OCR jobs
-- Rule-based field extraction over OCR text
-
-### Why PaddleOCR is the right MVP choice
-
-- Better local document OCR capability than a browser-only OCR approach
-- Supports local image and PDF inputs
-- Easier to run on a self-hosted CPU-only box than building a cloud-first document AI dependency into the MVP
-
-### Why not use Tesseract as the primary provider
-
-Tesseract is still useful, but it is not the best primary choice here:
-
-- it is strongest with image files, not direct PDF handling
-- invoices and receipts often need stronger layout handling than plain OCR alone
-
-### OCR pipeline
-
-1. User uploads image or PDF to a draft.
-2. API validates file size, type, and ownership.
-3. File is written to a temporary draft path.
-4. API creates an `ocr_job`.
-5. OCR worker picks the job.
-6. Worker preprocesses the file:
-   - normalize orientation
-   - optional deskew
-   - optional resize for OCR
-7. Worker runs OCR.
-8. Worker extracts candidate fields:
-   - invoice number
-   - invoice date
-   - total amount
-9. Worker assigns confidence per field.
-10. Worker stores raw OCR text and structured extraction.
-11. Draft becomes `REVIEW_READY`.
-12. UI shows extracted values and allows edits.
-13. Final save only happens after explicit user approval.
-
-### Field extraction logic
-
-Use deterministic extraction rules first:
-
-- Invoice number:
-  - look for labels such as `invoice`, `invoice no`, `invoice #`, `receipt`, `receipt #`
-  - fall back to strong alphanumeric candidates near these labels
-- Invoice date:
-  - parse candidates near `date`, `invoice date`, `issued`
-  - choose the highest-confidence valid date not in the future beyond a small tolerance
-- Total amount:
-  - prioritize labels such as `total`, `grand total`, `amount due`, `invoice total`
-  - avoid subtotal and tax when a better total exists
-
-### Confidence model
-
-Store confidence per field in `field_confidence`, for example:
-
-```json
-{
-  "invoiceNumber": 0.87,
-  "invoiceDate": 0.71,
-  "amount": 0.94
-}
-```
-
-Recommended thresholds:
-
-- `>= 0.85`: high confidence, green indicator
-- `0.60 - 0.84`: medium confidence, amber indicator
-- `< 0.60`: low confidence, red indicator and focus user attention
-
-### OCR failure handling
-
-If OCR fails:
-
-- keep the draft alive
-- show the original file preview
-- allow manual entry of all required fields
-- log failure reason in `ocr_jobs` and `expense_drafts.last_error`
-
-### Future OCR upgrade options
-
-Keep the OCR boundary behind an interface like:
-
-```ts
-interface OcrProvider {
-  process(input: {
-    filePath: string;
-    mimeType: string;
-  }): Promise<{
-    rawText: string;
-    invoiceNumber?: string;
-    invoiceDate?: string;
-    amount?: number;
-    confidence: Record<string, number>;
-    rawPayload: unknown;
-  }>;
-}
-```
-
-Future providers:
-
-- `Tesseract/OCRmyPDF` for searchable PDF archival and fallback OCR
-- `Amazon Textract` for expense-specific extraction
-- `Google Document AI` for invoice-focused extraction
-- `Azure AI Document Intelligence` for structured invoice/receipt parsing
-- local LLM-assisted post-processing later if needed
-
-## 10. Validation rules
-
-### Authentication
-
-- Email:
-  - required
-  - lowercase before save
-  - max 320 chars
-- Password:
-  - minimum 12 chars
-  - allow long passphrases
-  - no silent truncation
-
-### Categories
-
-- Name required
-- Trimmed length 2-80
-- Unique case-insensitive
-- `sortOrder` integer >= 0
-
-### File upload
-
-- Allowed MIME types:
-  - `image/jpeg`
-  - `image/png`
-  - `image/webp`
-  - `application/pdf`
-- Max upload size for MVP: `15 MB`
-- One file per expense draft
-- Reject double extensions and suspicious filenames
-
-### Expense review and save
-
-- `draftId` required
-- `invoiceNumber` required after review
-- `invoiceDate` required and must be valid
-- `amount` required and must be `>= 0`
-- `categoryId` must match an active or historically valid category
-
-### Search and reports
-
-- `fromDate <= toDate`
-- `minAmount <= maxAmount`
-- `page >= 1`
-- `1 <= pageSize <= 100`
-- `sortBy` restricted to whitelist:
-  - `invoiceDate`
-  - `createdAt`
-  - `amount`
-  - `invoiceNumber`
-
-## 11. Security considerations
-
-### Authentication security
-
-- Hash passwords with `Argon2id`
-- Store only hashed session tokens in the database
-- Use HTTP-only, Secure, SameSite=Lax cookies
-- Rotate session tokens on login and password reset
-- Expire idle sessions
-- Support forced logout by session revocation
-
-### Authorization
-
-- Enforce owner-or-admin checks in service layer, not just UI
-- Never trust `userId` coming from the client for standard users
-- Keep all report endpoints permission-scoped
-
-### File upload safety
-
-- Validate extension, MIME type, and file signature
-- Rename files to generated server names
-- Store files outside public web root
-- Serve files only through authenticated route handlers
-- Cap file size and reject oversized uploads early
-- Optionally run antivirus scan if available on the host
-
-### Storage safety
-
-- Store final invoices under deterministic generated paths, for example:
+Important:
+
+> OCR output is a suggestion, not the final financial record.
+
+The user must review and confirm before saving.
+
+---
+
+### 7.7 Duplicate Detection
+
+Warn the user if the household already has a similar expense.
+
+Duplicate signals:
+
+* Same file hash
+* Same invoice number
+* Same vendor
+* Same date
+* Same amount
+* Same category
+* Similar OCR text fingerprint
+
+Duplicate result should be a warning, not an automatic block.
+
+---
+
+### 7.8 OCR Usage Tracking
+
+Track OCR usage per household.
+
+Usage counters:
+
+* uploads
+* OCR attempts
+* successful OCR scans
+* failed OCR scans
+* pages processed
+* storage used
+* paid fallback scans later
+
+This prepares the app for subscription plans without adding billing too early.
+
+---
+
+## 8. Reports Architecture
+
+Reports must be accurate before they are pretty.
+
+Required reports:
+
+* Today
+* This week
+* This month
+* This year
+* Custom date range
+* Category breakdown
+* Expense count
+* Total amount
+* Average expense
+* Recent invoices/receipts
+* Export later
+
+All reports must:
+
+* Use active household
+* Exclude soft-deleted expenses
+* Respect role permissions
+* Match dashboard totals
+* Use server-side database queries
+* Avoid loading all records at once
+* Paginate invoice/receipt lists
+
+Report periods:
 
 ```text
-/var/lib/myfamilyexpenses/invoices/2026/04/<expense-id>.pdf
+daily: invoice_date = selected date
+weekly: start of week to end of week
+monthly: first day to last day of month
+yearly: Jan 1 to Dec 31
+custom: selected start/end dates
 ```
 
-- Keep temporary drafts in a separate temp path
-- Never use user-supplied filenames as storage paths
-- Restrict directory permissions to the app user only
+Dashboard should show:
 
-### Web security
+* Today total
+* This week total
+* This month total
+* This year total
+* All-time total
+* Recent expenses
+* Current household name
 
-- Enable CSRF protection on state-changing requests
-- Add `Content-Security-Policy`
-- Add `X-Frame-Options: DENY`
-- Add `X-Content-Type-Options: nosniff`
-- Add `Referrer-Policy: strict-origin-when-cross-origin`
-- Add strict `Cache-Control: no-store` on authenticated sensitive responses where appropriate
+---
 
-### Rate limiting
+## 9. Category Management
 
-Recommended starting limits:
+Categories are household-owned.
 
-- login: `5 attempts / 15 minutes / IP + email`
-- forgot password: `3 requests / hour / email`
-- uploads: `30 requests / hour / user`
-- reports: `60 requests / hour / user`
+Rules:
 
-### Password reset
+* Categories belong to one household.
+* Categories can be edited by OWNER/ADMIN.
+* Categories can be disabled/archived.
+* Disabled categories cannot be selected for new expenses.
+* Existing expenses using disabled categories must still display correctly.
+* Existing expenses can retain a disabled category while editing other fields.
+* Categories with expenses should not be hard-deleted.
+* Categories with no expenses may be deleted if safe.
 
-- Use single-use random reset tokens
-- Store only token hashes
-- Expire tokens in 30-60 minutes
-- Return identical responses for existing and non-existing emails
+Recommended fields:
 
-### Auditability
+* `id`
+* `household_id`
+* `name`
+* `description`
+* `color`
+* `icon`
+* `sort_order`
+* `is_active`
+* `archived_at`
+* `created_at`
+* `updated_at`
 
-Write audit logs for:
+Audit events:
 
-- login success/failure
-- logout
-- password reset request/complete
-- user create/update/disable
-- category create/update/status change
-- expense create/update/delete
+* category.created
+* category.updated
+* category.disabled
+* category.enabled
+* category.deleted
 
-### Backup and restore
+---
 
-- Back up the database and invoice files separately
-- Test restore monthly
-- Keep at least one offline or external backup copy
+## 10. Audit Logging
 
-## 12. MVP scope vs future enhancements
+Audit logs are required for trust and debugging.
 
-### MVP scope
+Track:
 
-- Local accounts with admin and user roles
-- Category management
-- Category-first expense capture flow
-- Image/PDF upload
-- Local OCR extraction for invoice number, date, and total
-- Manual review before save
-- Expense history with filtering, sorting, pagination
-- Dashboard summaries
-- Reports by date, category, user, and month
-- Self-hosted deployment with local storage
+* login
+* logout
+* signup
+* household created
+* household updated
+* invite created
+* invite accepted
+* invite revoked
+* member added
+* member removed
+* role changed
+* category created/updated/disabled/deleted
+* expense created/updated/deleted
+* document uploaded
+* OCR queued/started/completed/failed
+* report exported later
+* subscription changed later
 
-### Post-MVP enhancements
+Do not store:
 
-- Email delivery for self-service password reset if not enabled initially
-- OCR retry tuning and vendor-specific extraction rules
-- CSV export and scheduled backup reminders
-- Receipt line-item extraction
-- Multi-currency support
-- Budgeting and alerts
-- MFA for admin accounts
-- Object storage support
-- External document AI provider support
-- Mobile PWA features and offline draft capture
+* passwords
+* raw tokens
+* full secrets
+* full OCR document text if sensitive
+* payment card details
 
-## 13. Reference notes
+Audit logs should include:
 
-These sources directly informed the self-hosting and OCR recommendations:
+* `household_id`
+* `user_id`
+* `action`
+* `entity_type`
+* `entity_id`
+* `metadata`
+* `ip_address` if available
+* `user_agent` if available
+* `created_at`
 
-- Next.js self-hosting guide: [nextjs.org/docs/pages/guides/self-hosting](https://nextjs.org/docs/pages/guides/self-hosting)
-- Prisma PostgreSQL support: [docs.prisma.io/docs/orm/core-concepts/supported-databases/postgresql](https://docs.prisma.io/docs/orm/core-concepts/supported-databases/postgresql)
-- Caddy automatic HTTPS: [caddyserver.com/docs/automatic-https](https://caddyserver.com/docs/automatic-https)
-- PaddleOCR installation: [paddleocr.ai/main/en/version3.x/installation.html](https://www.paddleocr.ai/main/en/version3.x/installation.html)
-- PaddleOCR text detection and input support: [paddleocr.ai/main/en/version3.x/module_usage/text_detection.html](https://www.paddleocr.ai/main/en/version3.x/module_usage/text_detection.html)
-- Tesseract project documentation: [github.com/tesseract-ocr/tesseract](https://github.com/tesseract-ocr/tesseract)
-- PostgreSQL backup guidance: [postgresql.org/docs/17/backup-dump.html](https://www.postgresql.org/docs/17/backup-dump.html) and [postgresql.org/docs/current/app-pgdump.html](https://www.postgresql.org/docs/current/app-pgdump.html)
-- OWASP password storage: [cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)
-- OWASP session management: [cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)
-- OWASP file upload: [cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html](https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html)
-- OWASP forgot password: [cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html](https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html)
+---
+
+## 11. UI Architecture
+
+The app should avoid generic “AI slop” UI.
+
+Use a real design system.
+
+Recommended UI stack:
+
+* shadcn/ui
+* Radix UI primitives
+* Tailwind CSS
+* Lucide icons
+* React Hook Form
+* Zod validation
+* TanStack Table for larger tables later
+* Sonner for toast notifications
+* Recharts only when reports need charts
+
+Design rules:
+
+* Clean financial dashboard
+* Strong spacing
+* Consistent cards
+* Clear table layout
+* Clear empty states
+* Clear loading states
+* Clear error states
+* No random gradients everywhere
+* No oversized AI-style hero cards inside the app
+* Use professional accounting/finance layout
+* Make totals easy to read
+* Make household selector always visible
+* Make destructive actions confirm clearly
+
+Core UI components to standardize:
+
+* Button
+* Input
+* Select
+* Dialog
+* Dropdown Menu
+* Tabs
+* Card
+* Table
+* Badge
+* Alert
+* Toast
+* Form
+* Date Picker
+* Pagination
+* Sidebar
+* Breadcrumb
+* Sheet/Drawer
+* Skeleton loading state
+
+Main app layout:
+
+```text
+Sidebar
+  - Dashboard
+  - Expenses
+  - Reports
+  - Categories
+  - Documents/OCR
+  - Household
+  - Settings
+
+Topbar
+  - Active household switcher
+  - User menu
+  - Notifications/status
+
+Content
+  - Page title
+  - Page actions
+  - Filters
+  - Main content
+```
+
+---
+
+## 12. Security Rules
+
+Required security rules:
+
+* Every household-owned query must filter by `household_id`.
+* Every mutation must verify membership and role.
+* Never trust household ID from frontend alone.
+* CSRF protection on mutating requests.
+* Upload file signature validation.
+* File size limits.
+* Private file storage.
+* Authenticated file preview/download routes.
+* Same-origin PDF preview only.
+* Audit important actions.
+* Rate-limit login, signup, upload, and OCR requests.
+* No public database ports.
+* No hardcoded secrets.
+* No raw secrets in logs.
+
+---
+
+## 13. Deployment Architecture
+
+Current deployment:
+
+```text
+Docker Compose
+  |
+  |-- app: Next.js app
+  |-- db: PostgreSQL
+  |-- future ocr-worker: Python PaddleOCR worker
+```
+
+Future docker services:
+
+```yaml
+services:
+  app:
+    build: .
+    depends_on:
+      - db
+
+  db:
+    image: postgres:17
+
+  ocr-worker:
+    build:
+      context: ./workers/ocr
+    depends_on:
+      - db
+    environment:
+      OCR_CONCURRENCY: "1"
+      OCR_MAX_FILE_SIZE_MB: "10"
+      OCR_MAX_PAGES: "3"
+```
+
+Production rules:
+
+* App exposed only through local port / reverse proxy
+* Database exposed only on localhost if needed for admin tools
+* OCR worker not exposed publicly
+* Backups run daily
+* File storage backed up
+* Migrations applied using `prisma migrate deploy`
+* Never use `prisma migrate dev` in production
+
+---
+
+## 14. Backup Strategy
+
+Back up:
+
+1. PostgreSQL database
+2. Uploaded receipt/invoice files
+3. Environment files
+4. Docker compose files
+5. Nginx/Cloudflare configuration
+
+Minimum backup schedule:
+
+```text
+Database: daily
+Uploaded files: daily or incremental
+Config files: after every change
+Retention: 30 daily backups minimum
+```
+
+Before every production deployment:
+
+```text
+1. Create manual DB backup
+2. Pull code
+3. Build image
+4. Check migration status
+5. Apply migrations
+6. Restart app
+7. Smoke test
+```
+
+---
+
+## 15. Scaling Plan
+
+### Current Server Safe Limits
+
+Initial limits:
+
+```text
+OCR concurrency: 1
+Max upload size: 10 MB
+Max pages per document: 3
+Max OCR jobs per household per day: plan-dependent later
+Max report page size: 50 rows
+```
+
+### When Usage Grows
+
+If web app is slow:
+
+* Add app-level caching carefully
+* Optimize database queries
+* Add indexes
+* Move OCR worker away from app server
+
+If OCR is slow:
+
+* Keep OCR queued
+* Add a second worker only if CPU/RAM allows
+* Move OCR to a dedicated machine
+* Add paid cloud OCR fallback
+
+If storage grows:
+
+* Add 1–2 TB storage
+* Move files to object storage
+* Add retention policies
+
+---
+
+## 16. Roadmap
+
+### Phase 1: Security and Financial Correctness
+
+* CSRF protection
+* Secure upload validation
+* Soft delete expenses
+* Audit log foundation
+* Expense edit/delete
+* Dashboard/report totals correctness
+
+### Phase 2: Reports and Category Management
+
+* Daily/weekly/monthly/yearly/custom reports
+* Category breakdown
+* Invoice/receipt list
+* Category edit/disable/delete
+* Dashboard all-time/year/month/week/today totals
+
+### Phase 3: Multi-Household Foundation
+
+* Active household selector
+* Invite-only household access
+* Household member management
+* Role enforcement
+* Household-scoped reports and OCR
+* Audit household/member actions
+
+### Phase 4: OCR v2 Foundation
+
+* document_files table
+* ocr_jobs table
+* ocr_results table
+* Background OCR worker
+* PaddleOCR local provider
+* Fallback OCR provider
+* OCR result review UI
+* Duplicate detection
+* Confidence scoring
+
+### Phase 5: Usage Limits and Entitlements
+
+* usage_counters table
+* plan placeholder table
+* feature gates
+* household limits
+* OCR monthly limits
+* storage limits
+
+### Phase 6: Subscription Billing
+
+* Stripe or other billing provider
+* Checkout
+* Customer portal
+* Webhooks
+* Subscription state
+* Trial handling
+* Upgrade/downgrade behavior
+
+### Phase 7: Production Hardening
+
+* Monitoring
+* Error tracking
+* Health checks
+* Backup verification
+* Docker hardening
+* Storage expansion
+* Admin tools
+
+---
+
+## 17. Engineering Rules
+
+Do not build features randomly.
+
+Every new feature must answer:
+
+1. Is it household-scoped?
+2. Does it respect role permissions?
+3. Does it need audit logging?
+4. Does it affect reports?
+5. Does it affect billing/usage later?
+6. Does it need tests?
+7. Does it work for multiple households?
+8. Does it keep the app fast on the current server?
+
+No feature should be considered complete until it has:
+
+* Database migration if needed
+* Server-side validation
+* Tenant isolation
+* Role checks
+* Tests
+* Basic UI state
+* Error state
+* Audit log where needed
+* Smoke test checklist
+
+---
+
+## 18. Current Priorities
+
+Immediate next priorities:
+
+```text
+1. Fix dashboard/report totals
+2. Add reports page
+3. Add category edit/disable/delete
+4. Review and improve household/membership model
+5. Add active household switcher
+6. Add invite-only household joining
+7. Add OCR job/result foundation
+8. Add PaddleOCR worker
+9. Add usage counters
+10. Add subscription plans later
+```
+
+Do not add billing before the household and usage model is stable.

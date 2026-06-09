@@ -21,6 +21,7 @@ export async function savePendingSignup(input: {
   name: string;
   passwordHash: string;
   token: string;
+  inviteTokenHash?: string | null;
 }) {
   return prisma.pendingSignup.upsert({
     where: { email: input.email },
@@ -28,6 +29,7 @@ export async function savePendingSignup(input: {
       name: input.name,
       passwordHash: input.passwordHash,
       verificationTokenHash: hashSignupVerificationToken(input.token),
+      inviteTokenHash: input.inviteTokenHash ?? null,
       expiresAt: getSignupVerificationExpiry(),
     },
     create: {
@@ -35,6 +37,7 @@ export async function savePendingSignup(input: {
       name: input.name,
       passwordHash: input.passwordHash,
       verificationTokenHash: hashSignupVerificationToken(input.token),
+      inviteTokenHash: input.inviteTokenHash ?? null,
       expiresAt: getSignupVerificationExpiry(),
     },
   });

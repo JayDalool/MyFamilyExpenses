@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { getCurrentHousehold, hasHouseholdRole } from "@/lib/auth/session";
+import { getCurrentHousehold } from "@/lib/auth/session";
+import { canManageCategories } from "@/lib/auth/permissions";
 import { updateCategorySchema } from "@/lib/validation/category";
 import { writeAuditLog } from "@/lib/audit";
 import {
@@ -28,7 +29,7 @@ async function requireCategoryAdmin() {
     };
   }
 
-  if (!hasHouseholdRole(auth, ["OWNER", "ADMIN"])) {
+  if (!canManageCategories(auth)) {
     return {
       auth: null,
       response: NextResponse.json(

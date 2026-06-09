@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { extractClientIp } from "../lib/rate-limit";
+import { getInviteActorKeys } from "../lib/invite-rate-limit";
 
 function makeRequest(headers: Record<string, string>): Request {
   return new Request("http://localhost/", { headers });
@@ -42,4 +43,19 @@ test("extractClientIp returns null when no headers present and TRUST_PROXY_HEADE
 
   const req = makeRequest({});
   assert.equal(extractClientIp(req), null);
+});
+
+test("invite actor keys isolate anonymous users by request fingerprint", () => {
+  assert.deepEqual(getInviteActorKeys({}), []);
+  assert.deepEqual(getInviteActorKeys({ fingerprint: "csrf-token" }), [
+    "fingerprint:csrf-token",
+  ]);
+  assert.notDeepEqual(
+    getInviteActorKeys({ fingerprint: "browser-one" }),
+    getInviteActorKeys({ fingerprint: "browser-two" }),
+  );
+  assert.deepEqual(getInviteActorKeys({ userId: "user-1", fingerprint: "csrf-token" }).sort(), [
+    "fingerprint:csrf-token",
+    "user:user-1",
+  ]);
 });

@@ -11,6 +11,7 @@ import {
   isPreviewableImage,
 } from "@/lib/expense-files";
 import { formatCurrency } from "@/lib/utils";
+import { canManageExpense } from "@/lib/auth/permissions";
 
 type ExpenseDetailsPageProps = {
   params: Promise<{
@@ -41,6 +42,7 @@ export default async function ExpenseDetailsPage({
   const previewUrl = `/api/expenses/${expense.id}/file`;
   const downloadUrl = `${previewUrl}?download=1`;
   const mimeType = getStoredExpenseMimeType(expense.filePath);
+  const canManage = canManageExpense(auth, expense.userId);
 
   return (
     <AppShell auth={auth}>
@@ -132,16 +134,18 @@ export default async function ExpenseDetailsPage({
               </div>
             </section>
 
-            <ExpenseActions
-              categories={categories}
-              expense={{
-                id: expense.id,
-                categoryId: expense.categoryId,
-                invoiceNumber: expense.invoiceNumber,
-                invoiceDate: expense.invoiceDate.toISOString().slice(0, 10),
-                amount: expense.amount.toString(),
-              }}
-            />
+            {canManage ? (
+              <ExpenseActions
+                categories={categories}
+                expense={{
+                  id: expense.id,
+                  categoryId: expense.categoryId,
+                  invoiceNumber: expense.invoiceNumber,
+                  invoiceDate: expense.invoiceDate.toISOString().slice(0, 10),
+                  amount: expense.amount.toString(),
+                }}
+              />
+            ) : null}
           </div>
 
           <section className="rounded-3xl bg-white p-6 shadow-soft">

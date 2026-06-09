@@ -5,6 +5,7 @@ import { extractInvoiceData, isOcrProviderError } from "@/lib/ocr/ocr.service";
 import { detectExpenseUploadMimeType, validateExpenseUploadFile } from "@/lib/uploads";
 import { extractExpenseSchema } from "@/lib/validation/expense";
 import { writeAuditLog } from "@/lib/audit";
+import { canCreateExpense } from "@/lib/auth/permissions";
 
 export async function POST(request: Request) {
   const auth = await getCurrentHousehold();
@@ -13,6 +14,13 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: { message: "Authentication required." } },
       { status: 401 },
+    );
+  }
+
+  if (!canCreateExpense(auth)) {
+    return NextResponse.json(
+      { error: { message: "Your household role cannot upload receipts." } },
+      { status: 403 },
     );
   }
 

@@ -111,20 +111,40 @@ If you use Windows + WSL2, use the Linux path inside WSL, not a Windows-mounted 
 | `OCR_TIMEOUT_MS` | OCR request timeout | `45000` |
 | `RATE_LIMIT_LOGIN_PER_15M` | Login rate limit | `5` |
 | `RATE_LIMIT_UPLOADS_PER_HOUR` | Upload rate limit | `30` |
-| `SMTP_ENABLED` | Enable self-service password reset | `false` |
+| `SMTP_ENABLED` | Enable signup verification + self-service password reset emails | `false` |
 | `SMTP_HOST` | SMTP host | `smtp.example.com` |
 | `SMTP_PORT` | SMTP port | `587` |
+| `SMTP_SECURE` | Use TLS on connect (set true for port 465) | `false` |
 | `SMTP_USER` | SMTP username | `mailer@example.com` |
 | `SMTP_PASSWORD` | SMTP password | secret |
 | `SMTP_FROM` | Sender address | `noreply@example.com` |
+| `DEV_SHOW_VERIFICATION_LINKS` | Return signup verification and password reset URLs in API responses (development only, ignored in production) | `false` |
 | `LOG_LEVEL` | App log verbosity | `info` |
 
 ### Important deployment note
 
 If `SMTP_ENABLED=false`:
 
-- hide the public forgot-password flow
-- keep admin reset available
+- the public signup verification flow fails closed in production (signup
+  returns 503 because the operator cannot send the verification email)
+- the public forgot-password flow ALWAYS returns the same generic 202 body
+  (`"If an account exists for that email, a password reset link has been
+  sent."`) — even when SMTP is unavailable. This is intentional: returning a
+  503 only when SMTP is broken AND the email is recognised would leak account
+  existence to an attacker probing the endpoint. The operator-visible failure
+  is recorded via `console.error` and an `auth.password_reset.email_unavailable`
+  audit-log entry. Configure SMTP in production so reset emails are actually
+  delivered.
+- keep admin reset available via direct DB operations
+
+If `SMTP_ENABLED=true`:
+
+- password reset tokens are valid for 30 minutes and are single-use
+- raw reset tokens are never stored in the database or written to logs
+- reset URLs are never logged in production; only the SHA-256 hash of the
+  token appears in audit logs
+- successful password resets invalidate every active session for that user,
+  so the user is forced to sign in again with the new password
 
 ## 6. Docker Compose blueprint
 
@@ -461,3 +481,28 @@ the migration path stays straightforward.
 - PostgreSQL SQL dump and pg_dump guidance: [postgresql.org/docs/17/backup-dump.html](https://www.postgresql.org/docs/17/backup-dump.html) and [postgresql.org/docs/current/app-pgdump.html](https://www.postgresql.org/docs/current/app-pgdump.html)
 - OWASP session management: [cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)
 - OWASP file upload: [cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html](https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html)
+
+## Invite rate-limit maintenance
+
+Required before production: schedule `npm run maintenance:invite-rate-limits`
+to run daily. It removes database-backed invite limiter rows older than the
+safe retention window. Do not deploy Phase 3 without this recurring cleanup
+being scheduled and monitored.
+
+## Password reset maintenance
+
+Required before production: schedule both of the following daily.
+
+- `npm run maintenance:password-reset-rate-limits` — drops rows in
+  `password_reset_rate_limit_attempts` past their 7-day retention. The table
+  is append-only during operation; cleanup keeps it bounded and the
+  windowed-count queries fast.
+- `npm run maintenance:password-reset-tokens` — drops rows in
+  `password_reset_tokens` whose `expires_at` or `used_at` is past the 7-day
+  retention window. Used tokens stay around briefly for forensic correlation
+  (each row's `requested_ip_hash` / `requested_user_agent_hash` confirms which
+  session burned the link), then are dropped. Never affects active tokens.
+
+Both helpers are no-ops when there is nothing to delete; they are safe to run
+on a quiet system. Do not deploy Phase 3.5 without both jobs scheduled and
+monitored.

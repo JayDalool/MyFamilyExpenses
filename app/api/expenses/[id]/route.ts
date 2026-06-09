@@ -9,6 +9,7 @@ import {
 import { finalExpenseSchema } from "@/lib/validation/expense";
 import { writeAuditLog } from "@/lib/audit";
 import { revalidateExpenseViews } from "@/lib/revalidation";
+import { canManageExpense } from "@/lib/auth/permissions";
 
 type RouteContext = {
   params: Promise<{
@@ -66,6 +67,13 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json(
       { error: { message: "Expense not found." } },
       { status: 404 },
+    );
+  }
+
+  if (!canManageExpense(auth, existingExpense.userId)) {
+    return NextResponse.json(
+      { error: { message: "You can only edit expenses allowed by your household role." } },
+      { status: 403 },
     );
   }
 
@@ -138,6 +146,13 @@ export async function DELETE(_: Request, context: RouteContext) {
     return NextResponse.json(
       { error: { message: "Expense not found." } },
       { status: 404 },
+    );
+  }
+
+  if (!canManageExpense(auth, existingExpense.userId)) {
+    return NextResponse.json(
+      { error: { message: "You can only delete expenses allowed by your household role." } },
+      { status: 403 },
     );
   }
 

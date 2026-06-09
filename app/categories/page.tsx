@@ -1,8 +1,8 @@
-import { redirect } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { CategoryForm } from "@/components/category-form";
 import { CategoryActions } from "@/components/category-actions";
-import { requireHouseholdMember, hasHouseholdRole } from "@/lib/auth/session";
+import { requireHouseholdMember } from "@/lib/auth/session";
+import { canManageCategories } from "@/lib/auth/permissions";
 import { getRequestCsrfToken } from "@/lib/auth/csrf-server";
 import { prisma } from "@/lib/db/prisma";
 
@@ -17,10 +17,6 @@ const CATEGORY_ERRORS: Record<string, string> = {
 export default async function CategoriesPage({ searchParams }: { searchParams: SearchParams }) {
   const auth = await requireHouseholdMember();
 
-  if (!hasHouseholdRole(auth, ["OWNER", "ADMIN"])) {
-    redirect("/dashboard");
-  }
-
   const categories = await prisma.category.findMany({
     where: { householdId: auth.householdId },
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
@@ -30,15 +26,18 @@ export default async function CategoriesPage({ searchParams }: { searchParams: S
   const initialError = errorKey ? (CATEGORY_ERRORS[errorKey] ?? "Unable to create category.") : null;
   const initialSuccess = params.status === "created" ? "Category created." : null;
   const csrfToken = await getRequestCsrfToken();
+  const canManage = canManageCategories(auth);
 
   return (
     <AppShell auth={auth}>
-      <div className="grid gap-6 lg:grid-cols-[360px,1fr]">
-        <CategoryForm
-          csrfToken={csrfToken}
-          initialError={initialError}
-          initialSuccess={initialSuccess}
-        />
+      <div className={`grid gap-6 ${canManage ? "lg:grid-cols-[360px,1fr]" : ""}`}>
+        {canManage ? (
+          <CategoryForm
+            csrfToken={csrfToken}
+            initialError={initialError}
+            initialSuccess={initialSuccess}
+          />
+        ) : null}
 
         <section className="rounded-3xl bg-white p-6 shadow-soft">
           <div className="mb-4">
@@ -67,7 +66,7 @@ export default async function CategoriesPage({ searchParams }: { searchParams: S
                     {category.status}
                   </span>
                 </div>
-                <CategoryActions category={category} />
+                {canManage ? <CategoryActions category={category} /> : null}
               </div>
             ))}
           </div>

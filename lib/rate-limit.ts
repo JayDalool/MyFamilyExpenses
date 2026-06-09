@@ -63,6 +63,10 @@ export async function recordLoginAttempt(
  * still applies and is the primary defence.
  */
 export function extractClientIp(request: Request): string | null {
+  return extractClientIpFromHeaders(request.headers);
+}
+
+export function extractClientIpFromHeaders(headers: Headers): string | null {
   const trustProxy = process.env.TRUST_PROXY_HEADERS === "true";
 
   if (!trustProxy) {
@@ -71,11 +75,11 @@ export function extractClientIp(request: Request): string | null {
 
   // Cloudflare Tunnel sets cf-connecting-ip. Prefer it over x-forwarded-for
   // because Cloudflare strips client-supplied cf-connecting-ip headers.
-  const cfIp = request.headers.get("cf-connecting-ip");
+  const cfIp = headers.get("cf-connecting-ip");
   if (cfIp) return cfIp.trim();
 
   // Standard reverse-proxy header — first entry is the originating client.
-  const forwarded = request.headers.get("x-forwarded-for");
+  const forwarded = headers.get("x-forwarded-for");
   if (forwarded) return forwarded.split(",")[0].trim();
 
   return null;

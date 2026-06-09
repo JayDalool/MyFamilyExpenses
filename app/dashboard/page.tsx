@@ -3,6 +3,7 @@ import { AppShell } from "@/components/app-shell";
 import { requireHouseholdMember } from "@/lib/auth/session";
 import { formatCurrency } from "@/lib/utils";
 import { getDashboardSummary } from "@/lib/reporting";
+import { canCreateExpense } from "@/lib/auth/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -23,15 +24,17 @@ export default async function DashboardPage() {
               Spending summary for {auth.householdName}, based on invoice date.
             </p>
           </div>
-          <Link
-            href="/expenses"
-            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-brand-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-700 active:scale-95"
-          >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-            </svg>
-            Add Expense
-          </Link>
+          {canCreateExpense(auth) ? (
+            <Link
+              href="/expenses"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-700 active:scale-95"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+              </svg>
+              Add Expense
+            </Link>
+          ) : null}
         </div>
 
         <section className="grid gap-4 sm:grid-cols-3">
@@ -104,7 +107,9 @@ export default async function DashboardPage() {
               <div>
                 <p className="font-medium text-slate-700">No expenses yet</p>
                 <p className="mt-1 text-sm text-slate-500">
-                  Tap the button above to add your first invoice.
+                  {canCreateExpense(auth)
+                    ? "Tap the button above to add your first invoice."
+                    : "No expenses have been saved for this household."}
                 </p>
               </div>
             </div>

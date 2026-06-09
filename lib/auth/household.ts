@@ -8,7 +8,7 @@ import { prisma } from "@/lib/db/prisma";
  */
 export async function ensureUserHousehold(userId: string, userName: string): Promise<string> {
   const existing = await prisma.membership.findFirst({
-    where: { userId },
+    where: { userId, removedAt: null },
     orderBy: { createdAt: "asc" },
   });
   if (existing) return existing.householdId;

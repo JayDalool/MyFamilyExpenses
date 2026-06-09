@@ -9,12 +9,14 @@ import { CSRF_FORM_FIELD_NAME } from "@/lib/auth/csrf";
 
 type SignupFormProps = {
   csrfToken: string;
+  inviteToken?: string | null;
   initialError?: string | null;
   initialSuccessMessage?: string | null;
 };
 
 export function SignupForm({
   csrfToken,
+  inviteToken = null,
   initialError = null,
   initialSuccessMessage = null,
 }: SignupFormProps) {
@@ -32,6 +34,7 @@ export function SignupForm({
       email: String(formData.get("email") ?? ""),
       password: String(formData.get("password") ?? ""),
       confirmPassword: String(formData.get("confirmPassword") ?? ""),
+      ...(inviteToken ? { inviteToken } : {}),
     };
 
     startTransition(() => {
@@ -103,7 +106,10 @@ export function SignupForm({
 
         <p className="text-center text-sm text-slate-500">
           Already verified?{" "}
-          <Link className="font-medium text-brand-600 hover:underline" href="/auth/login">
+          <Link
+            className="font-medium text-brand-600 hover:underline"
+            href={inviteToken ? `/auth/login?invite=${encodeURIComponent(inviteToken)}` : "/auth/login"}
+          >
             Sign in
           </Link>
         </p>
@@ -119,6 +125,7 @@ export function SignupForm({
       onSubmit={handleSubmit}
     >
       <input name={CSRF_FORM_FIELD_NAME} type="hidden" value={csrfToken} />
+      {inviteToken ? <input name="inviteToken" type="hidden" value={inviteToken} /> : null}
       <div className="space-y-1">
         <label className="block text-sm font-semibold text-slate-700" htmlFor="name">
           Full name
@@ -205,7 +212,10 @@ export function SignupForm({
 
       <p className="text-center text-sm text-slate-500">
         Already have an account?{" "}
-        <Link className="font-medium text-brand-600 hover:underline" href="/auth/login">
+        <Link
+          className="font-medium text-brand-600 hover:underline"
+          href={inviteToken ? `/auth/login?invite=${encodeURIComponent(inviteToken)}` : "/auth/login"}
+        >
           Sign in
         </Link>
       </p>

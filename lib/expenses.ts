@@ -156,11 +156,16 @@ export async function updateExpenseForUser(
   data: Prisma.ExpenseUncheckedUpdateManyInput,
   db: ExpenseStore = prisma,
 ) {
+  if (auth.householdRole === "VIEWER") {
+    return null;
+  }
+
   const result = await db.expense.updateMany({
     where: {
       id: expenseId,
       householdId: auth.householdId,
       deletedAt: null,
+      ...(auth.householdRole === "MEMBER" ? { userId: auth.user.id } : {}),
     },
     data,
   });
@@ -175,11 +180,16 @@ export async function softDeleteExpenseForUser(
   deletedByUserId: string,
   db: ExpenseStore = prisma,
 ) {
+  if (auth.householdRole === "VIEWER") {
+    return null;
+  }
+
   const result = await db.expense.updateMany({
     where: {
       id: expenseId,
       householdId: auth.householdId,
       deletedAt: null,
+      ...(auth.householdRole === "MEMBER" ? { userId: auth.user.id } : {}),
     },
     data: {
       deletedAt: new Date(),

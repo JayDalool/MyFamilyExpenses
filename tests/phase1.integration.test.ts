@@ -11,16 +11,15 @@ import {
   softDeleteExpenseForUser,
   updateExpenseForUser,
 } from "../lib/expenses";
+import { assertSafeTestDatabase } from "./helpers/test-database";
 
-const testDatabaseUrl = process.env.TEST_DATABASE_URL;
-const integrationTest = testDatabaseUrl ? test : test.skip;
-const db = testDatabaseUrl ? new PrismaClient({ datasourceUrl: testDatabaseUrl }) : null;
+const testDatabaseUrl = assertSafeTestDatabase();
+const integrationTest = test;
+const db = new PrismaClient({ datasourceUrl: testDatabaseUrl });
 
 type Fixture = Awaited<ReturnType<typeof createFixture>>;
 
 async function createFixture() {
-  if (!db) throw new Error("TEST_DATABASE_URL is required.");
-
   const [userA, userB] = await Promise.all([
     db.user.create({
       data: { name: "Phase One A", email: `phase-a-${crypto.randomUUID()}@example.com` },
@@ -124,7 +123,7 @@ async function createFixture() {
 }
 
 async function cleanupFixture(fixture: Fixture) {
-  if (!db) return;
+  assertSafeTestDatabase();
 
   await db.auditLog.deleteMany({
     where: {

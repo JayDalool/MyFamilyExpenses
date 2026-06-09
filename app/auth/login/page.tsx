@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/login-form";
-import { getCurrentUser } from "@/lib/auth/session";
+import { getCurrentHousehold, getCurrentUser } from "@/lib/auth/session";
 import { isOAuthEnabled } from "@/lib/auth/oauth";
 import { getRequestCsrfToken } from "@/lib/auth/csrf-server";
 
@@ -21,19 +21,29 @@ const OAUTH_ERRORS: Record<string, string> = {
   login_failed: "Invalid email or password.",
   login_rate_limited: "Too many failed login attempts. Please try again later.",
   login_incomplete: "Account setup is incomplete. Please contact an administrator.",
+  invite_invalid: "This household invite is no longer valid for this account.",
 };
 
 type SearchParams = Promise<{ [key: string]: string | string[] | undefined }>;
 
 export default async function LoginPage({ searchParams }: { searchParams: SearchParams }) {
   const user = await getCurrentUser();
-  if (user) redirect("/dashboard");
+  if (user) {
+    const auth = await getCurrentHousehold();
+    redirect(auth ? "/dashboard" : "/no-household");
+  }
 
   const params = await searchParams;
+  const inviteToken = typeof params.invite === "string" ? params.invite : null;
   const errorKey = typeof params.error === "string" ? params.error : undefined;
   const oauthError = errorKey
     ? (OAUTH_ERRORS[errorKey] ?? "Sign in failed. Please try again.")
     : null;
+  const statusKey = typeof params.status === "string" ? params.status : undefined;
+  const initialSuccessMessage =
+    statusKey === "password_reset"
+      ? "Password updated. Sign in with your new password."
+      : null;
 
   const googleEnabled = isOAuthEnabled("google");
   const microsoftEnabled = isOAuthEnabled("microsoft");
@@ -71,9 +81,11 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
 
         <LoginForm
           csrfToken={csrfToken}
+          inviteToken={inviteToken}
           googleEnabled={googleEnabled}
           microsoftEnabled={microsoftEnabled}
           oauthError={oauthError}
+          initialSuccessMessage={initialSuccessMessage}
         />
 
         <p className="text-center text-xs text-slate-400">

@@ -8,6 +8,7 @@ import {
 import { prisma } from "@/lib/db/prisma";
 import { requireHouseholdMember } from "@/lib/auth/session";
 import { formatCurrency } from "@/lib/utils";
+import { canCreateExpense } from "@/lib/auth/permissions";
 
 type ExpensesPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -48,11 +49,12 @@ export default async function ExpensesPage({ searchParams }: ExpensesPageProps) 
   const hasActiveFilters = Boolean(
     filters.invoiceNumber || filters.categoryId || filters.fromDate || filters.toDate,
   );
+  const canCreate = canCreateExpense(auth);
 
   return (
     <AppShell auth={auth}>
-      <div className="grid gap-6 xl:grid-cols-[1fr,1fr]">
-        <div>
+      <div className={`grid gap-6 ${canCreate ? "xl:grid-cols-[1fr,1fr]" : ""}`}>
+        {canCreate ? <div>
           <div className="mb-4">
             <h1 className="text-2xl font-bold text-slate-900">Add Expense</h1>
             <p className="text-sm text-slate-500">
@@ -60,7 +62,7 @@ export default async function ExpensesPage({ searchParams }: ExpensesPageProps) 
             </p>
           </div>
           <ExpenseWizard categories={categories} />
-        </div>
+        </div> : null}
 
         <section className="rounded-3xl bg-white p-6 shadow-soft">
           <div className="mb-6">

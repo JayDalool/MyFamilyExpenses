@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
-import { clearSession, getCurrentHousehold } from "@/lib/auth/session";
+import { clearSession, getCurrentHousehold, getCurrentUser } from "@/lib/auth/session";
 import { writeAuditLog } from "@/lib/audit";
 
 export async function POST() {
   const auth = await getCurrentHousehold();
+  const user = auth?.user ?? (await getCurrentUser());
 
   await clearSession();
   await writeAuditLog({
-    userId: auth?.user.id ?? null,
+    userId: user?.id ?? null,
     householdId: auth?.householdId ?? null,
     action: "auth.logout",
   });

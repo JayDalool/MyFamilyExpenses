@@ -13,6 +13,17 @@ import {
 import { EmailDeliveryUnavailableError, sendSignupVerificationEmail } from "@/lib/email";
 import { writeAuditLog } from "@/lib/audit";
 import {
+  auditInviteFailure,
+  hashInviteToken,
+  inviteCapacityRateLimitOptions,
+  InviteAcceptanceError,
+  probeInviteCapacityByHash,
+  requireAcceptableInviteByToken,
+  reserveInviteLookupOrThrow,
+} from "@/lib/household-invites";
+import { getInviteRequestActorKeys } from "@/lib/invite-rate-limit";
+import { inviteTokenSchema } from "@/lib/validation/household";
+import {
   isNativeFormRequest,
   readJsonOrFormPayload,
   redirectNativeForm,
@@ -67,6 +78,43 @@ export async function POST(request: Request) {
   }
 
   const { name, email, password } = parsed.data;
+  const inviteTokenResult = inviteTokenSchema.safeParse(
+    payload && typeof payload === "object" && "inviteToken" in payload
+      ? payload.inviteToken
+      : undefined,
+  );
+  const inviteToken = inviteTokenResult.success ? inviteTokenResult.data : null;
+  let inviteTokenHash: string | null = null;
+
+  if (inviteToken) {
+    const tokenHash = hashInviteToken(inviteToken);
+    try {
+      const capacity = await probeInviteCapacityByHash(tokenHash);
+      await reserveInviteLookupOrThrow(
+        tokenHash,
+        getInviteRequestActorKeys(request, { email }),
+        inviteCapacityRateLimitOptions(capacity),
+      );
+      await requireAcceptableInviteByToken(inviteToken, { email });
+      inviteTokenHash = tokenHash;
+    } catch (error) {
+      if (error instanceof InviteAcceptanceError) {
+        await auditInviteFailure({
+          householdId: error.householdId,
+          reason: error.reason,
+          tokenHash,
+          source: "signup",
+        });
+        return signupErrorResponse(
+          request,
+          "This household invite is no longer valid for this account.",
+          error.reason === "rate_limited" ? 429 : 400,
+          "invite_invalid",
+        );
+      }
+      throw error;
+    }
+  }
 
   if (await isSignupRateLimited(email, ip)) {
     await writeAuditLog({
@@ -111,6 +159,7 @@ export async function POST(request: Request) {
       name,
       passwordHash,
       token: verificationToken,
+      inviteTokenHash,
     });
 
     const verificationUrl = buildSignupVerificationUrl(verificationToken, request.url);

@@ -15,6 +15,10 @@ interface OnboardUserInput {
   imageUrl?: string | null;
   emailVerifiedAt?: Date | null;
   oauthAccount?: OAuthAccountInput;
+  initialMembership?: {
+    householdId: string;
+    role: "ADMIN" | "MEMBER" | "VIEWER";
+  };
 }
 
 export interface OnboardedUser {
@@ -42,13 +46,16 @@ export async function onboardNewUserInTransaction(
   tx: OnboardingDbClient,
   input: OnboardUserInput,
 ): Promise<OnboardedUser> {
-  const householdName = input.name.trim()
-    ? `${input.name.trim()}'s Household`
-    : "My Household";
-
-  const household = await tx.household.create({
-    data: { name: householdName },
-  });
+  const household = input.initialMembership
+    ? await tx.household.findUniqueOrThrow({
+        where: { id: input.initialMembership.householdId },
+        select: { id: true },
+      })
+    : await tx.household.create({
+        data: {
+          name: input.name.trim() ? `${input.name.trim()}'s Household` : "My Household",
+        },
+      });
 
   const user = await tx.user.create({
     data: {
@@ -60,7 +67,7 @@ export async function onboardNewUserInTransaction(
       memberships: {
         create: {
           householdId: household.id,
-          role: "OWNER",
+          role: input.initialMembership?.role ?? "OWNER",
         },
       },
       ...(input.oauthAccount
@@ -77,9 +84,11 @@ export async function onboardNewUserInTransaction(
     },
   });
 
-  await tx.category.createMany({
-    data: buildDefaultCategories(household.id),
-  });
+  if (!input.initialMembership) {
+    await tx.category.createMany({
+      data: buildDefaultCategories(household.id),
+    });
+  }
 
   return {
     id: user.id,

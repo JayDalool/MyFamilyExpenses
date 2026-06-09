@@ -8,8 +8,12 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test tests/**/*.test.ts",
+    "test": "node --import tsx --test --test-concurrency=1 tests/**/*.test.ts",
+    "test:repeat-password-reset": "node --import tsx --test --test-concurrency=1 tests/phase3_5.integration.test.ts tests/password-reset.routes.integration.test.ts tests/password-reset-email.test.ts",
     "test:e2e": "playwright test",
+    "maintenance:invite-rate-limits": "tsx prisma/cleanup-invite-rate-limits.ts",
+    "maintenance:password-reset-rate-limits": "tsx prisma/cleanup-password-reset-rate-limits.ts",
+    "maintenance:password-reset-tokens": "tsx prisma/cleanup-password-reset-tokens.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "prisma db seed"

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { createSession } from "@/lib/auth/session";
+import { createSession, setActiveHouseholdCookie } from "@/lib/auth/session";
 import { verifyPassword } from "@/lib/auth/password";
 import { loginSchema } from "@/lib/validation/auth";
 import { ensureUserHousehold } from "@/lib/auth/household";
@@ -11,6 +11,9 @@ import {
   readJsonOrFormPayload,
   redirectNativeForm,
 } from "@/lib/http/form-request";
+import { acceptHouseholdInviteForUser } from "@/lib/household-invites";
+import { inviteTokenSchema } from "@/lib/validation/household";
+import { getInviteRequestActorKeys } from "@/lib/invite-rate-limit";
 
 const GENERIC_ERROR = "Invalid email or password.";
 
@@ -42,6 +45,12 @@ export async function POST(request: Request) {
   }
 
   const { email, password } = parsed.data; // email is already lowercased by loginSchema
+  const inviteTokenResult = inviteTokenSchema.safeParse(
+    payload && typeof payload === "object" && "inviteToken" in payload
+      ? payload.inviteToken
+      : undefined,
+  );
+  const inviteToken = inviteTokenResult.success ? inviteTokenResult.data : null;
 
   if (await isRateLimited(email, ip)) {
     await writeAuditLog({
@@ -91,38 +100,52 @@ export async function POST(request: Request) {
     return loginErrorResponse(request, GENERIC_ERROR, 401);
   }
 
+  const inviteAcceptance = inviteToken
+    ? await acceptHouseholdInviteForUser(
+        inviteToken,
+        user,
+        getInviteRequestActorKeys(request, { userId: user.id, email: user.email }),
+      )
+    : null;
+
+  const acceptedHouseholdId = inviteAcceptance?.ok
+    ? inviteAcceptance.householdId
+    : inviteAcceptance?.reason === "duplicate_membership"
+      ? inviteAcceptance.householdId
+      : null;
+  if (acceptedHouseholdId) {
+    await setActiveHouseholdCookie(acceptedHouseholdId);
+  }
+
   // Verify or provision household membership
-  const membership = await prisma.membership.findFirst({ where: { userId: user.id } });
+  const membership = await prisma.membership.findFirst({
+    where: { userId: user.id, removedAt: null },
+  });
 
   if (!membership) {
     if (BOOTSTRAP_ENABLED) {
       await ensureUserHousehold(user.id, user.name);
     } else {
-      // User has no household. This happens when:
-      //   a) The backfill script has not been run yet, or
-      //   b) The user was created outside the normal signup flow.
-      // Do NOT auto-create a household here: it would leave existing expenses
-      // with NULL household_id, which the backfill would then never fix.
       console.error(`[login] User ${user.email} (${user.id}) has no household membership.`);
-      await recordLoginAttempt(email, ip, false);
+      await recordLoginAttempt(email, ip, true);
+      await createSession(user.id);
       await writeAuditLog({
         userId: user.id,
-        action: "auth.login.failed",
+        action: "auth.login.no_household",
         metadata: { email, ip, reason: "missing_household" },
       });
-      return loginErrorResponse(
-        request,
-        "Account setup is incomplete. Please contact an administrator.",
-        403,
-        "login_incomplete",
-      );
+      if (isNativeFormRequest(request)) {
+        return redirectNativeForm(request, "/no-household");
+      }
+      return NextResponse.json({ data: { redirectTo: "/no-household" } });
     }
   }
 
   await recordLoginAttempt(email, ip, true);
   await createSession(user.id);
   const activeMembership =
-    membership ?? (await prisma.membership.findFirst({ where: { userId: user.id } }));
+    membership ??
+    (await prisma.membership.findFirst({ where: { userId: user.id, removedAt: null } }));
 
   await writeAuditLog({
     userId: user.id,
@@ -131,8 +154,15 @@ export async function POST(request: Request) {
     metadata: { email, ip },
   });
 
+  const inviteHandled =
+    inviteAcceptance?.ok || inviteAcceptance?.reason === "duplicate_membership";
+  const redirectTo =
+    inviteToken && !inviteHandled
+      ? `/invite/${encodeURIComponent(inviteToken)}`
+      : "/dashboard";
+
   if (isNativeFormRequest(request)) {
-    return redirectNativeForm(request, "/dashboard");
+    return redirectNativeForm(request, redirectTo);
   }
 
   return NextResponse.json({
@@ -143,6 +173,7 @@ export async function POST(request: Request) {
         email: user.email,
         role: user.role,
       },
+      redirectTo,
     },
   });
 }

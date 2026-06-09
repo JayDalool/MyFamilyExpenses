@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { getCurrentHousehold, hasHouseholdRole } from "@/lib/auth/session";
+import { getCurrentHousehold } from "@/lib/auth/session";
+import { canManageCategories } from "@/lib/auth/permissions";
 import { createCategorySchema } from "@/lib/validation/category";
 import { writeAuditLog } from "@/lib/audit";
 import { revalidateCategoryViews } from "@/lib/revalidation";
@@ -48,7 +49,7 @@ export async function POST(request: Request) {
     return categoryErrorResponse(request, "Authentication required.", 401, "category_forbidden");
   }
 
-  if (!hasHouseholdRole(auth, ["OWNER", "ADMIN"])) {
+  if (!canManageCategories(auth)) {
     return categoryErrorResponse(request, "Admin access required.", 403, "category_forbidden");
   }
 

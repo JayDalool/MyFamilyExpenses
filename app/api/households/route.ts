@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { prisma } from "@/lib/db/prisma";
 import {
-  ACTIVE_HOUSEHOLD_COOKIE_NAME,
   getCurrentUser,
+  setActiveHouseholdCookie,
 } from "@/lib/auth/session";
-import { shouldUseSecureCookies } from "@/lib/auth/cookies";
 import { writeAuditLog } from "@/lib/audit";
 
 // Lists the authenticated user's household memberships.
@@ -21,7 +19,7 @@ export async function GET() {
   }
 
   const memberships = await prisma.membership.findMany({
-    where: { userId: user.id },
+    where: { userId: user.id, removedAt: null },
     include: { household: { select: { id: true, name: true } } },
     orderBy: { createdAt: "asc" },
   });
@@ -51,7 +49,7 @@ export async function POST(request: Request) {
     | null;
   const householdId = typeof payload?.householdId === "string" ? payload.householdId : "";
   const membership = await prisma.membership.findFirst({
-    where: { userId: user.id, householdId },
+    where: { userId: user.id, householdId, removedAt: null },
     include: { household: { select: { name: true } } },
   });
 
@@ -62,14 +60,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const cookieStore = await cookies();
-  cookieStore.set(ACTIVE_HOUSEHOLD_COOKIE_NAME, membership.householdId, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: shouldUseSecureCookies(),
-    path: "/",
-    maxAge: 60 * 60 * 24 * 365,
-  });
+  await setActiveHouseholdCookie(membership.householdId);
   await writeAuditLog({
     userId: user.id,
     householdId: membership.householdId,

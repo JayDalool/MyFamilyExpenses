@@ -12,6 +12,7 @@ import { detectExpenseUploadMimeType, validateExpenseUploadFile } from "@/lib/up
 import { expenseInputSchema, finalExpenseSchema } from "@/lib/validation/expense";
 import { writeAuditLog } from "@/lib/audit";
 import { revalidateExpenseViews } from "@/lib/revalidation";
+import { canCreateExpense } from "@/lib/auth/permissions";
 
 export async function GET(request: Request) {
   const auth = await getCurrentHousehold();
@@ -47,6 +48,13 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: { message: "Authentication required." } },
       { status: 401 },
+    );
+  }
+
+  if (!canCreateExpense(auth)) {
+    return NextResponse.json(
+      { error: { message: "Your household role can only view expenses." } },
+      { status: 403 },
     );
   }
 

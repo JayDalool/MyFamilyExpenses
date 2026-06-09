@@ -36,12 +36,14 @@ model User {
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  sessions        Session[]
-  expenses        Expense[]
-  deletedExpenses Expense[]     @relation("ExpenseDeletedBy")
-  memberships     Membership[]
-  authAccounts    AuthAccount[]
-  auditLogs       AuditLog[]
+  sessions            Session[]
+  expenses            Expense[]
+  deletedExpenses     Expense[]     @relation("ExpenseDeletedBy")
+  memberships         Membership[]
+  authAccounts        AuthAccount[]
+  auditLogs           AuditLog[]
+  createdInvites      HouseholdInvite[]    @relation("HouseholdInviteCreatedBy")
+  passwordResetTokens PasswordResetToken[]
 
   @@map("users")
 }
@@ -70,6 +72,7 @@ model Household {
   expenses    Expense[]
   categories  Category[]
   auditLogs   AuditLog[]
+  invites     HouseholdInvite[]
 
   @@map("households")
 }
@@ -79,6 +82,7 @@ model Membership {
   userId      String        @map("user_id") @db.Uuid
   householdId String        @map("household_id") @db.Uuid
   role        HouseholdRole @default(MEMBER)
+  removedAt   DateTime?     @map("removed_at") @db.Timestamptz(6)
   createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
 
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -87,8 +91,44 @@ model Membership {
 
   @@unique([userId, householdId])
   @@index([householdId])
+  @@index([householdId, removedAt])
   @@index([userId])
   @@map("memberships")
+}
+
+model HouseholdInvite {
+  id              String        @id @default(uuid()) @db.Uuid
+  householdId     String        @map("household_id") @db.Uuid
+  tokenHash       String        @unique @map("token_hash")
+  email           String?
+  role            HouseholdRole
+  maxUses         Int           @default(1) @map("max_uses")
+  usedCount       Int           @default(0) @map("used_count")
+  expiresAt       DateTime      @map("expires_at") @db.Timestamptz(6)
+  revokedAt       DateTime?     @map("revoked_at") @db.Timestamptz(6)
+  createdByUserId String        @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  household     Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  createdByUser User      @relation("HouseholdInviteCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([householdId, expiresAt])
+  @@index([householdId, revokedAt])
+  @@index([createdByUserId])
+  @@index([email])
+  @@map("household_invites")
+}
+
+model InviteRateLimitAttempt {
+  id        String   @id @default(uuid()) @db.Uuid
+  action    String
+  keyHash   String   @map("key_hash")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([action, keyHash, createdAt])
+  @@index([createdAt])
+  @@map("invite_rate_limit_attempts")
 }
 
 model Category {
@@ -183,6 +223,7 @@ model PendingSignup {
   name                  String
   passwordHash          String   @map("password_hash")
   verificationTokenHash String   @unique @map("verification_token_hash")
+  inviteTokenHash       String?  @map("invite_token_hash")
   expiresAt             DateTime @map("expires_at") @db.Timestamptz(6)
   createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt             DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -201,4 +242,32 @@ model LoginAttempt {
   @@index([email, createdAt])
   @@index([ip, createdAt])
   @@map("login_attempts")
+}
+
+model PasswordResetToken {
+  id                     String    @id @default(uuid()) @db.Uuid
+  userId                 String    @map("user_id") @db.Uuid
+  tokenHash              String    @unique @map("token_hash")
+  expiresAt              DateTime  @map("expires_at") @db.Timestamptz(6)
+  usedAt                 DateTime? @map("used_at") @db.Timestamptz(6)
+  requestedIpHash        String?   @map("requested_ip_hash")
+  requestedUserAgentHash String?   @map("requested_user_agent_hash")
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+model PasswordResetRateLimitAttempt {
+  id        String   @id @default(uuid()) @db.Uuid
+  action    String
+  keyHash   String   @map("key_hash")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([action, keyHash, createdAt])
+  @@index([createdAt])
+  @@map("password_reset_rate_limit_attempts")
 }

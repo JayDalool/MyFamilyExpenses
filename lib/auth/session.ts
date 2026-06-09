@@ -70,6 +70,17 @@ export async function createSession(userId: string) {
   });
 }
 
+export async function setActiveHouseholdCookie(householdId: string) {
+  const cookieStore = await cookies();
+  cookieStore.set(ACTIVE_HOUSEHOLD_COOKIE_NAME, householdId, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: shouldUseSecureCookies(),
+    path: "/",
+    maxAge: 60 * 60 * 24 * 365,
+  });
+}
+
 export async function clearSession() {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
@@ -131,7 +142,7 @@ export async function getCurrentHousehold(): Promise<AuthContext | null> {
   const cookieStore = await cookies();
   const requestedHouseholdId = cookieStore.get(ACTIVE_HOUSEHOLD_COOKIE_NAME)?.value;
   const memberships = await prisma.membership.findMany({
-    where: { userId: user.id },
+    where: { userId: user.id, removedAt: null },
     include: { household: { select: { id: true, name: true } } },
     orderBy: { createdAt: "asc" },
   });
@@ -170,7 +181,8 @@ export async function requireHouseholdMember(): Promise<AuthContext> {
   const auth = await getCurrentHousehold();
 
   if (!auth) {
-    redirect("/auth/login");
+    const user = await getCurrentUser();
+    redirect(user ? "/no-household" : "/auth/login");
   }
 
   return auth;

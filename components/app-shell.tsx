@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { hasHouseholdRole, type AuthContext } from "@/lib/auth/session";
+import type { AuthContext } from "@/lib/auth/session";
 import { LogoutButton } from "@/components/logout-button";
 import { HouseholdSwitcher } from "@/components/household-switcher";
 
@@ -10,8 +10,6 @@ type AppShellProps = {
 };
 
 export function AppShell({ auth, children }: AppShellProps) {
-  const showCategories = hasHouseholdRole(auth, ["OWNER", "ADMIN"]);
-
   return (
     <div className="min-h-screen bg-slate-100">
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80">
@@ -51,20 +49,26 @@ export function AppShell({ auth, children }: AppShellProps) {
             >
               Reports
             </Link>
-            {showCategories ? (
-              <Link
-                className="rounded-full px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
-                href="/categories"
-              >
-                Categories
-              </Link>
-            ) : null}
+            <Link
+              className="rounded-full px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+              href="/categories"
+            >
+              Categories
+            </Link>
+            <Link
+              className="rounded-full px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+              href="/household"
+            >
+              Household
+            </Link>
             <div className="ml-2 border-l border-slate-200 pl-3">
               <HouseholdSwitcher
                 currentHouseholdId={auth.householdId}
                 households={auth.households}
               />
-              <p className="text-xs text-slate-500">{auth.user.name}</p>
+              <p className="text-xs text-slate-500">
+                {auth.user.name} | {auth.householdRole}
+              </p>
             </div>
             <LogoutButton />
           </div>
@@ -82,7 +86,7 @@ export function AppShell({ auth, children }: AppShellProps) {
       <main className="mx-auto max-w-6xl px-4 py-6 pb-28 sm:pb-8">{children}</main>
 
       <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-slate-200 bg-white sm:hidden">
-        <div className={`grid ${showCategories ? "grid-cols-4" : "grid-cols-3"}`}>
+        <div className="grid grid-cols-5">
           <Link
             href="/dashboard"
             className="flex flex-col items-center gap-1 py-3 text-slate-500 transition hover:text-brand-600"
@@ -128,22 +132,35 @@ export function AppShell({ auth, children }: AppShellProps) {
             <span className="text-xs font-medium">Reports</span>
           </Link>
 
-          {showCategories ? (
-            <Link
-              href="/categories"
-              className="flex flex-col items-center gap-1 py-3 text-slate-500 transition hover:text-brand-600"
-            >
-              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.8}
-                  d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
-                />
-              </svg>
-              <span className="text-xs font-medium">Categories</span>
-            </Link>
-          ) : null}
+          <Link
+            href="/categories"
+            className="flex flex-col items-center gap-1 py-3 text-slate-500 transition hover:text-brand-600"
+          >
+            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.8}
+                d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
+              />
+            </svg>
+            <span className="text-[11px] font-medium">Categories</span>
+          </Link>
+
+          <Link
+            href="/household"
+            className="flex flex-col items-center gap-1 py-3 text-slate-500 transition hover:text-brand-600"
+          >
+            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.8}
+                d="M17 20h5v-2a4 4 0 00-4-4h-1m-10 6H2v-2a4 4 0 014-4h1m5 6v-2a4 4 0 00-4-4H6m6 6h5v-2a4 4 0 00-4-4h-1m1-7a3 3 0 11-6 0 3 3 0 016 0zm6 2a2.5 2.5 0 10-3.5-2.3"
+              />
+            </svg>
+            <span className="text-[11px] font-medium">Household</span>
+          </Link>
         </div>
       </nav>
     </div>

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { SignupForm } from "@/components/signup-form";
-import { getCurrentUser } from "@/lib/auth/session";
+import { getCurrentHousehold, getCurrentUser } from "@/lib/auth/session";
 import { getRequestCsrfToken } from "@/lib/auth/csrf-server";
 
 type SearchParams = Promise<{ [key: string]: string | string[] | undefined }>;
@@ -9,13 +9,18 @@ const SIGNUP_ERRORS: Record<string, string> = {
   signup_invalid: "Check the form fields and try again.",
   signup_rate_limited: "Too many attempts. Please try again later.",
   signup_unavailable: "Sign up is temporarily unavailable. Please try again later.",
+  invite_invalid: "This household invite is no longer valid for this account.",
 };
 
 export default async function SignupPage({ searchParams }: { searchParams: SearchParams }) {
   const user = await getCurrentUser();
-  if (user) redirect("/dashboard");
+  if (user) {
+    const auth = await getCurrentHousehold();
+    redirect(auth ? "/dashboard" : "/no-household");
+  }
 
   const params = await searchParams;
+  const inviteToken = typeof params.invite === "string" ? params.invite : null;
   const errorKey = typeof params.error === "string" ? params.error : undefined;
   const initialError = errorKey ? (SIGNUP_ERRORS[errorKey] ?? "Sign up failed.") : null;
   const initialSuccessMessage =
@@ -56,6 +61,7 @@ export default async function SignupPage({ searchParams }: { searchParams: Searc
 
         <SignupForm
           csrfToken={csrfToken}
+          inviteToken={inviteToken}
           initialError={initialError}
           initialSuccessMessage={initialSuccessMessage}
         />

@@ -11,17 +11,16 @@ import {
 } from "../lib/expenses";
 import { getDashboardSummary, getReportData, normalizeReportFilters } from "../lib/reporting";
 import type { AuthContext } from "../lib/auth/session";
+import { assertSafeTestDatabase } from "./helpers/test-database";
 
-const testDatabaseUrl = process.env.TEST_DATABASE_URL;
-const integrationTest = testDatabaseUrl ? test : test.skip;
-const db = testDatabaseUrl ? new PrismaClient({ datasourceUrl: testDatabaseUrl }) : null;
+const testDatabaseUrl = assertSafeTestDatabase();
+const integrationTest = test;
+const db = new PrismaClient({ datasourceUrl: testDatabaseUrl });
 const referenceDate = new Date("2026-06-07T12:00:00.000Z");
 
 type Fixture = Awaited<ReturnType<typeof createFixture>>;
 
 async function createFixture() {
-  if (!db) throw new Error("TEST_DATABASE_URL is required.");
-
   const [userA, userB] = await Promise.all([
     db.user.create({
       data: { name: "Reports A", email: `reports-a-${crypto.randomUUID()}@example.com` },
@@ -133,7 +132,7 @@ async function createFixture() {
 }
 
 async function cleanupFixture(fixture: Fixture) {
-  if (!db) return;
+  assertSafeTestDatabase();
   const householdIds = [fixture.householdA.id, fixture.householdB.id];
   const userIds = [fixture.userA.id, fixture.userB.id];
 

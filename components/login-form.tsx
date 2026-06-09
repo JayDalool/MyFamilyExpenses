@@ -9,19 +9,24 @@ import { CSRF_FORM_FIELD_NAME } from "@/lib/auth/csrf";
 
 interface LoginFormProps {
   csrfToken: string;
+  inviteToken?: string | null;
   googleEnabled?: boolean;
   microsoftEnabled?: boolean;
   oauthError?: string | null;
+  initialSuccessMessage?: string | null;
 }
 
 export function LoginForm({
   csrfToken,
+  inviteToken = null,
   googleEnabled = false,
   microsoftEnabled = false,
   oauthError,
+  initialSuccessMessage = null,
 }: LoginFormProps) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(oauthError ?? null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(initialSuccessMessage);
   const [isPending, startTransition] = useTransition();
   const showOAuth = googleEnabled || microsoftEnabled;
 
@@ -31,11 +36,13 @@ export function LoginForm({
     const payload = {
       email: String(formData.get("email") ?? ""),
       password: String(formData.get("password") ?? ""),
+      ...(inviteToken ? { inviteToken } : {}),
     };
 
     startTransition(() => {
       void (async () => {
         setError(null);
+        setSuccessMessage(null);
 
         const response = await csrfFetch("/api/auth/login", {
           method: "POST",
@@ -51,7 +58,10 @@ export function LoginForm({
           return;
         }
 
-        router.push("/dashboard");
+        const data = (await response.json().catch(() => null)) as
+          | { data?: { redirectTo?: string } }
+          | null;
+        router.push(data?.data?.redirectTo ?? "/dashboard");
         router.refresh();
       })();
     });
@@ -66,6 +76,7 @@ export function LoginForm({
         onSubmit={handleSubmit}
       >
         <input name={CSRF_FORM_FIELD_NAME} type="hidden" value={csrfToken} />
+        {inviteToken ? <input name="inviteToken" type="hidden" value={inviteToken} /> : null}
         <div className="space-y-1">
           <label className="block text-sm font-semibold text-slate-700" htmlFor="email">
             Email address
@@ -113,6 +124,21 @@ export function LoginForm({
           </div>
         ) : null}
 
+        {successMessage ? (
+          <div className="rounded-2xl bg-emerald-50 px-4 py-3">
+            <p className="text-sm font-medium text-emerald-800">{successMessage}</p>
+          </div>
+        ) : null}
+
+        <div className="text-right">
+          <Link
+            className="text-sm font-medium text-brand-600 hover:underline"
+            href="/auth/forgot-password"
+          >
+            Forgot password?
+          </Link>
+        </div>
+
         <button
           className="w-full rounded-2xl bg-brand-600 px-4 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-brand-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={isPending}
@@ -123,7 +149,10 @@ export function LoginForm({
 
         <p className="text-center text-sm text-slate-500">
           {"Don't have an account? "}
-          <Link className="font-medium text-brand-600 hover:underline" href="/auth/signup">
+          <Link
+            className="font-medium text-brand-600 hover:underline"
+            href={inviteToken ? `/auth/signup?invite=${encodeURIComponent(inviteToken)}` : "/auth/signup"}
+          >
             Sign up
           </Link>
         </p>
@@ -144,7 +173,7 @@ export function LoginForm({
             {googleEnabled && (
               <a
                 className="flex w-full items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 active:scale-95"
-                href="/api/auth/oauth/google/start"
+                href={inviteToken ? `/api/auth/oauth/google/start?invite=${encodeURIComponent(inviteToken)}` : "/api/auth/oauth/google/start"}
               >
                 <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24">
                   <path
@@ -171,7 +200,7 @@ export function LoginForm({
             {microsoftEnabled && (
               <a
                 className="flex w-full items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 active:scale-95"
-                href="/api/auth/oauth/microsoft/start"
+                href={inviteToken ? `/api/auth/oauth/microsoft/start?invite=${encodeURIComponent(inviteToken)}` : "/api/auth/oauth/microsoft/start"}
               >
                 <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24">
                   <path d="M11.4 24H0V12.6h11.4V24z" fill="#F25022" />

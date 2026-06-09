@@ -3,6 +3,13 @@ import { PrismaClient } from "@prisma/client";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { hashPassword } from "../../lib/auth/password";
+import { createInviteToken, hashInviteToken } from "../../lib/household-invites";
+import { assertSafeTestDatabase } from "../helpers/test-database";
+
+assertSafeTestDatabase();
+test.beforeEach(() => {
+  assertSafeTestDatabase();
+});
 
 async function createE2EAccount(db: PrismaClient) {
   const email = `e2e-${crypto.randomUUID()}@example.com`;
@@ -24,6 +31,7 @@ async function cleanupE2EAccount(
   db: PrismaClient,
   fixture: Awaited<ReturnType<typeof createE2EAccount>>,
 ) {
+  assertSafeTestDatabase();
   await db.auditLog.deleteMany({
     where: { OR: [{ userId: fixture.user.id }, { householdId: fixture.household.id }] },
   });
@@ -290,8 +298,6 @@ test("normal pages deny framing while expense file routes allow same-origin fram
 });
 
 test("category form sends a protected native POST without JavaScript", async ({ browser }) => {
-  test.skip(!process.env.TEST_DATABASE_URL, "TEST_DATABASE_URL is required.");
-
   const db = new PrismaClient({ datasourceUrl: process.env.TEST_DATABASE_URL });
   const fixture = await createE2EAccount(db);
 
@@ -407,8 +413,6 @@ test("category form sends a protected native POST without JavaScript", async ({ 
 });
 
 test("failed logout shows an error and does not redirect", async ({ page }) => {
-  test.skip(!process.env.TEST_DATABASE_URL, "TEST_DATABASE_URL is required.");
-
   const db = new PrismaClient({ datasourceUrl: process.env.TEST_DATABASE_URL });
   const fixture = await createE2EAccount(db);
 
@@ -439,8 +443,6 @@ test("failed logout shows an error and does not redirect", async ({ page }) => {
 test("authenticated PDF preview and download responses keep correct framing and disposition", async ({
   page,
 }) => {
-  test.skip(!process.env.TEST_DATABASE_URL, "TEST_DATABASE_URL is required.");
-
   const db = new PrismaClient({ datasourceUrl: process.env.TEST_DATABASE_URL });
   const fixture = await createE2EAccount(db);
   const category = await db.category.create({
@@ -489,8 +491,6 @@ test("authenticated PDF preview and download responses keep correct framing and 
 });
 
 test("expense create, update, and soft delete routes create audit logs", async ({ page }) => {
-  test.skip(!process.env.TEST_DATABASE_URL, "TEST_DATABASE_URL is required.");
-
   const db = new PrismaClient({ datasourceUrl: process.env.TEST_DATABASE_URL });
   const fixture = await createE2EAccount(db);
   const category = await db.category.create({
@@ -579,8 +579,6 @@ test("expense create, update, and soft delete routes create audit logs", async (
 });
 
 test("dashboard totals update after expense create, edit, and delete", async ({ page }) => {
-  test.skip(!process.env.TEST_DATABASE_URL, "TEST_DATABASE_URL is required.");
-
   const db = new PrismaClient({ datasourceUrl: process.env.TEST_DATABASE_URL });
   const fixture = await createE2EAccount(db);
   const category = await db.category.create({
@@ -659,8 +657,6 @@ test("dashboard totals update after expense create, edit, and delete", async ({ 
 test("multi-household users only see the selected household on dashboard and reports", async ({
   page,
 }) => {
-  test.skip(!process.env.TEST_DATABASE_URL, "TEST_DATABASE_URL is required.");
-
   const db = new PrismaClient({ datasourceUrl: process.env.TEST_DATABASE_URL });
   const fixture = await createE2EAccount(db);
   const secondHousehold = await db.household.create({
@@ -736,6 +732,417 @@ test("multi-household users only see the selected household on dashboard and rep
     await db.membership.deleteMany({ where: { householdId: secondHousehold.id } });
     await db.household.delete({ where: { id: secondHousehold.id } });
     await cleanupE2EAccount(db, fixture);
+    await db.$disconnect();
+  }
+});
+
+test("signup through an invite joins only the invited household after verification", async ({
+  page,
+}) => {
+  const db = new PrismaClient({ datasourceUrl: process.env.TEST_DATABASE_URL });
+  const owner = await createE2EAccount(db);
+  const inviteToken = createInviteToken();
+  const invitedEmail = `invite-signup-${crypto.randomUUID()}@example.com`;
+  const invite = await db.householdInvite.create({
+    data: {
+      householdId: owner.household.id,
+      tokenHash: hashInviteToken(inviteToken),
+      email: invitedEmail,
+      role: "MEMBER",
+      maxUses: 1,
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      createdByUserId: owner.user.id,
+    },
+  });
+
+  try {
+    await page.goto(`/invite/${inviteToken}`);
+    await expect(page.getByText(owner.household.name)).toBeVisible();
+    await page.getByRole("link", { name: "Create account" }).click();
+    await expect(page).toHaveURL(new RegExp(`/auth/signup\\?invite=${inviteToken}`));
+
+    await page.getByLabel("Full name").fill("Invited Signup");
+    await page.getByLabel("Email address").fill(invitedEmail);
+    await page.getByLabel("Password", { exact: true }).fill("InvitePass123");
+    await page.getByLabel("Confirm password").fill("InvitePass123");
+    await page.getByRole("button", { name: "Create account" }).click();
+    await page.getByRole("link", { name: "Open the local verification link" }).click();
+    await page.waitForURL("**/dashboard");
+    await expect(page.getByText(`Spending summary for ${owner.household.name}`)).toBeVisible();
+
+    const invitedUser = await db.user.findUniqueOrThrow({ where: { email: invitedEmail } });
+    const memberships = await db.membership.findMany({
+      where: { userId: invitedUser.id, removedAt: null },
+    });
+    expect(memberships).toHaveLength(1);
+    expect(memberships[0]?.householdId).toBe(owner.household.id);
+    expect(memberships[0]?.role).toBe("MEMBER");
+    expect((await db.householdInvite.findUniqueOrThrow({ where: { id: invite.id } })).usedCount).toBe(1);
+    expect(
+      await db.inviteRateLimitAttempt.count({
+        where: { action: "invite_acceptance_actor_token" },
+      }),
+    ).toBeGreaterThan(0);
+  } finally {
+    const invitedUser = await db.user.findUnique({ where: { email: invitedEmail } });
+    if (invitedUser) {
+      await db.auditLog.deleteMany({ where: { userId: invitedUser.id } });
+      await db.session.deleteMany({ where: { userId: invitedUser.id } });
+      await db.membership.deleteMany({ where: { userId: invitedUser.id } });
+      await db.user.delete({ where: { id: invitedUser.id } });
+    }
+    await db.pendingSignup.deleteMany({ where: { email: invitedEmail } });
+    await db.householdInvite.deleteMany({ where: { id: invite.id } });
+    await cleanupE2EAccount(db, owner);
+    await db.$disconnect();
+  }
+});
+
+test("invite creation and acceptance endpoints return 429 after their limits", async ({
+  page,
+}) => {
+  const db = new PrismaClient({ datasourceUrl: process.env.TEST_DATABASE_URL });
+  const fixture = await createE2EAccount(db);
+  const startedAt = new Date();
+  const invalidToken = createInviteToken();
+
+  try {
+    await page.goto("/auth/login");
+    await page.getByLabel("Email address").fill(fixture.email);
+    await page.getByLabel("Password").fill(fixture.password);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await page.waitForURL("**/dashboard");
+
+    const csrfToken = (await page.context().cookies()).find(
+      (cookie) => cookie.name === "mfe_csrf",
+    )?.value;
+    expect(csrfToken).toBeTruthy();
+
+    for (let index = 0; index < 10; index += 1) {
+      const response = await page.request.post("/api/household/invites", {
+        headers: { "x-csrf-token": csrfToken! },
+        data: { role: "VIEWER", expiresInDays: 1, maxUses: 1 },
+      });
+      expect(response.status()).toBe(201);
+    }
+    expect(
+      (
+        await page.request.post("/api/household/invites", {
+          headers: { "x-csrf-token": csrfToken! },
+          data: { role: "VIEWER", expiresInDays: 1, maxUses: 1 },
+        })
+      ).status(),
+    ).toBe(429);
+
+    for (let index = 0; index < 8; index += 1) {
+      expect(
+        (
+          await page.request.post(`/api/invites/${invalidToken}`, {
+            headers: { "x-csrf-token": csrfToken! },
+          })
+        ).status(),
+      ).toBe(400);
+    }
+    expect(
+      (
+        await page.request.post(`/api/invites/${invalidToken}`, {
+          headers: { "x-csrf-token": csrfToken! },
+        })
+      ).status(),
+    ).toBe(429);
+  } finally {
+    await db.inviteRateLimitAttempt.deleteMany({ where: { createdAt: { gte: startedAt } } });
+    await cleanupE2EAccount(db, fixture);
+    await db.$disconnect();
+  }
+});
+
+test("removed signed-in users see no-household page and can accept a new invite", async ({
+  page,
+}) => {
+  const db = new PrismaClient({ datasourceUrl: process.env.TEST_DATABASE_URL });
+  const removedUser = await createE2EAccount(db);
+  const inviter = await createE2EAccount(db);
+  const inviteToken = createInviteToken();
+  const invite = await db.householdInvite.create({
+    data: {
+      householdId: inviter.household.id,
+      tokenHash: hashInviteToken(inviteToken),
+      email: removedUser.email,
+      role: "MEMBER",
+      maxUses: 1,
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      createdByUserId: inviter.user.id,
+    },
+  });
+
+  try {
+    await page.goto("/auth/login");
+    await page.getByLabel("Email address").fill(removedUser.email);
+    await page.getByLabel("Password").fill(removedUser.password);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await page.waitForURL("**/dashboard");
+
+    await db.membership.updateMany({
+      where: { userId: removedUser.user.id, householdId: removedUser.household.id },
+      data: { removedAt: new Date() },
+    });
+
+    await page.goto("/dashboard");
+    await page.waitForURL("**/no-household");
+    await expect(page.getByRole("heading", { name: "No household access" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Logout" })).toBeVisible();
+
+    await page.goto("/auth/login");
+    await expect(page).toHaveURL(/\/no-household$/);
+
+    await page.goto(`/invite/${inviteToken}`);
+    await page.getByRole("button", { name: "Join household" }).click();
+    await page.waitForURL("**/dashboard");
+    await expect(page.getByText(`Spending summary for ${inviter.household.name}`)).toBeVisible();
+    expect(
+      await db.membership.count({
+        where: {
+          userId: removedUser.user.id,
+          householdId: inviter.household.id,
+          role: "MEMBER",
+          removedAt: null,
+        },
+      }),
+    ).toBe(1);
+  } finally {
+    await db.householdInvite.deleteMany({ where: { id: invite.id } });
+    await cleanupE2EAccount(db, inviter);
+    await cleanupE2EAccount(db, removedUser);
+    await db.$disconnect();
+  }
+});
+
+test("member role changes require confirmation before the PATCH is sent", async ({
+  page,
+}) => {
+  const db = new PrismaClient({ datasourceUrl: process.env.TEST_DATABASE_URL });
+  const fixture = await createE2EAccount(db);
+  const member = await db.user.create({
+    data: {
+      name: "Role Confirm Member",
+      email: `role-confirm-${crypto.randomUUID()}@example.com`,
+      passwordHash: await hashPassword("RoleConfirm123"),
+    },
+  });
+  const membership = await db.membership.create({
+    data: { userId: member.id, householdId: fixture.household.id, role: "MEMBER" },
+  });
+
+  try {
+    await page.goto("/auth/login");
+    await page.getByLabel("Email address").fill(fixture.email);
+    await page.getByLabel("Password").fill(fixture.password);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await page.waitForURL("**/dashboard");
+
+    await page.goto("/household");
+    page.once("dialog", async (dialog) => {
+      expect(dialog.message()).toContain("Change Role Confirm Member's role");
+      await dialog.dismiss();
+    });
+    const roleSelect = page.getByLabel("Role for Role Confirm Member").last();
+    await roleSelect.selectOption("ADMIN");
+    expect(
+      (await db.membership.findUniqueOrThrow({ where: { id: membership.id } })).role,
+    ).toBe("MEMBER");
+
+    page.once("dialog", async (dialog) => {
+      await dialog.accept();
+    });
+    await roleSelect.selectOption("VIEWER");
+    await expect
+      .poll(async () =>
+        (await db.membership.findUniqueOrThrow({ where: { id: membership.id } })).role,
+      )
+      .toBe("VIEWER");
+  } finally {
+    await db.auditLog.deleteMany({ where: { userId: member.id } });
+    await db.membership.deleteMany({ where: { userId: member.id } });
+    await db.user.deleteMany({ where: { id: member.id } });
+    await cleanupE2EAccount(db, fixture);
+    await db.$disconnect();
+  }
+});
+
+test("household management remains usable on mobile @mobile", async ({ page }) => {
+  const db = new PrismaClient({ datasourceUrl: process.env.TEST_DATABASE_URL });
+  const fixture = await createE2EAccount(db);
+
+  try {
+    await page.goto("/auth/login");
+    await page.getByLabel("Email address").fill(fixture.email);
+    await page.getByLabel("Password").fill(fixture.password);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await page.waitForURL("**/dashboard");
+
+    await page.getByRole("link", { name: "Household" }).last().click();
+    await page.waitForURL("**/household");
+    await expect(page.getByRole("heading", { name: fixture.household.name })).toBeVisible();
+    const roleSummary = page.getByText("Your role").locator("..");
+    await expect(roleSummary).toBeVisible();
+    await expect(roleSummary.getByText("OWNER", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Members" })).toBeVisible();
+    await expect(page.getByText(fixture.email).first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Invite member" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Create invite link" })).toBeVisible();
+  } finally {
+    await cleanupE2EAccount(db, fixture);
+    await db.$disconnect();
+  }
+});
+
+test("expense and category HTTP routes enforce VIEWER, MEMBER, and ADMIN roles", async ({
+  browser,
+}) => {
+  const db = new PrismaClient({ datasourceUrl: process.env.TEST_DATABASE_URL });
+  const owner = await createE2EAccount(db);
+  const password = "RoleRoutePass123";
+  const passwordHash = await hashPassword(password);
+  const extraUsers = await Promise.all(
+    (["ADMIN", "MEMBER", "VIEWER"] as const).map((role) =>
+      db.user.create({
+        data: {
+          name: `${role} Route`,
+          email: `${role.toLowerCase()}-${crypto.randomUUID()}@example.com`,
+          passwordHash,
+          memberships: {
+            create: { householdId: owner.household.id, role },
+          },
+        },
+      }),
+    ),
+  );
+  const [admin, member, viewer] = extraUsers;
+  const category = await db.category.create({
+    data: { householdId: owner.household.id, name: `Role routes ${crypto.randomUUID()}` },
+  });
+  const [ownerExpense, memberExpense] = await Promise.all([
+    db.expense.create({
+      data: {
+        userId: owner.user.id,
+        householdId: owner.household.id,
+        categoryId: category.id,
+        invoiceNumber: "OWNER-ROUTE",
+        invoiceDate: new Date("2026-06-01T00:00:00.000Z"),
+        amount: 10,
+        filePath: "uploads/owner-route.pdf",
+      },
+    }),
+    db.expense.create({
+      data: {
+        userId: member!.id,
+        householdId: owner.household.id,
+        categoryId: category.id,
+        invoiceNumber: "MEMBER-ROUTE",
+        invoiceDate: new Date("2026-06-01T00:00:00.000Z"),
+        amount: 20,
+        filePath: "uploads/member-route.pdf",
+      },
+    }),
+  ]);
+
+  async function authenticatedContext(email: string) {
+    const context = await browser.newContext({ baseURL: "http://localhost:3001" });
+    const rolePage = await context.newPage();
+    await rolePage.goto("/auth/login");
+    await rolePage.getByLabel("Email address").fill(email);
+    await rolePage.getByLabel("Password").fill(password);
+    await rolePage.getByRole("button", { name: "Sign in" }).click();
+    await rolePage.waitForURL("**/dashboard");
+    const csrf = (await context.cookies()).find((cookie) => cookie.name === "mfe_csrf")?.value;
+    expect(csrf).toBeTruthy();
+    return { context, rolePage, csrf: csrf! };
+  }
+
+  try {
+    const viewerSession = await authenticatedContext(viewer!.email);
+    expect(
+      (
+        await viewerSession.context.request.post("/api/expenses/extract", {
+          headers: { "x-csrf-token": viewerSession.csrf },
+          multipart: {},
+        })
+      ).status(),
+    ).toBe(403);
+    expect(
+      (
+        await viewerSession.context.request.patch(`/api/expenses/${ownerExpense.id}`, {
+          headers: { "x-csrf-token": viewerSession.csrf },
+          data: {
+            categoryId: category.id,
+            invoiceNumber: "VIEWER-FORBIDDEN",
+            invoiceDate: "2026-06-01",
+            amount: 10,
+          },
+        })
+      ).status(),
+    ).toBe(403);
+    expect(
+      (
+        await viewerSession.context.request.post("/api/categories", {
+          headers: { "x-csrf-token": viewerSession.csrf },
+          data: { name: "Viewer forbidden" },
+        })
+      ).status(),
+    ).toBe(403);
+    expect((await viewerSession.context.request.get("/reports")).status()).toBe(200);
+    await viewerSession.context.close();
+
+    const memberSession = await authenticatedContext(member!.email);
+    expect(
+      (
+        await memberSession.context.request.patch(`/api/expenses/${memberExpense.id}`, {
+          headers: { "x-csrf-token": memberSession.csrf },
+          data: {
+            categoryId: category.id,
+            invoiceNumber: "MEMBER-OWN-UPDATED",
+            invoiceDate: "2026-06-01",
+            amount: 21,
+          },
+        })
+      ).status(),
+    ).toBe(200);
+    expect(
+      (
+        await memberSession.context.request.patch(`/api/expenses/${ownerExpense.id}`, {
+          headers: { "x-csrf-token": memberSession.csrf },
+          data: {
+            categoryId: category.id,
+            invoiceNumber: "MEMBER-FORBIDDEN",
+            invoiceDate: "2026-06-01",
+            amount: 11,
+          },
+        })
+      ).status(),
+    ).toBe(403);
+    await memberSession.context.close();
+
+    const adminSession = await authenticatedContext(admin!.email);
+    expect(
+      (
+        await adminSession.context.request.patch(`/api/expenses/${ownerExpense.id}`, {
+          headers: { "x-csrf-token": adminSession.csrf },
+          data: {
+            categoryId: category.id,
+            invoiceNumber: "ADMIN-UPDATED",
+            invoiceDate: "2026-06-01",
+            amount: 12,
+          },
+        })
+      ).status(),
+    ).toBe(200);
+    await adminSession.context.close();
+  } finally {
+    await db.session.deleteMany({ where: { userId: { in: extraUsers.map((user) => user.id) } } });
+    await db.auditLog.deleteMany({ where: { userId: { in: extraUsers.map((user) => user.id) } } });
+    await cleanupE2EAccount(db, owner);
+    await db.user.deleteMany({ where: { id: { in: extraUsers.map((user) => user.id) } } });
     await db.$disconnect();
   }
 });

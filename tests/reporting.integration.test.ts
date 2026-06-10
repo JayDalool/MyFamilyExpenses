@@ -9,7 +9,13 @@ import {
   softDeleteExpenseForUser,
   updateExpenseForUser,
 } from "../lib/expenses";
-import { getDashboardSummary, getReportData, normalizeReportFilters } from "../lib/reporting";
+import {
+  buildAccountantReport,
+  getDashboardAnalytics,
+  getDashboardSummary,
+  getReportData,
+  normalizeReportFilters,
+} from "../lib/reporting";
 import type { AuthContext } from "../lib/auth/session";
 import { assertSafeTestDatabase } from "./helpers/test-database";
 
@@ -222,6 +228,89 @@ integrationTest("reports match active household totals and exclude soft-deleted 
     assert.equal(reportA.expenses.length, 2);
     assert.equal(reportB.summary.total?.toString(), "100");
     assert.equal(reportB.summary.count, 1);
+  } finally {
+    await cleanupFixture(fixture);
+  }
+});
+
+integrationTest("accountant report applies category, member, and custom date filters", async () => {
+  const fixture = await createFixture();
+  await db.membership.create({
+    data: { userId: fixture.userB.id, householdId: fixture.householdA.id, role: "MEMBER" },
+  });
+  const filteredExpense = await db.expense.create({
+    data: {
+      userId: fixture.userB.id,
+      householdId: fixture.householdA.id,
+      categoryId: fixture.unusedCategoryA.id,
+      invoiceNumber: "A-FILTERED",
+      invoiceDate: new Date("2026-06-05T00:00:00.000Z"),
+      amount: 75,
+      filePath: "uploads/a-filtered.pdf",
+    },
+  });
+
+  try {
+    const base = {
+      period: "custom" as const,
+      fromDate: "2026-06-01",
+      toDate: "2026-06-07",
+      page: 1,
+      pageSize: 10,
+    };
+    const [all, byCategory, byMember, crossHousehold] = await Promise.all([
+      buildAccountantReport(fixture.householdA, base, db!, referenceDate),
+      buildAccountantReport(
+        fixture.householdA,
+        { ...base, categoryId: fixture.unusedCategoryA.id },
+        db!,
+        referenceDate,
+      ),
+      buildAccountantReport(
+        fixture.householdA,
+        { ...base, memberUserId: fixture.userB.id },
+        db!,
+        referenceDate,
+      ),
+      buildAccountantReport(
+        fixture.householdB,
+        { ...base, categoryId: fixture.unusedCategoryA.id },
+        db!,
+        referenceDate,
+      ),
+    ]);
+
+    assert.equal(all.totals.total, 135);
+    assert.equal(all.totals.count, 4);
+    assert.equal(all.expenses.some((expense) => expense.invoiceNumber === "A-DELETED"), false);
+    assert.deepEqual(byCategory.expenses.map((expense) => expense.id), [filteredExpense.id]);
+    assert.equal(byCategory.totals.total, 75);
+    assert.deepEqual(byMember.expenses.map((expense) => expense.id), [filteredExpense.id]);
+    assert.equal(byMember.memberBreakdown[0]?.name, fixture.userB.name);
+    assert.equal(crossHousehold.totals.count, 0);
+  } finally {
+    await cleanupFixture(fixture);
+  }
+});
+
+integrationTest("dashboard analytics totals and breakdowns are active-only and household-scoped", async () => {
+  const fixture = await createFixture();
+  try {
+    const [analyticsA, analyticsB] = await Promise.all([
+      getDashboardAnalytics(fixture.householdA.id, db!, referenceDate, "UTC"),
+      getDashboardAnalytics(fixture.householdB.id, db!, referenceDate, "UTC"),
+    ]);
+
+    assert.deepEqual(analyticsA.thisMonth, { total: 60, count: 3 });
+    assert.deepEqual(analyticsA.thisYear, { total: 100, count: 4 });
+    assert.equal(analyticsA.highestCategoryThisMonth?.name, fixture.usedCategoryA.name);
+    assert.equal(analyticsA.highestCategoryThisMonth?.total, 60);
+    assert.equal(analyticsA.topSpenderThisMonth?.name, fixture.userA.name);
+    assert.equal(analyticsA.categoryBreakdownThisYear[0]?.total, 100);
+    assert.equal(analyticsA.memberBreakdownThisYear[0]?.total, 100);
+    assert.equal(analyticsA.expenseCount.allTime, 5);
+    assert.deepEqual(analyticsB.thisMonth, { total: 100, count: 1 });
+    assert.equal(analyticsB.categoryBreakdownThisYear[0]?.name, fixture.categoryB.name);
   } finally {
     await cleanupFixture(fixture);
   }

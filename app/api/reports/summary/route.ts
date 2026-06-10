@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentHousehold } from "@/lib/auth/session";
-import { getDashboardSummary, getReportData, normalizeReportFilters } from "@/lib/reporting";
+import { getDashboardSummary, getReportData, parseReportFilters } from "@/lib/reporting";
 
 export const dynamic = "force-dynamic";
 
@@ -17,13 +17,22 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const fromDate = searchParams.get("fromDate");
   const toDate = searchParams.get("toDate");
+  const customFilters = fromDate || toDate
+    ? parseReportFilters({
+        period: "custom",
+        fromDate: fromDate ?? undefined,
+        toDate: toDate ?? undefined,
+        pageSize: "1",
+      })
+    : null;
+  if (customFilters && !customFilters.ok) {
+    return NextResponse.json({ error: customFilters.error }, { status: 400 });
+  }
+
   const [dashboard, customRange] = await Promise.all([
     getDashboardSummary(auth.householdId),
-    fromDate && toDate
-      ? getReportData(
-          auth.householdId,
-          normalizeReportFilters({ period: "custom", fromDate, toDate, pageSize: "1" }),
-        )
+    customFilters?.ok
+      ? getReportData(auth.householdId, customFilters.filters)
       : Promise.resolve(null),
   ]);
 

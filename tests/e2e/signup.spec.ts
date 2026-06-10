@@ -4,6 +4,7 @@ import { mkdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { hashPassword } from "../../lib/auth/password";
 import { createInviteToken, hashInviteToken } from "../../lib/household-invites";
+import { MAX_SYNC_EXPORT_ROWS } from "../../lib/reporting";
 import { assertSafeTestDatabase } from "../helpers/test-database";
 
 assertSafeTestDatabase();
@@ -657,6 +658,9 @@ test("dashboard totals update after expense create, edit, and delete", async ({ 
 test("multi-household users only see the selected household on dashboard and reports", async ({
   page,
 }) => {
+  const anonymousExport = await page.request.get("/api/reports/export?period=today&format=pdf");
+  expect(anonymousExport.status()).toBe(401);
+
   const db = new PrismaClient({ datasourceUrl: process.env.TEST_DATABASE_URL });
   const fixture = await createE2EAccount(db);
   const secondHousehold = await db.household.create({
@@ -707,15 +711,43 @@ test("multi-household users only see the selected household on dashboard and rep
 
     await expect(page.getByLabel("Current household")).toHaveValue(fixture.household.id);
     await expect(
-      page.getByText(`Spending summary for ${fixture.household.name}`),
+      page.getByText(`Spending analytics for ${fixture.household.name}`),
     ).toBeVisible();
     await expect(page.getByText("$10.00").first()).toBeVisible();
+    const firstExport = await page.request.get("/api/reports/export?period=today&format=csv");
+    expect(firstExport.ok()).toBe(true);
+    expect(firstExport.headers()["content-type"]).toContain("text/csv");
+    expect(await firstExport.text()).toContain("HOUSEHOLD-A");
+
+    const invalidDateExport = await page.request.get(
+      "/api/reports/export?period=custom&fromDate=2026-02-31&toDate=2026-03-02&format=csv",
+    );
+    expect(invalidDateExport.status()).toBe(400);
+    expect(await invalidDateExport.json()).toEqual({ error: "Invalid custom date range." });
+
+    const reversedDateExport = await page.request.get(
+      "/api/reports/export?period=custom&fromDate=2026-03-02&toDate=2026-03-01&format=csv",
+    );
+    expect(reversedDateExport.status()).toBe(400);
+    expect(await reversedDateExport.json()).toEqual({ error: "Invalid custom date range." });
+
+    const leapDayExport = await page.request.get(
+      "/api/reports/export?period=custom&fromDate=2024-02-29&toDate=2024-02-29&format=pdf",
+    );
+    expect(leapDayExport.ok()).toBe(true);
+    expect(leapDayExport.headers()["content-type"]).toContain("application/pdf");
+    expect((await leapDayExport.body()).length).toBeGreaterThan(500);
+
+    await page.goto("/reports?period=custom&fromDate=2026-02-31&toDate=2026-03-02");
+    await expect(page.getByText("Invalid custom date range.")).toBeVisible();
+    await expect(page.getByRole("link", { name: "PDF", exact: true })).toHaveCount(0);
+    await page.goto("/dashboard");
 
     await page.getByLabel("Current household").selectOption(secondHousehold.id);
     await page.waitForLoadState("networkidle");
     await expect(page.getByLabel("Current household")).toHaveValue(secondHousehold.id);
     await expect(
-      page.getByText(`Spending summary for ${secondHousehold.name}`),
+      page.getByText(`Spending analytics for ${secondHousehold.name}`),
     ).toBeVisible();
     await expect(page.getByText("$100.00").first()).toBeVisible();
 
@@ -725,6 +757,44 @@ test("multi-household users only see the selected household on dashboard and rep
     ).toBeVisible();
     await expect(page.getByText("$100.00").first()).toBeVisible();
     await expect(page.getByText("$10.00")).toHaveCount(0);
+
+    const secondExport = await page.request.get(
+      `/api/reports/export?period=today&format=csv&householdId=${fixture.household.id}`,
+    );
+    expect(secondExport.ok()).toBe(true);
+    const secondCsv = await secondExport.text();
+    expect(secondCsv).toContain("HOUSEHOLD-B");
+    expect(secondCsv).not.toContain("HOUSEHOLD-A");
+
+    const [pdfExport, xlsxExport] = await Promise.all([
+      page.request.get("/api/reports/export?period=today&format=pdf"),
+      page.request.get("/api/reports/export?period=today&format=xlsx"),
+    ]);
+    expect(pdfExport.headers()["content-type"]).toContain("application/pdf");
+    expect((await pdfExport.body()).length).toBeGreaterThan(500);
+    expect(xlsxExport.headers()["content-type"]).toContain(
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    expect((await xlsxExport.body()).length).toBeGreaterThan(500);
+
+    await db.expense.createMany({
+      data: Array.from({ length: MAX_SYNC_EXPORT_ROWS }, (_, index) => ({
+        userId: fixture.user.id,
+        householdId: secondHousehold.id,
+        categoryId: categoryB.id,
+        invoiceNumber: `EXPORT-LIMIT-${index}`,
+        invoiceDate: new Date(`${today}T00:00:00.000Z`),
+        amount: 1,
+        filePath: `uploads/export-limit-${index}.pdf`,
+      })),
+    });
+    const oversizedExport = await page.request.get(
+      "/api/reports/export?period=today&format=csv",
+    );
+    expect(oversizedExport.status()).toBe(413);
+    expect(await oversizedExport.json()).toEqual({
+      error: "This report is too large for instant export. Please narrow the date range.",
+    });
   } finally {
     await db.auditLog.deleteMany({ where: { householdId: secondHousehold.id } });
     await db.expense.deleteMany({ where: { householdId: secondHousehold.id } });
@@ -768,7 +838,7 @@ test("signup through an invite joins only the invited household after verificati
     await page.getByRole("button", { name: "Create account" }).click();
     await page.getByRole("link", { name: "Open the local verification link" }).click();
     await page.waitForURL("**/dashboard");
-    await expect(page.getByText(`Spending summary for ${owner.household.name}`)).toBeVisible();
+    await expect(page.getByText(`Spending analytics for ${owner.household.name}`)).toBeVisible();
 
     const invitedUser = await db.user.findUniqueOrThrow({ where: { email: invitedEmail } });
     const memberships = await db.membership.findMany({
@@ -899,7 +969,7 @@ test("removed signed-in users see no-household page and can accept a new invite"
     await page.goto(`/invite/${inviteToken}`);
     await page.getByRole("button", { name: "Join household" }).click();
     await page.waitForURL("**/dashboard");
-    await expect(page.getByText(`Spending summary for ${inviter.household.name}`)).toBeVisible();
+    await expect(page.getByText(`Spending analytics for ${inviter.household.name}`)).toBeVisible();
     expect(
       await db.membership.count({
         where: {

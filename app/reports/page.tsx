@@ -126,7 +126,7 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
               </Select>
             </label>
             <label className="text-sm font-medium text-slate-700">
-              Household member
+              Member (paid by)
               <Select className="mt-2" defaultValue={filters.memberUserId ?? ""} name="memberUserId">
                 <option value="">All members</option>
                 {memberships.map((membership) => (
@@ -188,7 +188,7 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
           </Card>
 
           <Card>
-            <h2 className="text-lg font-semibold text-slate-900">Member breakdown</h2>
+            <h2 className="text-lg font-semibold text-slate-900">Member breakdown (paid by)</h2>
             <div className="mt-3 divide-y divide-slate-200">
               {report.members.length === 0 ? (
                 <p className="py-4 text-sm text-slate-500">No member spending in this period.</p>
@@ -242,7 +242,8 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
                 <th className="px-2 py-3">Invoice</th>
                 <th className="px-2 py-3">Date</th>
                 <th className="px-2 py-3">Category</th>
-                <th className="px-2 py-3">Member</th>
+                <th className="px-2 py-3">Paid by</th>
+                <th className="px-2 py-3">Entered by</th>
                 <th className="px-2 py-3 text-right">Amount</th>
                 <th className="px-2 py-3">Receipt</th>
               </tr>
@@ -259,7 +260,8 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
                     {expense.invoiceDate.toISOString().slice(0, 10)}
                   </td>
                   <td className="px-2 py-3 text-slate-600">{expense.category.name}</td>
-                  <td className="px-2 py-3 text-slate-600">{expense.user.name}</td>
+                  <td className="px-2 py-3 text-slate-600">{expense.paidByUser.name}</td>
+                  <td className="px-2 py-3 text-slate-500">{expense.user.name}</td>
                   <td className="whitespace-nowrap px-2 py-3 text-right font-semibold">
                     {formatCurrency(expense.amount.toString())}
                   </td>

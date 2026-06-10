@@ -367,6 +367,7 @@ test("category form sends a protected native POST without JavaScript", async ({ 
     await db.expense.create({
       data: {
         userId: fixture.user.id,
+        paidByUserId: fixture.user.id,
         householdId: fixture.household.id,
         categoryId: usedCategory.id,
         invoiceNumber: "CATEGORY-IN-USE",
@@ -456,6 +457,7 @@ test("authenticated PDF preview and download responses keep correct framing and 
   const expense = await db.expense.create({
     data: {
       userId: fixture.user.id,
+      paidByUserId: fixture.user.id,
       householdId: fixture.household.id,
       categoryId: category.id,
       invoiceNumber: "PDF-E2E",
@@ -683,6 +685,7 @@ test("multi-household users only see the selected household on dashboard and rep
     data: [
       {
         userId: fixture.user.id,
+        paidByUserId: fixture.user.id,
         householdId: fixture.household.id,
         categoryId: categoryA.id,
         invoiceNumber: "HOUSEHOLD-A",
@@ -692,6 +695,7 @@ test("multi-household users only see the selected household on dashboard and rep
       },
       {
         userId: fixture.user.id,
+        paidByUserId: fixture.user.id,
         householdId: secondHousehold.id,
         categoryId: categoryB.id,
         invoiceNumber: "HOUSEHOLD-B",
@@ -780,6 +784,7 @@ test("multi-household users only see the selected household on dashboard and rep
     await db.expense.createMany({
       data: Array.from({ length: MAX_SYNC_EXPORT_ROWS }, (_, index) => ({
         userId: fixture.user.id,
+        paidByUserId: fixture.user.id,
         householdId: secondHousehold.id,
         categoryId: categoryB.id,
         invoiceNumber: `EXPORT-LIMIT-${index}`,
@@ -1096,6 +1101,7 @@ test("expense and category HTTP routes enforce VIEWER, MEMBER, and ADMIN roles",
     db.expense.create({
       data: {
         userId: owner.user.id,
+        paidByUserId: owner.user.id,
         householdId: owner.household.id,
         categoryId: category.id,
         invoiceNumber: "OWNER-ROUTE",
@@ -1107,6 +1113,7 @@ test("expense and category HTTP routes enforce VIEWER, MEMBER, and ADMIN roles",
     db.expense.create({
       data: {
         userId: member!.id,
+        paidByUserId: member!.id,
         householdId: owner.household.id,
         categoryId: category.id,
         invoiceNumber: "MEMBER-ROUTE",

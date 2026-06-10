@@ -38,6 +38,7 @@ model User {
 
   sessions            Session[]
   expenses            Expense[]
+  paidExpenses        Expense[]     @relation("ExpensePaidBy")
   deletedExpenses     Expense[]     @relation("ExpenseDeletedBy")
   memberships         Membership[]
   authAccounts        AuthAccount[]
@@ -85,9 +86,10 @@ model Membership {
   removedAt   DateTime?     @map("removed_at") @db.Timestamptz(6)
   createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  expenses  Expense[] @relation("ExpenseMembership")
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  household     Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  expenses     Expense[] @relation("ExpenseMembership")
+  paidExpenses Expense[] @relation("ExpensePaidByMembership")
 
   @@unique([userId, householdId])
   @@index([householdId])
@@ -152,6 +154,7 @@ model Category {
 model Expense {
   id              String    @id @default(uuid()) @db.Uuid
   userId          String    @map("user_id") @db.Uuid
+  paidByUserId    String    @map("paid_by_user_id") @db.Uuid
   householdId     String    @map("household_id") @db.Uuid
   categoryId      String    @map("category_id") @db.Uuid
   invoiceNumber   String    @map("invoice_number")
@@ -163,17 +166,23 @@ model Expense {
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  // user_id = who entered/uploaded the expense (audit owner).
   user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // paid_by_user_id = the assigned household member the spending is attributed to.
+  paidByUser    User       @relation("ExpensePaidBy", fields: [paidByUserId], references: [id], onDelete: Restrict)
   deletedByUser User?      @relation("ExpenseDeletedBy", fields: [deletedByUserId], references: [id], onDelete: SetNull)
   household     Household  @relation(fields: [householdId], references: [id], onDelete: Cascade)
   // Compound FK: ensures category belongs to the same household as this expense
   category      Category   @relation(fields: [categoryId, householdId], references: [id, householdId], onDelete: Restrict)
-  // Composite FK: ensures the expense owner is a member of the same household.
+  // Composite FK: ensures the expense owner (entered-by) is a member of the same household.
   membership    Membership @relation("ExpenseMembership", fields: [userId, householdId], references: [userId, householdId], onDelete: Restrict)
+  // Composite FK: ensures the paid-by member belongs to the same household.
+  paidByMembership Membership @relation("ExpensePaidByMembership", fields: [paidByUserId, householdId], references: [userId, householdId], onDelete: Restrict)
 
   @@index([householdId, invoiceDate])
   @@index([householdId, deletedAt, invoiceDate])
   @@index([userId, invoiceDate])
+  @@index([householdId, paidByUserId])
   @@index([categoryId, invoiceDate])
   @@map("expenses")
 }

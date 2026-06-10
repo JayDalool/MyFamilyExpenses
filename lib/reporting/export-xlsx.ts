@@ -199,8 +199,8 @@ export function reportToXlsx(report: AccountantReport): Buffer {
     rows.push([s(row.name), n(row.total), n(row.count)]);
   }
   rows.push([]);
-  rows.push([s("Member breakdown")]);
-  rows.push([s("Member"), s("Total"), s("Count")]);
+  rows.push([s("Member breakdown (paid by)")]);
+  rows.push([s("Member (paid by)"), s("Total"), s("Count")]);
   for (const row of report.memberBreakdown) {
     rows.push([s(row.name), n(row.total), n(row.count)]);
   }
@@ -216,7 +216,8 @@ export function reportToXlsx(report: AccountantReport): Buffer {
     s("Invoice number"),
     s("Invoice date"),
     s("Category"),
-    s("Member"),
+    s("Paid by (member)"),
+    s("Entered by"),
     s("Amount"),
     s("Receipt reference"),
   ]);
@@ -226,6 +227,7 @@ export function reportToXlsx(report: AccountantReport): Buffer {
       s(expense.invoiceDate.toISOString().slice(0, 10)),
       s(expense.categoryName),
       s(expense.userName),
+      s(expense.enteredByUserName),
       n(expense.amount),
       s(expense.filePath),
     ]);

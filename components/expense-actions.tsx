@@ -11,20 +11,33 @@ type CategoryOption = {
   name: string;
 };
 
+type MemberOption = {
+  id: string;
+  name: string;
+};
+
 type EditableExpense = {
   id: string;
   categoryId: string;
   invoiceNumber: string;
   invoiceDate: string;
   amount: string;
+  paidByUserId: string;
 };
 
 type ExpenseActionsProps = {
   expense: EditableExpense;
   categories: CategoryOption[];
+  members: MemberOption[];
+  canAssignToOthers: boolean;
 };
 
-export function ExpenseActions({ expense, categories }: ExpenseActionsProps) {
+export function ExpenseActions({
+  expense,
+  categories,
+  members,
+  canAssignToOthers,
+}: ExpenseActionsProps) {
   const router = useRouter();
   const isHydrated = useIsHydrated();
   const [isPending, startTransition] = useTransition();
@@ -35,6 +48,7 @@ export function ExpenseActions({ expense, categories }: ExpenseActionsProps) {
   const [invoiceNumber, setInvoiceNumber] = useState(expense.invoiceNumber);
   const [invoiceDate, setInvoiceDate] = useState(expense.invoiceDate);
   const [amount, setAmount] = useState(expense.amount);
+  const [paidByUserId, setPaidByUserId] = useState(expense.paidByUserId);
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -52,6 +66,7 @@ export function ExpenseActions({ expense, categories }: ExpenseActionsProps) {
             invoiceNumber,
             invoiceDate,
             amount: Number(amount),
+            paidByUserId,
           }),
         });
 
@@ -166,6 +181,30 @@ export function ExpenseActions({ expense, categories }: ExpenseActionsProps) {
             type="number"
             value={amount}
           />
+        </div>
+
+        <div>
+          <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="editPaidBy">
+            Paid by / assigned member
+          </label>
+          <select
+            className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-brand-500 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
+            disabled={!canAssignToOthers}
+            id="editPaidBy"
+            onChange={(event) => setPaidByUserId(event.target.value)}
+            value={paidByUserId}
+          >
+            {members.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.name}
+              </option>
+            ))}
+          </select>
+          {!canAssignToOthers ? (
+            <p className="mt-1 text-xs text-slate-400">
+              Only an owner or admin can reassign which member an expense is attributed to.
+            </p>
+          ) : null}
         </div>
 
         {error ? <p className="text-sm text-rose-600">{error}</p> : null}

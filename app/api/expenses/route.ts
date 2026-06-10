@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getCurrentHousehold } from "@/lib/auth/session";
-import { listExpensesPageForUser, normalizeExpenseHistoryFilters } from "@/lib/expenses";
+import {
+  listExpensesPageForUser,
+  normalizeExpenseHistoryFilters,
+  resolvePaidByUserId,
+} from "@/lib/expenses";
 import {
   createFallbackOcrResult,
   extractInvoiceData,
@@ -79,11 +83,22 @@ export async function POST(request: Request) {
     invoiceNumber: String(formData.get("invoiceNumber") ?? ""),
     invoiceDate: String(formData.get("invoiceDate") ?? ""),
     amount: String(formData.get("amount") ?? ""),
+    paidByUserId: String(formData.get("paidByUserId") ?? ""),
   });
 
   if (!input.success) {
     return NextResponse.json(
       { error: { message: input.error.issues[0]?.message ?? "Invalid expense payload." } },
+      { status: 400 },
+    );
+  }
+
+  // Resolve and authorize who the spending is attributed to (defaults to self).
+  const paidByUserId = await resolvePaidByUserId(auth, input.data.paidByUserId);
+
+  if (!paidByUserId) {
+    return NextResponse.json(
+      { error: { message: "You can only assign expenses to active household members." } },
       { status: 400 },
     );
   }
@@ -181,6 +196,7 @@ export async function POST(request: Request) {
     const expense = await prisma.expense.create({
       data: {
         userId: auth.user.id,
+        paidByUserId,
         householdId: auth.householdId,
         categoryId: finalized.data.categoryId,
         invoiceNumber: finalized.data.invoiceNumber,
@@ -188,7 +204,11 @@ export async function POST(request: Request) {
         amount: finalized.data.amount,
         filePath: storedFile.relativePath,
       },
-      include: { category: true, user: true },
+      include: {
+        category: true,
+        user: true,
+        paidByUser: { select: { id: true, name: true } },
+      },
     });
 
     await writeAuditLog({
@@ -198,6 +218,7 @@ export async function POST(request: Request) {
       metadata: {
         expenseId: expense.id,
         categoryId: expense.categoryId,
+        paidByUserId: expense.paidByUserId,
         amount: expense.amount.toString(),
         fileSize: file.size,
         mimeType: detectedMimeType ?? file.type,

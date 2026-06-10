@@ -97,6 +97,7 @@ async function createFixture() {
     member: await prisma.expense.create({
       data: {
         userId: users.member.id,
+        paidByUserId: users.member.id,
         householdId: household.id,
         categoryId: category.id,
         invoiceNumber: "MEMBER-OWN",
@@ -108,6 +109,7 @@ async function createFixture() {
     otherMember: await prisma.expense.create({
       data: {
         userId: users.otherMember.id,
+        paidByUserId: users.otherMember.id,
         householdId: household.id,
         categoryId: category.id,
         invoiceNumber: "OTHER-MEMBER",
@@ -119,6 +121,7 @@ async function createFixture() {
     outsider: await prisma.expense.create({
       data: {
         userId: users.outsider.id,
+        paidByUserId: users.outsider.id,
         householdId: otherHousehold.id,
         categoryId: otherCategory.id,
         invoiceNumber: "OUTSIDER",

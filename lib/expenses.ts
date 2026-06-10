@@ -1,10 +1,94 @@
 import type { Prisma } from "@prisma/client";
 import type { AuthContext } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
+import { canAssignExpenseToOthers } from "@/lib/auth/permissions";
 import {
   expenseHistoryFiltersSchema,
   type ExpenseHistoryFilters,
 } from "@/lib/validation/expense";
+
+const expenseRelationInclude = {
+  category: true,
+  user: true,
+  paidByUser: { select: { id: true, name: true } },
+} satisfies Prisma.ExpenseInclude;
+
+/**
+ * Resolve and authorize the paid-by member for a create/update.
+ *
+ * - When omitted, defaults to the current user (always a member of the active household).
+ * - When it equals the current user, it is allowed.
+ * - When it targets another member, the caller must be allowed to assign on behalf
+ *   of others (OWNER/ADMIN) AND the target must be an active member of the active
+ *   household. Otherwise returns null so the caller can reject with a 400.
+ */
+export async function resolvePaidByUserId(
+  auth: AuthContext,
+  requested: string | undefined,
+  db: Pick<typeof prisma, "membership"> = prisma,
+): Promise<string | null> {
+  if (!requested || requested === auth.user.id) {
+    return auth.user.id;
+  }
+
+  if (!canAssignExpenseToOthers(auth)) {
+    return null;
+  }
+
+  const membership = await db.membership.findFirst({
+    where: { userId: requested, householdId: auth.householdId, removedAt: null },
+    select: { userId: true },
+  });
+
+  return membership ? membership.userId : null;
+}
+
+export type PaidByEditDecision =
+  | { ok: true; paidByUserId: string }
+  | { ok: false; status: 400 | 403; message: string };
+
+/**
+ * Authorize a paid-by attribution change on an *existing* expense.
+ *
+ * Stricter than create: reassigning attribution after creation is OWNER/ADMIN-only.
+ * A MEMBER cannot change paid-by at all once the expense exists — not even back to
+ * themselves — so an owner/admin assignment to another member can never be silently
+ * reclaimed.
+ *
+ * - No change requested (omitted or equal to the current value) → keep current value,
+ *   so editing other fields never trips the assignment check.
+ * - A real change by a non-OWNER/ADMIN → 403.
+ * - A real change to an inactive or cross-household member → 400.
+ */
+export async function resolvePaidByUserIdForEdit(
+  auth: AuthContext,
+  requested: string | undefined,
+  currentPaidByUserId: string,
+  db: Pick<typeof prisma, "membership"> = prisma,
+): Promise<PaidByEditDecision> {
+  if (!requested || requested === currentPaidByUserId) {
+    return { ok: true, paidByUserId: currentPaidByUserId };
+  }
+
+  if (!canAssignExpenseToOthers(auth)) {
+    return {
+      ok: false,
+      status: 403,
+      message: "Only an owner or admin can change who an expense is attributed to.",
+    };
+  }
+
+  const resolved = await resolvePaidByUserId(auth, requested, db);
+  if (!resolved) {
+    return {
+      ok: false,
+      status: 400,
+      message: "You can only assign expenses to active household members.",
+    };
+  }
+
+  return { ok: true, paidByUserId: resolved };
+}
 
 type RawSearchParams = Record<string, string | string[] | undefined>;
 type ExpenseStore = Pick<typeof prisma, "category" | "expense">;
@@ -95,7 +179,7 @@ export async function listExpensesPageForUser(
 
   const expenses = await db.expense.findMany({
     where,
-    include: { category: true, user: true },
+    include: expenseRelationInclude,
     orderBy: [{ invoiceDate: "desc" }, { createdAt: "desc" }],
     skip,
     take: requestedPagination.pageSize,
@@ -131,7 +215,7 @@ export async function getExpenseForUser(
       householdId: auth.householdId,
       deletedAt: null,
     },
-    include: { category: true, user: true },
+    include: expenseRelationInclude,
   });
 }
 

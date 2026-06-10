@@ -3,6 +3,7 @@ import { getCurrentHousehold } from "@/lib/auth/session";
 import {
   findAllowedExpenseCategoryForUpdate,
   getExpenseForUser,
+  resolvePaidByUserIdForEdit,
   softDeleteExpenseForUser,
   updateExpenseForUser,
 } from "@/lib/expenses";
@@ -90,11 +91,28 @@ export async function PATCH(request: Request, context: RouteContext) {
     );
     }
 
+  // Resolve and authorize the paid-by member. Reassigning attribution after creation is
+  // OWNER/ADMIN-only; a MEMBER cannot change paid-by at all (not even back to themselves),
+  // and editing other fields with paid-by unchanged never trips the assignment check.
+  const paidByDecision = await resolvePaidByUserIdForEdit(
+    auth,
+    parsed.data.paidByUserId,
+    existingExpense.paidByUserId,
+  );
+  if (!paidByDecision.ok) {
+    return NextResponse.json(
+      { error: { message: paidByDecision.message } },
+      { status: paidByDecision.status },
+    );
+  }
+  const paidByUserId = paidByDecision.paidByUserId;
+
   const expense = await updateExpenseForUser(auth, id, {
       categoryId: parsed.data.categoryId,
       invoiceNumber: parsed.data.invoiceNumber,
       invoiceDate: new Date(`${parsed.data.invoiceDate}T00:00:00.000Z`),
       amount: parsed.data.amount,
+      paidByUserId,
   });
 
   if (!expense) {
@@ -115,12 +133,14 @@ export async function PATCH(request: Request, context: RouteContext) {
         invoiceNumber: existingExpense.invoiceNumber,
         invoiceDate: existingExpense.invoiceDate.toISOString().slice(0, 10),
         amount: existingExpense.amount.toString(),
+        paidByUserId: existingExpense.paidByUserId,
       },
       next: {
         categoryId: expense.categoryId,
         invoiceNumber: expense.invoiceNumber,
         invoiceDate: expense.invoiceDate.toISOString().slice(0, 10),
         amount: expense.amount.toString(),
+        paidByUserId: expense.paidByUserId,
       },
     },
   });

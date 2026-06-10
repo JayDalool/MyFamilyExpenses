@@ -14,6 +14,11 @@ type CategoryOption = {
   name: string;
 };
 
+type MemberOption = {
+  id: string;
+  name: string;
+};
+
 type Step = "category" | "upload" | "review";
 
 type ExtractResponse = {
@@ -235,13 +240,24 @@ function StepIndicator({ current }: { current: Step }) {
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
-export function ExpenseWizard({ categories }: { categories: CategoryOption[] }) {
+export function ExpenseWizard({
+  categories,
+  members,
+  currentUserId,
+  canAssignToOthers,
+}: {
+  categories: CategoryOption[];
+  members: MemberOption[];
+  currentUserId: string;
+  canAssignToOthers: boolean;
+}) {
   const router = useRouter();
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [step, setStep] = useState<Step>("category");
   const [category, setCategory] = useState<CategoryOption | null>(null);
+  const [paidByUserId, setPaidByUserId] = useState<string>(currentUserId);
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [extracted, setExtracted] = useState<OcrResult | null>(null);
@@ -363,6 +379,7 @@ export function ExpenseWizard({ categories }: { categories: CategoryOption[] }) 
     const fd = new FormData();
     fd.append("categoryId", category.id);
     fd.append("file", file);
+    fd.append("paidByUserId", paidByUserId);
     if (invoiceNumber) fd.append("invoiceNumber", invoiceNumber);
     if (invoiceDate) fd.append("invoiceDate", invoiceDate);
     if (amount) fd.append("amount", amount);
@@ -397,6 +414,7 @@ export function ExpenseWizard({ categories }: { categories: CategoryOption[] }) 
   const reset = () => {
     setStep("category");
     setCategory(null);
+    setPaidByUserId(currentUserId);
     clearSelectedFile();
     setIsExtracting(false);
     setIsSaving(false);
@@ -850,6 +868,34 @@ export function ExpenseWizard({ categories }: { categories: CategoryOption[] }) 
                 type="number"
                 value={amount}
               />
+
+              <div>
+                <label
+                  className="mb-1.5 block text-sm font-semibold text-slate-700"
+                  htmlFor="paidByUserId"
+                >
+                  Paid by / assigned member
+                </label>
+                <select
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-4 text-slate-900 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500"
+                  disabled={!canAssignToOthers}
+                  id="paidByUserId"
+                  onChange={(event) => setPaidByUserId(event.target.value)}
+                  value={paidByUserId}
+                >
+                  {members.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.name}
+                      {member.id === currentUserId ? " (you)" : ""}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-slate-400">
+                  {canAssignToOthers
+                    ? "Whose spending this expense counts toward in reports."
+                    : "Your role can only record expenses paid by you."}
+                </p>
+              </div>
             </div>
 
             {/* Save error */}

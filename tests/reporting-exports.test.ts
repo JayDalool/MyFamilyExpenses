@@ -31,6 +31,8 @@ const report: AccountantReport = {
       categoryName: "Office supplies",
       userId: "user-id",
       userName: "Taylor User",
+      enteredByUserId: "entered-by-id",
+      enteredByUserName: "Jordan Uploader",
       filePath: "uploads/invoice.pdf",
     },
   ],
@@ -42,11 +44,19 @@ test("CSV export contains accountant report sections and expense data", () => {
   assert.ok(csv.startsWith("\uFEFF"));
   assert.match(csv, /Household,Family & Co/);
   assert.match(csv, /Category breakdown/);
-  assert.match(csv, /Member breakdown/);
+  assert.match(csv, /Member breakdown \(paid by\)/);
   assert.match(csv, /Monthly totals/);
   assert.match(csv, /Expense register/);
   assert.match(csv, /INV-001/);
   assert.match(csv, /uploads\/invoice\.pdf/);
+});
+
+test("CSV expense register includes both paid-by and entered-by", () => {
+  const csv = reportToCsv(report);
+
+  assert.match(csv, /Paid by \(member\),Entered by/);
+  // Paid-by member then entered-by uploader on the expense row.
+  assert.match(csv, /INV-001,2026-06-02,Office supplies,Taylor User,Jordan Uploader,123\.45/);
 });
 
 test("CSV export neutralizes spreadsheet formula injection", () => {
@@ -60,12 +70,12 @@ test("CSV export neutralizes spreadsheet formula injection", () => {
   assert.match(csv, /'\+CMD/);
 });
 
-test("PDF export produces a non-empty PDF document", () => {
-  const pdf = reportToPdf(report);
+test("PDF export produces a non-empty PDF document", async () => {
+  const pdf = await reportToPdf(report);
 
   assert.ok(pdf.length > 500);
-  assert.equal(pdf.subarray(0, 8).toString("ascii"), "%PDF-1.4");
-  assert.match(pdf.subarray(-32).toString("ascii"), /%%EOF/);
+  assert.equal(pdf.subarray(0, 5).toString("ascii"), "%PDF-");
+  assert.match(pdf.subarray(-1024).toString("latin1"), /%%EOF/);
 });
 
 test("XLSX export produces a non-empty OOXML zip", () => {

@@ -82,17 +82,17 @@ export default async function DashboardPage() {
             <p className="mt-1 text-xs text-slate-500">{expenseCountLabel(analytics.thisMonth.count)}</p>
           </Card>
           <Card>
-            <p className="text-sm font-medium text-slate-500">Last month</p>
-            <p className="mt-2 text-2xl font-bold text-slate-900">{formatCurrency(analytics.lastMonth.total)}</p>
-            <p className="mt-1 text-xs text-slate-500">{expenseCountLabel(analytics.lastMonth.count)}</p>
-          </Card>
-          <Card>
             <p className="text-sm font-medium text-slate-500">This year</p>
             <p className="mt-2 text-2xl font-bold text-slate-900">{formatCurrency(analytics.thisYear.total)}</p>
             <p className="mt-1 text-xs text-slate-500">{expenseCountLabel(analytics.thisYear.count)}</p>
           </Card>
           <Card>
-            <p className="text-sm font-medium text-slate-500">Average active month</p>
+            <p className="text-sm font-medium text-slate-500">Last month</p>
+            <p className="mt-2 text-2xl font-bold text-slate-900">{formatCurrency(analytics.lastMonth.total)}</p>
+            <p className="mt-1 text-xs text-slate-500">{expenseCountLabel(analytics.lastMonth.count)}</p>
+          </Card>
+          <Card>
+            <p className="text-sm font-medium text-slate-500">Average month</p>
             <p className="mt-2 text-2xl font-bold text-slate-900">{formatCurrency(analytics.averageMonthly.total)}</p>
             <p className="mt-1 text-xs text-slate-500">Across {analytics.averageMonthly.months} months with spending</p>
           </Card>
@@ -109,7 +109,7 @@ export default async function DashboardPage() {
             </p>
           </Card>
           <Card>
-            <p className="text-sm font-medium text-slate-500">Top spender this month</p>
+            <p className="text-sm font-medium text-slate-500">Top member this month (paid by)</p>
             <p className="mt-2 font-semibold text-slate-900">
               {analytics.topSpenderThisMonth?.name ?? "No spending"}
             </p>
@@ -153,7 +153,8 @@ export default async function DashboardPage() {
             <BreakdownBars rows={analytics.categoryBreakdownThisYear} empty="No category spending this year." />
           </Card>
           <Card>
-            <h2 className="text-lg font-semibold text-slate-900">Member spending this year</h2>
+            <h2 className="text-lg font-semibold text-slate-900">Member tracker — this year</h2>
+            <p className="text-xs text-slate-500">Spending attributed to each member (paid by).</p>
             <BreakdownBars rows={analytics.memberBreakdownThisYear} empty="No member spending this year." />
           </Card>
         </section>
@@ -195,7 +196,7 @@ export default async function DashboardPage() {
                       {expense.invoiceNumber}
                     </Link>
                     <p className="truncate text-xs text-slate-500">
-                      {expense.category.name} | {expense.invoiceDate.toISOString().slice(0, 10)} | {expense.user.name}
+                      {expense.category.name} | {expense.invoiceDate.toISOString().slice(0, 10)} | Paid by {expense.paidByUser.name}
                     </p>
                   </div>
                   <p className="whitespace-nowrap font-semibold text-slate-900">{formatCurrency(expense.amount.toString())}</p>

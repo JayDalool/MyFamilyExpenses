@@ -60,8 +60,8 @@ export function reportToCsv(report: AccountantReport): string {
   }
   lines.push("");
 
-  lines.push(toRow(["Member breakdown"]));
-  lines.push(toRow(["Member", "Total", "Count"]));
+  lines.push(toRow(["Member breakdown (paid by)"]));
+  lines.push(toRow(["Member (paid by)", "Total", "Count"]));
   for (const row of report.memberBreakdown) {
     lines.push(toRow([row.name, row.total, row.count]));
   }
@@ -80,7 +80,8 @@ export function reportToCsv(report: AccountantReport): string {
       "Invoice number",
       "Invoice date",
       "Category",
-      "Member",
+      "Paid by (member)",
+      "Entered by",
       "Amount",
       "Receipt reference",
     ]),
@@ -92,6 +93,7 @@ export function reportToCsv(report: AccountantReport): string {
         expense.invoiceDate,
         expense.categoryName,
         expense.userName,
+        expense.enteredByUserName,
         expense.amount,
         expense.filePath,
       ]),

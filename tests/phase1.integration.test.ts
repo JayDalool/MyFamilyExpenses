@@ -69,6 +69,7 @@ async function createFixture() {
       db.expense.create({
         data: {
           userId: userA.id,
+          paidByUserId: userA.id,
           householdId: householdA.id,
           categoryId: index === 0 ? disabledCategoryA.id : activeCategoryA.id,
           invoiceNumber: `A-${String(index).padStart(2, "0")}`,
@@ -83,6 +84,7 @@ async function createFixture() {
   const expenseB = await db.expense.create({
     data: {
       userId: userB.id,
+      paidByUserId: userB.id,
       householdId: householdB.id,
       categoryId: activeCategoryB.id,
       invoiceNumber: "B-00",

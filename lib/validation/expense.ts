@@ -41,11 +41,17 @@ const optionalPositiveIntegerField = (max: number) =>
     z.coerce.number().int().min(1).max(max).optional(),
   );
 
+const optionalPaidByUserId = z.preprocess(
+  emptyStringToUndefined,
+  z.string().uuid("Select a valid household member").optional(),
+);
+
 export const expenseInputSchema = z.object({
   categoryId: z.string().uuid("Select a category"),
   invoiceNumber: optionalTextField,
   invoiceDate: optionalDateField,
   amount: optionalAmountField,
+  paidByUserId: optionalPaidByUserId,
 });
 
 export const finalExpenseSchema = z.object({
@@ -55,6 +61,7 @@ export const finalExpenseSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Invoice date must be in YYYY-MM-DD format"),
   amount: z.number().finite().nonnegative("Amount must be zero or greater"),
+  paidByUserId: optionalPaidByUserId,
 });
 
 export const extractExpenseSchema = z.object({

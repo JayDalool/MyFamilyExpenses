@@ -8,7 +8,8 @@ import {
 import { prisma } from "@/lib/db/prisma";
 import { requireHouseholdMember } from "@/lib/auth/session";
 import { formatCurrency } from "@/lib/utils";
-import { canCreateExpense } from "@/lib/auth/permissions";
+import { canAssignExpenseToOthers, canCreateExpense } from "@/lib/auth/permissions";
+import { HouseholdSwitcher } from "@/components/household-switcher";
 
 type ExpensesPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -38,13 +39,23 @@ export default async function ExpensesPage({ searchParams }: ExpensesPageProps) 
     ((await searchParams) ?? {}) as Record<string, string | string[] | undefined>,
   );
 
-  const categories = await prisma.category.findMany({
-    where: { householdId, status: "ACTIVE" },
-    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-    select: { id: true, name: true },
-  });
-
-  const expensePage = await listExpensesPageForUser(auth, filters);
+  const [categories, memberships, expensePage] = await Promise.all([
+    prisma.category.findMany({
+      where: { householdId, status: "ACTIVE" },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      select: { id: true, name: true },
+    }),
+    prisma.membership.findMany({
+      where: { householdId, removedAt: null },
+      include: { user: { select: { id: true, name: true } } },
+      orderBy: { createdAt: "asc" },
+    }),
+    listExpensesPageForUser(auth, filters),
+  ]);
+  const members = memberships.map((membership) => ({
+    id: membership.user.id,
+    name: membership.user.name,
+  }));
   const { expenses, pagination } = expensePage;
   const hasActiveFilters = Boolean(
     filters.invoiceNumber || filters.categoryId || filters.fromDate || filters.toDate,
@@ -61,7 +72,27 @@ export default async function ExpensesPage({ searchParams }: ExpensesPageProps) 
               Select a category, snap or upload your receipt, then save.
             </p>
           </div>
-          <ExpenseWizard categories={categories} />
+          <div className="mb-4 flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-soft sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Household</p>
+              <p className="font-semibold text-slate-900">{auth.householdName}</p>
+            </div>
+            {auth.households.length > 1 ? (
+              <div className="sm:text-right">
+                <p className="mb-1 text-xs text-slate-500">Adding to a different household?</p>
+                <HouseholdSwitcher
+                  currentHouseholdId={auth.householdId}
+                  households={auth.households}
+                />
+              </div>
+            ) : null}
+          </div>
+          <ExpenseWizard
+            categories={categories}
+            members={members}
+            currentUserId={auth.user.id}
+            canAssignToOthers={canAssignExpenseToOthers(auth)}
+          />
         </div> : null}
 
         <section className="rounded-3xl bg-white p-6 shadow-soft">
@@ -179,8 +210,9 @@ export default async function ExpensesPage({ searchParams }: ExpensesPageProps) 
                         {expense.invoiceNumber}
                       </Link>
                       <p className="text-sm text-slate-500">
-                        {expense.category.name} | {expense.invoiceDate.toISOString().slice(0, 10)} | {expense.user.name}
+                        {expense.category.name} | {expense.invoiceDate.toISOString().slice(0, 10)} | Paid by {expense.paidByUser.name}
                       </p>
+                      <p className="text-xs text-slate-400">Entered by {expense.user.name}</p>
                     </div>
 
                     <div className="text-left sm:text-right">

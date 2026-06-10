@@ -188,7 +188,8 @@ function activeExpenseWhere(
     deletedAt: null,
     ...(range ? { invoiceDate: { gte: range.from, lte: range.to } } : {}),
     ...(extras?.categoryId ? { categoryId: extras.categoryId } : {}),
-    ...(extras?.memberUserId ? { userId: extras.memberUserId } : {}),
+    // Member spending is attributed to the paid-by member, not the uploader.
+    ...(extras?.memberUserId ? { paidByUserId: extras.memberUserId } : {}),
   };
 }
 
@@ -217,7 +218,11 @@ export async function getDashboardSummary(
     }),
     db.expense.findMany({
       where: activeExpenseWhere(householdId),
-      include: { category: true, user: true },
+      include: {
+        category: true,
+        user: true,
+        paidByUser: { select: { id: true, name: true } },
+      },
       orderBy: [{ invoiceDate: "desc" }, { createdAt: "desc" }],
       take: 6,
     }),
@@ -345,7 +350,7 @@ export async function getDashboardAnalytics(
       _count: { _all: true },
     }),
     db.expense.groupBy({
-      by: ["userId"],
+      by: ["paidByUserId"],
       where: activeExpenseWhere(householdId, yearRange),
       _sum: { amount: true },
       _count: { _all: true },
@@ -357,7 +362,7 @@ export async function getDashboardAnalytics(
       _count: { _all: true },
     }),
     db.expense.groupBy({
-      by: ["userId"],
+      by: ["paidByUserId"],
       where: activeExpenseWhere(householdId, thisMonthRange),
       _sum: { amount: true },
       _count: { _all: true },
@@ -389,8 +394,8 @@ export async function getDashboardAnalytics(
   );
   const userIds = Array.from(
     new Set([
-      ...memberGroupsYear.map((g) => g.userId),
-      ...memberGroupsMonth.map((g) => g.userId),
+      ...memberGroupsYear.map((g) => g.paidByUserId),
+      ...memberGroupsMonth.map((g) => g.paidByUserId),
     ]),
   );
   const [categoryRows, userRows] = await Promise.all([
@@ -424,8 +429,8 @@ export async function getDashboardAnalytics(
 
   const memberBreakdownThisYear = memberGroupsYear
     .map((row) => ({
-      userId: row.userId,
-      name: userNames.get(row.userId) ?? "Unknown member",
+      userId: row.paidByUserId,
+      name: userNames.get(row.paidByUserId) ?? "Unknown member",
       total: Number(row._sum.amount ?? 0),
       count: row._count._all,
     }))
@@ -444,8 +449,8 @@ export async function getDashboardAnalytics(
   const topSpenderThisMonth = memberGroupsMonth.length
     ? memberGroupsMonth
         .map((row) => ({
-          userId: row.userId,
-          name: userNames.get(row.userId) ?? "Unknown member",
+          userId: row.paidByUserId,
+          name: userNames.get(row.paidByUserId) ?? "Unknown member",
           total: Number(row._sum.amount ?? 0),
         }))
         .sort((left, right) => right.total - left.total)[0]
@@ -562,8 +567,12 @@ export type AccountantReport = {
     amount: number;
     categoryId: string;
     categoryName: string;
+    // paid-by member (spending attribution)
     userId: string;
     userName: string;
+    // entered-by / uploader (audit owner)
+    enteredByUserId: string;
+    enteredByUserName: string;
     filePath: string;
   }>;
 };
@@ -603,7 +612,7 @@ export async function buildAccountantReport(
       _count: { _all: true },
     }),
     db.expense.groupBy({
-      by: ["userId"],
+      by: ["paidByUserId"],
       where,
       _sum: { amount: true },
       _count: { _all: true },
@@ -619,13 +628,17 @@ export async function buildAccountantReport(
         AND "invoice_date" >= ${range.from}
         AND "invoice_date" <= ${range.to}
         ${filters.categoryId ? Prisma.sql`AND "category_id" = CAST(${filters.categoryId} AS uuid)` : Prisma.empty}
-        ${filters.memberUserId ? Prisma.sql`AND "user_id" = CAST(${filters.memberUserId} AS uuid)` : Prisma.empty}
+        ${filters.memberUserId ? Prisma.sql`AND "paid_by_user_id" = CAST(${filters.memberUserId} AS uuid)` : Prisma.empty}
       GROUP BY "bucket"
       ORDER BY "bucket" ASC
     `,
     db.expense.findMany({
       where,
-      include: { category: { select: { id: true, name: true } }, user: { select: { id: true, name: true } } },
+      include: {
+        category: { select: { id: true, name: true } },
+        user: { select: { id: true, name: true } },
+        paidByUser: { select: { id: true, name: true } },
+      },
       orderBy: [{ invoiceDate: "asc" }, { createdAt: "asc" }],
     }),
   ]);
@@ -633,7 +646,8 @@ export async function buildAccountantReport(
   const categoryNames = new Map(
     expenses.map((e) => [e.categoryId, e.category.name]),
   );
-  const userNames = new Map(expenses.map((e) => [e.userId, e.user.name]));
+  // Member breakdown is keyed by the paid-by member.
+  const userNames = new Map(expenses.map((e) => [e.paidByUserId, e.paidByUser.name]));
 
   return {
     household,
@@ -659,8 +673,8 @@ export async function buildAccountantReport(
       .sort((l, r) => r.total - l.total),
     memberBreakdown: memberGroups
       .map((row) => ({
-        userId: row.userId,
-        name: userNames.get(row.userId) ?? "Unknown member",
+        userId: row.paidByUserId,
+        name: userNames.get(row.paidByUserId) ?? "Unknown member",
         total: Number(row._sum.amount ?? 0),
         count: row._count._all,
       }))
@@ -677,8 +691,10 @@ export async function buildAccountantReport(
       amount: Number(e.amount),
       categoryId: e.categoryId,
       categoryName: e.category.name,
-      userId: e.userId,
-      userName: e.user.name,
+      userId: e.paidByUserId,
+      userName: e.paidByUser.name,
+      enteredByUserId: e.userId,
+      enteredByUserName: e.user.name,
       filePath: e.filePath,
     })),
   };
@@ -724,7 +740,7 @@ export async function getReportData(
       _count: { _all: true },
     }),
     db.expense.groupBy({
-      by: ["userId"],
+      by: ["paidByUserId"],
       where,
       _sum: { amount: true },
       _count: { _all: true },
@@ -740,7 +756,7 @@ export async function getReportData(
         AND "invoice_date" >= ${range.from}
         AND "invoice_date" <= ${range.to}
         ${filters.categoryId ? Prisma.sql`AND "category_id" = CAST(${filters.categoryId} AS uuid)` : Prisma.empty}
-        ${filters.memberUserId ? Prisma.sql`AND "user_id" = CAST(${filters.memberUserId} AS uuid)` : Prisma.empty}
+        ${filters.memberUserId ? Prisma.sql`AND "paid_by_user_id" = CAST(${filters.memberUserId} AS uuid)` : Prisma.empty}
       GROUP BY "bucket"
       ORDER BY "bucket" ASC
     `,
@@ -751,7 +767,11 @@ export async function getReportData(
   const [expenses, categories, users] = await Promise.all([
     db.expense.findMany({
       where,
-      include: { category: true, user: true },
+      include: {
+        category: true,
+        user: true,
+        paidByUser: { select: { id: true, name: true } },
+      },
       orderBy: [{ invoiceDate: "desc" }, { createdAt: "desc" }],
       skip: (page - 1) * filters.pageSize,
       take: filters.pageSize,
@@ -764,7 +784,7 @@ export async function getReportData(
       select: { id: true, name: true },
     }),
     db.user.findMany({
-      where: { id: { in: memberGroups.map((group) => group.userId) } },
+      where: { id: { in: memberGroups.map((group) => group.paidByUserId) } },
       select: { id: true, name: true },
     }),
   ]);
@@ -788,8 +808,8 @@ export async function getReportData(
       .sort((left, right) => Number(right.total ?? 0) - Number(left.total ?? 0)),
     members: memberGroups
       .map((group) => ({
-        userId: group.userId,
-        name: userNames.get(group.userId) ?? "Unknown member",
+        userId: group.paidByUserId,
+        name: userNames.get(group.paidByUserId) ?? "Unknown member",
         total: group._sum.amount ?? null,
         count: group._count._all,
       }))

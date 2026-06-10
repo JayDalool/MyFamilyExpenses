@@ -11,6 +11,8 @@ import { reportToPdf } from "@/lib/reporting/export-pdf";
 import { reportToXlsx } from "@/lib/reporting/export-xlsx";
 
 export const dynamic = "force-dynamic";
+// pdfkit reads its built-in AFM font metrics from the filesystem at runtime.
+export const runtime = "nodejs";
 
 // TODO: Add a dedicated report-export rate-limit store. Existing login,
 // invite, and password-reset limiters have domain-specific tables and keys.
@@ -83,7 +85,8 @@ export async function GET(request: Request) {
     { id: auth.householdId, name: auth.householdName },
     filters,
   );
-  const body = selectedExport.serialize(report);
+  // PDF serializer is async (pdfkit streams); CSV/XLSX are sync — await is harmless.
+  const body = await selectedExport.serialize(report);
   const generatedDate = report.generatedAt.toISOString().slice(0, 10);
   const fileName =
     `myfamilyexpenses-${fileSlug(auth.householdName)}-${filters.period}-${generatedDate}` +

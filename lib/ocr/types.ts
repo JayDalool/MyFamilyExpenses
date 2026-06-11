@@ -11,14 +11,56 @@ export type OcrInput = {
   fileBytes?: Uint8Array;
 };
 
-// Structured fields produced by the Node-owned ReceiptParser. This is also the
-// response surfaced to the wizard, so its shape must stay stable.
+// Coarse receipt classification (Stage A). Drives field strategy — e.g. a bank
+// deposit/informational slip should not have an amount confidently auto-filled.
+export type ReceiptType =
+  | "retail"
+  | "restaurant"
+  | "bank_withdrawal"
+  | "bank_deposit"
+  | "transfer"
+  | "informational"
+  | "unknown";
+
+// One ranked extraction candidate for a field. `value` is a string for
+// invoice/date and a number for amount. `sourceLabel` is the receipt label the
+// value came from (e.g. "Total", "Withdraw", "Invoice No"); `reason` is a short
+// human explanation of why it ranked where it did. bbox/x/y are best-effort and
+// only present when block geometry was available.
+export type OcrCandidate<T> = {
+  value: T;
+  confidence: number;
+  sourceLabel: string;
+  reason: string;
+  bbox?: [number, number, number, number];
+  x?: number;
+  y?: number;
+};
+
+export type OcrTextCandidate = OcrCandidate<string>;
+export type OcrAmountCandidate = OcrCandidate<number>;
+
+export type OcrCandidates = {
+  invoiceNumber: OcrTextCandidate[];
+  invoiceDate: OcrTextCandidate[];
+  amount: OcrAmountCandidate[];
+};
+
+// Structured fields produced by the Node-owned ReceiptParser. The first five
+// fields are the stable wizard contract; the Stage A fields below are additive
+// (ranked candidates, classification, multi-receipt detection, warnings) and the
+// existing UI ignores any it does not use.
 export type OcrResult = {
   invoiceNumber: string;
   invoiceDate: string;
   amount: number;
   provider: string;
   confidence: OcrConfidence;
+  // ── Stage A additive intelligence ──
+  receiptType: ReceiptType;
+  multipleReceipts: boolean;
+  warnings: string[];
+  candidates: OcrCandidates;
 };
 
 // ── Engine boundary (recognition only) ───────────────────────────────────────

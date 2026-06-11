@@ -103,47 +103,37 @@ export async function POST(request: Request) {
       fileBytes,
     });
 
-    // OCR ran but found no usable fields — return a controlled, quality-aware
-    // warning (reusing the existing error envelope) so the wizard can guide the
-    // user. Manual entry still works.
-    if (!hasAnyOcrField(extraction)) {
-      await writeAuditLog({
-        userId: auth.user.id,
-        householdId: auth.householdId,
-        action: "expense.upload.ocr_failed",
-        metadata: {
-          categoryId: parsed.data.categoryId,
-          fileSize: file.size,
-          mimeType: detectedMimeType ?? file.type,
-          provider: extraction.provider,
-          errorCode: lowQuality ? "LOW_QUALITY_IMAGE" : "OCR_NO_FIELDS",
-        },
-      });
-
-      return NextResponse.json(
-        {
-          error: {
-            code: lowQuality ? "LOW_QUALITY_IMAGE" : "OCR_NO_FIELDS",
-            message: lowQuality ? LOW_QUALITY_MESSAGE : UNREADABLE_MESSAGE,
-          },
-        },
-        { status: 422 },
-      );
-    }
+    // Always return the extraction (Stage A): even with no confident fields it
+    // carries ranked candidates, receipt type, multi-receipt detection, and
+    // warnings the wizard needs. A low-resolution image adds a friendly,
+    // image-based warning on top of any parser warnings. Manual entry always
+    // works. Genuine engine failures still throw and are handled below.
+    const detected = hasAnyOcrField(extraction);
+    const warnings = lowQuality
+      ? [LOW_QUALITY_MESSAGE, ...extraction.warnings]
+      : extraction.warnings.length > 0
+        ? extraction.warnings
+        : detected
+          ? []
+          : [UNREADABLE_MESSAGE];
 
     await writeAuditLog({
       userId: auth.user.id,
       householdId: auth.householdId,
-      action: "expense.upload.ocr",
+      action: detected ? "expense.upload.ocr" : "expense.upload.ocr_failed",
       metadata: {
         categoryId: parsed.data.categoryId,
         fileSize: file.size,
         mimeType: detectedMimeType ?? file.type,
         provider: extraction.provider,
+        receiptType: extraction.receiptType,
+        multipleReceipts: extraction.multipleReceipts,
+        lowQuality,
+        ...(detected ? {} : { errorCode: lowQuality ? "LOW_QUALITY_IMAGE" : "OCR_NO_FIELDS" }),
       },
     });
 
-    return NextResponse.json({ data: { extraction } });
+    return NextResponse.json({ data: { extraction: { ...extraction, warnings } } });
   } catch (error) {
     if (isOcrProviderError(error)) {
       await writeAuditLog({

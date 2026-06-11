@@ -74,6 +74,7 @@ export async function runExtraction(input: OcrInput): Promise<OcrExtractionEnvel
     engineResult.rawText,
     engineResult.provider,
     engineResult.meanScore,
+    engineResult.blocks,
   );
 
   await writeOcrDebugArtifact({

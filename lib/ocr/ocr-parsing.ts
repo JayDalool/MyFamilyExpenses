@@ -1,10 +1,12 @@
-import type { OcrResult } from "@/lib/ocr/types";
+import type {
+  OcrAmountCandidate,
+  OcrBlock,
+  OcrCandidates,
+  OcrResult,
+  OcrTextCandidate,
+  ReceiptType,
+} from "@/lib/ocr/types";
 
-type MatchCandidate<T> = {
-  value: T;
-  confidence: number;
-  score: number;
-} | null;
 
 type AmountToken = {
   value: number;
@@ -17,12 +19,16 @@ type AmountCandidate = {
   value: number;
   confidence: number;
   score: number;
+  sourceLabel: string;
+  reason: string;
 };
 
 type DateCandidate = {
   value: string;
   confidence: number;
   score: number;
+  sourceLabel: string;
+  reason: string;
 };
 
 type ReceiptContext = {
@@ -42,6 +48,7 @@ type InvoiceLabelRule = {
   confidence: number;
   strength: "strong" | "weak";
   contextGuard?: "payment" | "store";
+  label: string;
 };
 
 const MONTH_NAMES: Record<string, number> = {
@@ -94,22 +101,38 @@ const CANADIAN_RECEIPT_PATTERN =
 const CARD_PAYMENT_PATTERN =
   /\b(?:debit|visa|mastercard|interac|amex)\b/i;
 
-const STRONG_AMOUNT_RULES = [
-  { pattern: /\bgrand\s+total\b/i, score: 1.35, confidence: 0.96 },
-  { pattern: /\bamount\s+paid\b/i, score: 1.28, confidence: 0.95 },
-  { pattern: /\btotal\s+paid\b/i, score: 1.24, confidence: 0.94 },
-  { pattern: /\bpayment\s+total\b/i, score: 1.18, confidence: 0.93 },
-  { pattern: /\bamount\s+due\b/i, score: 1.16, confidence: 0.92 },
-  { pattern: /\bbalance\s+due\b/i, score: 1.15, confidence: 0.92 },
-  { pattern: /\btotal\s+due\b/i, score: 1.12, confidence: 0.91 },
-  { pattern: /\binvoice\s+total\b/i, score: 1.08, confidence: 0.9 },
-  { pattern: /\bamount\b/i, score: 0.74, confidence: 0.72 },
-  { pattern: /(?:^|\b)total(?:\b|$)/i, score: 0.98, confidence: 0.84 },
-  { pattern: /\binterac\b/i, score: 0.7, confidence: 0.76 },
-  { pattern: /\bdebit\b/i, score: 0.68, confidence: 0.74 },
-  { pattern: /\bvisa\b/i, score: 0.66, confidence: 0.73 },
-  { pattern: /\bmastercard\b/i, score: 0.66, confidence: 0.73 },
-  { pattern: /\bamex\b/i, score: 0.64, confidence: 0.72 },
+type AmountRule = {
+  pattern: RegExp;
+  score: number;
+  confidence: number;
+  label: string;
+};
+
+// Ordered: getPositiveAmountRule returns the FIRST match, so more specific
+// phrases must precede generic ones (e.g. "amount paid" before "amount").
+const STRONG_AMOUNT_RULES: AmountRule[] = [
+  { pattern: /\bgrand\s+total\b/i, score: 1.35, confidence: 0.96, label: "Grand Total" },
+  { pattern: /\bnet\s+total\b/i, score: 1.3, confidence: 0.95, label: "Net Total" },
+  { pattern: /\bamount\s+paid\b/i, score: 1.28, confidence: 0.95, label: "Amount Paid" },
+  { pattern: /\btotal\s+paid\b/i, score: 1.24, confidence: 0.94, label: "Total Paid" },
+  // Bank withdrawal slips: the withdrawn amount IS the expense.
+  { pattern: /\bwithdrawals?\b/i, score: 1.22, confidence: 0.9, label: "Withdrawal" },
+  { pattern: /\bwithdraw\b/i, score: 1.22, confidence: 0.9, label: "Withdraw" },
+  { pattern: /\bpayment\s+total\b/i, score: 1.18, confidence: 0.93, label: "Payment Total" },
+  { pattern: /\bamount\s+due\b/i, score: 1.16, confidence: 0.92, label: "Amount Due" },
+  { pattern: /\bbalance\s+due\b/i, score: 1.15, confidence: 0.92, label: "Balance Due" },
+  { pattern: /\btotal\s+due\b/i, score: 1.12, confidence: 0.91, label: "Total Due" },
+  { pattern: /\binvoice\s+total\b/i, score: 1.08, confidence: 0.9, label: "Invoice Total" },
+  { pattern: /\bamount\b/i, score: 0.74, confidence: 0.72, label: "Amount" },
+  { pattern: /(?:^|\b)total(?:\b|$)/i, score: 0.98, confidence: 0.84, label: "Total" },
+  // Bank deposit slips: lower confidence — a deposit is often not an expense and
+  // the receipt is littered with balances; classification dampens this further.
+  { pattern: /\bdeposits?\b/i, score: 0.9, confidence: 0.7, label: "Deposit" },
+  { pattern: /\binterac\b/i, score: 0.7, confidence: 0.76, label: "Interac" },
+  { pattern: /\bdebit\b/i, score: 0.68, confidence: 0.74, label: "Debit" },
+  { pattern: /\bvisa\b/i, score: 0.66, confidence: 0.73, label: "Visa" },
+  { pattern: /\bmastercard\b/i, score: 0.66, confidence: 0.73, label: "Mastercard" },
+  { pattern: /\bamex\b/i, score: 0.64, confidence: 0.72, label: "Amex" },
 ];
 
 const NEGATIVE_AMOUNT_PATTERNS = {
@@ -122,6 +145,11 @@ const NEGATIVE_AMOUNT_PATTERNS = {
   discount: /\b(?:discount|savings?)\b/i,
   rounding: /\bround(?:ing)?\b/i,
   auth: /\b(?:authorization|authorisation|approval|auth(?:\s*code)?|trace|rrn|stan)\b/i,
+  // Bank/ATM noise that must never be picked as the expense amount.
+  balance: /\b(?:available|account|ledger|current|remaining|new|previous|opening|closing|avail)\s*balance\b|\bbalance\b/i,
+  account: /\b(?:account|acct|a\/c)\s*(?:#|no\.?|number)?\b/i,
+  points: /\b(?:points?|loyalty|rewards?|miles)\b/i,
+  cardNumber: /\b(?:card\s*(?:#|no\.?|number)|x{4,}|\*{4,}|\d{4}\s*\*{2,})\b/i,
 };
 
 const INVOICE_LABEL_RULES: InvoiceLabelRule[] = [
@@ -131,6 +159,7 @@ const INVOICE_LABEL_RULES: InvoiceLabelRule[] = [
     score: 1.2,
     confidence: 0.93,
     strength: "strong",
+    label: "Receipt No",
   },
   {
     pattern:
@@ -138,6 +167,7 @@ const INVOICE_LABEL_RULES: InvoiceLabelRule[] = [
     score: 1.22,
     confidence: 0.94,
     strength: "strong",
+    label: "Receipt No",
   },
   {
     pattern:
@@ -145,6 +175,7 @@ const INVOICE_LABEL_RULES: InvoiceLabelRule[] = [
     score: 1.18,
     confidence: 0.93,
     strength: "strong",
+    label: "Invoice No",
   },
   {
     pattern:
@@ -152,6 +183,7 @@ const INVOICE_LABEL_RULES: InvoiceLabelRule[] = [
     score: 1.12,
     confidence: 0.9,
     strength: "strong",
+    label: "Invoice No",
   },
   {
     pattern:
@@ -159,6 +191,7 @@ const INVOICE_LABEL_RULES: InvoiceLabelRule[] = [
     score: 1.15,
     confidence: 0.92,
     strength: "strong",
+    label: "Transaction No",
   },
   {
     pattern:
@@ -166,6 +199,7 @@ const INVOICE_LABEL_RULES: InvoiceLabelRule[] = [
     score: 1.08,
     confidence: 0.9,
     strength: "strong",
+    label: "Order No",
   },
   {
     pattern:
@@ -174,6 +208,7 @@ const INVOICE_LABEL_RULES: InvoiceLabelRule[] = [
     confidence: 0.86,
     strength: "strong",
     contextGuard: "payment",
+    label: "Reference No",
   },
   {
     pattern:
@@ -181,6 +216,7 @@ const INVOICE_LABEL_RULES: InvoiceLabelRule[] = [
     score: 0.95,
     confidence: 0.84,
     strength: "strong",
+    label: "Cheque No",
   },
   {
     pattern:
@@ -188,6 +224,7 @@ const INVOICE_LABEL_RULES: InvoiceLabelRule[] = [
     score: 0.92,
     confidence: 0.82,
     strength: "strong",
+    label: "Bill No",
   },
   {
     pattern:
@@ -195,6 +232,7 @@ const INVOICE_LABEL_RULES: InvoiceLabelRule[] = [
     score: 0.9,
     confidence: 0.8,
     strength: "strong",
+    label: "Sequence No",
   },
   {
     pattern:
@@ -202,6 +240,7 @@ const INVOICE_LABEL_RULES: InvoiceLabelRule[] = [
     score: 0.82,
     confidence: 0.78,
     strength: "strong",
+    label: "Sale No",
   },
   {
     pattern:
@@ -210,22 +249,23 @@ const INVOICE_LABEL_RULES: InvoiceLabelRule[] = [
     confidence: 0.58,
     strength: "weak",
     contextGuard: "store",
+    label: "Register No",
   },
 ];
 
 const SPLIT_INVOICE_LABEL_RULES: InvoiceLabelRule[] = [
-  { pattern: /\brcpt\s*(?:#|no\.?|number|num|id)?\b/i, score: 1.08, confidence: 0.9, strength: "strong" },
-  { pattern: /\breceipt\s*(?:#|no\.?|number|num|id)?\b/i, score: 1.08, confidence: 0.9, strength: "strong" },
-  { pattern: /\binvoice\s*(?:#|no\.?|number|num|id)?\b/i, score: 1.04, confidence: 0.88, strength: "strong" },
-  { pattern: /\binv\s*(?:#|no\.?|number|num|id)?\b/i, score: 1, confidence: 0.85, strength: "strong" },
-  { pattern: /\b(?:transaction|trans|txn|trn)(?!\s+date)\s*(?:#|no\.?|number|num|id)?\b/i, score: 1.02, confidence: 0.87, strength: "strong" },
-  { pattern: /\border\s*(?:#|no\.?|number|num|id)?\b/i, score: 0.94, confidence: 0.84, strength: "strong" },
-  { pattern: /\bref(?:erence)?\s*(?:#|no\.?|number|num|id)?\b/i, score: 0.86, confidence: 0.8, strength: "strong", contextGuard: "payment" },
-  { pattern: /\b(?:check|cheque)\s*(?:#|no\.?|number|num|id)?\b/i, score: 0.82, confidence: 0.78, strength: "strong" },
-  { pattern: /\bbill\s*(?:#|no\.?|number|num|id)?\b/i, score: 0.78, confidence: 0.76, strength: "strong" },
-  { pattern: /\bseq(?:uence)?\s*(?:#|no\.?|number|num|id)?\b/i, score: 0.74, confidence: 0.74, strength: "strong" },
-  { pattern: /\bsale\s*(?:#|no\.?|number|num|id)?\b/i, score: 0.72, confidence: 0.72, strength: "strong" },
-  { pattern: /\breg\s*(?:#|no\.?|number|num|id)?\b/i, score: 0.48, confidence: 0.54, strength: "weak", contextGuard: "store" },
+  { pattern: /\brcpt\s*(?:#|no\.?|number|num|id)?\b/i, score: 1.08, confidence: 0.9, strength: "strong", label: "Receipt No" },
+  { pattern: /\breceipt\s*(?:#|no\.?|number|num|id)?\b/i, score: 1.08, confidence: 0.9, strength: "strong", label: "Receipt No" },
+  { pattern: /\binvoice\s*(?:#|no\.?|number|num|id)?\b/i, score: 1.04, confidence: 0.88, strength: "strong", label: "Invoice No" },
+  { pattern: /\binv\s*(?:#|no\.?|number|num|id)?\b/i, score: 1, confidence: 0.85, strength: "strong", label: "Invoice No" },
+  { pattern: /\b(?:transaction|trans|txn|trn)(?!\s+date)\s*(?:#|no\.?|number|num|id)?\b/i, score: 1.02, confidence: 0.87, strength: "strong", label: "Transaction No" },
+  { pattern: /\border\s*(?:#|no\.?|number|num|id)?\b/i, score: 0.94, confidence: 0.84, strength: "strong", label: "Order No" },
+  { pattern: /\bref(?:erence)?\s*(?:#|no\.?|number|num|id)?\b/i, score: 0.86, confidence: 0.8, strength: "strong", contextGuard: "payment", label: "Reference No" },
+  { pattern: /\b(?:check|cheque)\s*(?:#|no\.?|number|num|id)?\b/i, score: 0.82, confidence: 0.78, strength: "strong", label: "Cheque No" },
+  { pattern: /\bbill\s*(?:#|no\.?|number|num|id)?\b/i, score: 0.78, confidence: 0.76, strength: "strong", label: "Bill No" },
+  { pattern: /\bseq(?:uence)?\s*(?:#|no\.?|number|num|id)?\b/i, score: 0.74, confidence: 0.74, strength: "strong", label: "Sequence No" },
+  { pattern: /\bsale\s*(?:#|no\.?|number|num|id)?\b/i, score: 0.72, confidence: 0.72, strength: "strong", label: "Sale No" },
+  { pattern: /\breg\s*(?:#|no\.?|number|num|id)?\b/i, score: 0.48, confidence: 0.54, strength: "weak", contextGuard: "store", label: "Register No" },
 ];
 
 const WEAK_INVOICE_IGNORE_LINE_PATTERN =
@@ -262,22 +302,6 @@ function normalizeLines(rawText: string) {
     .split("\n")
     .map((line) => line.replace(/\s+/g, " ").trim())
     .filter(Boolean);
-}
-
-function pickBestCandidate<T extends { score: number; confidence: number }>(
-  candidates: T[],
-) {
-  if (candidates.length === 0) {
-    return null;
-  }
-
-  return candidates.sort((left, right) => {
-    if (right.score !== left.score) {
-      return right.score - left.score;
-    }
-
-    return right.confidence - left.confidence;
-  })[0];
 }
 
 function toIsoDate(year: number, month: number, day: number) {
@@ -388,11 +412,19 @@ function normalizeDateSourceText(value: string) {
   return normalized;
 }
 
+type DateCandidateMeta = { sourceLabel: string; reason: string };
+
+const DEFAULT_DATE_META: DateCandidateMeta = {
+  sourceLabel: "Date",
+  reason: "Detected date",
+};
+
 function buildDateCandidate(
   value: string,
   options: DateParseOptions,
   baseScore: number,
   ambiguityPenalty = 0,
+  meta: DateCandidateMeta = DEFAULT_DATE_META,
 ): DateCandidate | null {
   const realismScore = getReceiptDateRealismScore(value);
 
@@ -413,6 +445,8 @@ function buildDateCandidate(
       options.hasDateLabel ? 0.58 : 0.28,
       options.hasDateLabel ? 0.97 : 0.84,
     ),
+    sourceLabel: options.hasDateLabel ? meta.sourceLabel : `${meta.sourceLabel} (no label)`,
+    reason: meta.reason,
   };
 }
 
@@ -422,6 +456,7 @@ function pushDateCandidate(
   options: DateParseOptions,
   baseScore: number,
   ambiguityPenalty = 0,
+  meta: DateCandidateMeta = DEFAULT_DATE_META,
 ) {
   if (!isoDate) {
     return;
@@ -432,6 +467,7 @@ function pushDateCandidate(
     options,
     baseScore,
     ambiguityPenalty,
+    meta,
   );
 
   if (candidate) {
@@ -457,6 +493,8 @@ function extractNamedMonthDateCandidates(
       month ? toIsoDate(year, month, day) : null,
       options,
       options.hasDateLabel ? 1.02 : 0.68,
+      0,
+      { sourceLabel: "Date (Mon DD YYYY)", reason: "Month-name date" },
     );
   }
 
@@ -473,6 +511,8 @@ function extractNamedMonthDateCandidates(
       month ? toIsoDate(year, month, day) : null,
       options,
       options.hasDateLabel ? 1.02 : 0.68,
+      0,
+      { sourceLabel: "Date (DD Mon YYYY)", reason: "Month-name date" },
     );
   }
 }
@@ -494,6 +534,8 @@ function extractSpacedNumericDateCandidates(
       toIsoDate(Number(match[1]), Number(match[2]), Number(match[3])),
       options,
       1,
+      0,
+      { sourceLabel: "Date (YYYY MM DD)", reason: "Spaced numeric date" },
     );
   }
 
@@ -514,6 +556,8 @@ function extractSpacedNumericDateCandidates(
         toIsoDate(year, second, first),
         options,
         0.96,
+        0,
+        { sourceLabel: "Date (DD MM YYYY)", reason: "Spaced numeric, day > 12" },
       );
       continue;
     }
@@ -524,6 +568,8 @@ function extractSpacedNumericDateCandidates(
         toIsoDate(year, first, second),
         options,
         0.92,
+        0,
+        { sourceLabel: "Date (MM DD YYYY)", reason: "Spaced numeric, day > 12" },
       );
     }
   }
@@ -542,6 +588,8 @@ function extractCompactDateCandidates(
       toIsoDate(Number(match[1]), Number(match[2]), Number(match[3])),
       options,
       options.hasDateLabel ? 0.92 : 0.52,
+      0,
+      { sourceLabel: "Date (YYYYMMDD)", reason: "Compact date" },
     );
   }
 }
@@ -559,6 +607,8 @@ function extractYearFirstDateCandidates(
       toIsoDate(Number(match[1]), Number(match[2]), Number(match[3])),
       options,
       options.hasDateLabel ? 1.06 : 0.7,
+      0,
+      { sourceLabel: "Date (YYYY-MM-DD)", reason: "ISO date" },
     );
   }
 }
@@ -586,6 +636,8 @@ function extractSlashDateCandidates(
         toIsoDate(year, second, first),
         options,
         options.hasDateLabel ? 1.04 : 0.66,
+        0,
+        { sourceLabel: "Date (DD/MM/YYYY)", reason: "Slash date, day > 12" },
       );
       continue;
     }
@@ -596,6 +648,8 @@ function extractSlashDateCandidates(
         toIsoDate(year, first, second),
         options,
         options.hasDateLabel ? 1.02 : 0.64,
+        0,
+        { sourceLabel: "Date (MM/DD/YYYY)", reason: "Slash date, day > 12" },
       );
       continue;
     }
@@ -626,6 +680,10 @@ function extractSlashDateCandidates(
       options,
       dayFirstBase,
       0.08,
+      {
+        sourceLabel: "Date (DD/MM?)",
+        reason: "Ambiguous order (day and month both ≤ 12)",
+      },
     );
     pushDateCandidate(
       candidates,
@@ -633,6 +691,10 @@ function extractSlashDateCandidates(
       options,
       monthFirstBase,
       0.08,
+      {
+        sourceLabel: "Date (MM/DD?)",
+        reason: "Ambiguous order (day and month both ≤ 12)",
+      },
     );
   }
 }
@@ -706,11 +768,12 @@ function shouldPreferDayFirst(
   return context.hasCanadianMarkers && hasDateLabel;
 }
 
-function findInvoiceDate(
+// Ranked date candidates (best first).
+function rankDateCandidates(
   lines: string[],
   overallConfidence: number,
   context: ReceiptContext,
-): MatchCandidate<string> {
+): DateCandidate[] {
   const candidates: DateCandidate[] = [];
 
   for (let index = 0; index < lines.length; index += 1) {
@@ -738,7 +801,7 @@ function findInvoiceDate(
     }
   }
 
-  return pickBestCandidate(dedupeDateCandidates(candidates));
+  return sortByScoreThenConfidence(dedupeDateCandidates(candidates));
 }
 
 function normalizeInvoiceNumber(candidate: string) {
@@ -766,6 +829,32 @@ function isLikelyAmountValue(candidate: string) {
   return /^\d+(?:[.,]\d{2})$/.test(candidate);
 }
 
+// Lines that identify account / card / banking numbers — these must never be
+// treated as a receipt/invoice number, even unlabelled.
+const ACCOUNT_OR_CARD_LINE_PATTERN =
+  /\b(?:account|acct|a\/c|card\s*(?:#|no\.?|number)|iban|routing\s*(?:#|no\.?|number)?|swift)\b/i;
+
+// Luhn check: a pure 13–19 digit run that validates is almost certainly a
+// payment-card number, never an invoice number.
+function passesLuhn(digits: string) {
+  let sum = 0;
+  let double = false;
+  for (let i = digits.length - 1; i >= 0; i -= 1) {
+    let value = digits.charCodeAt(i) - 48;
+    if (double) {
+      value *= 2;
+      if (value > 9) value -= 9;
+    }
+    sum += value;
+    double = !double;
+  }
+  return sum % 10 === 0;
+}
+
+function looksLikeCardNumber(value: string) {
+  return /^\d{13,19}$/.test(value) && passesLuhn(value);
+}
+
 function isInvoiceNumberCandidate(
   candidate: string,
   strength: "strong" | "weak",
@@ -781,7 +870,8 @@ function isInvoiceNumberCandidate(
     (phoneLike && strength === "weak") ||
     CANADIAN_POSTAL_CODE_PATTERN.test(normalized) ||
     isLikelyAmountValue(normalized) ||
-    isLikelyDateValue(normalized)
+    isLikelyDateValue(normalized) ||
+    looksLikeCardNumber(normalized.replace(/\D/g, ""))
   ) {
     return false;
   }
@@ -795,6 +885,13 @@ function isInvoiceNumberCandidate(
     (strength === "weak" ||
       /\b(?:gst|hst|pst|qst|tax|business\s+number|bn)\b/i.test(line))
   ) {
+    return false;
+  }
+
+  // Account/card lines never yield a receipt number. Labelled invoice/receipt/
+  // transaction rules don't fire on these lines, so this mainly guards the weak
+  // fallback and any stray long account run.
+  if (ACCOUNT_OR_CARD_LINE_PATTERN.test(line)) {
     return false;
   }
 
@@ -840,15 +937,38 @@ function passesInvoiceRuleContext(rule: InvoiceLabelRule, line: string) {
   return true;
 }
 
-function findInvoiceNumber(
+type InvoiceCandidate = {
+  value: string;
+  confidence: number;
+  score: number;
+  sourceLabel: string;
+  reason: string;
+};
+
+function dedupeInvoiceCandidates(candidates: InvoiceCandidate[]): InvoiceCandidate[] {
+  const byValue = new Map<string, InvoiceCandidate>();
+  for (const candidate of candidates) {
+    const existing = byValue.get(candidate.value);
+    if (
+      !existing ||
+      candidate.score > existing.score ||
+      (candidate.score === existing.score &&
+        candidate.confidence > existing.confidence)
+    ) {
+      byValue.set(candidate.value, candidate);
+    }
+  }
+  return Array.from(byValue.values());
+}
+
+// Ranked invoice/reference candidates (best first). Labelled matches always
+// outrank the unlabelled fallback — if any labelled candidate exists, the weak
+// scan is skipped, so a number is never invented when a real label was found.
+function rankInvoiceCandidates(
   lines: string[],
   overallConfidence: number,
-): MatchCandidate<string> {
-  const labeledCandidates: Array<{
-    value: string;
-    confidence: number;
-    score: number;
-  }> = [];
+): InvoiceCandidate[] {
+  const labeledCandidates: InvoiceCandidate[] = [];
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
@@ -879,6 +999,8 @@ function findInvoiceNumber(
           0.96,
         ),
         score: rule.score,
+        sourceLabel: rule.label,
+        reason: `Labelled "${rule.label}"`,
       });
     }
 
@@ -915,21 +1037,17 @@ function findInvoiceNumber(
           0.92,
         ),
         score: rule.score,
+        sourceLabel: rule.label,
+        reason: `Labelled "${rule.label}" (value on next line)`,
       });
     }
   }
 
-  const labeledMatch = pickBestCandidate(labeledCandidates);
-
-  if (labeledMatch) {
-    return labeledMatch;
+  if (labeledCandidates.length > 0) {
+    return sortByScoreThenConfidence(dedupeInvoiceCandidates(labeledCandidates));
   }
 
-  const weakCandidates: Array<{
-    value: string;
-    confidence: number;
-    score: number;
-  }> = [];
+  const weakCandidates: InvoiceCandidate[] = [];
 
   for (const line of lines) {
     if (WEAK_INVOICE_IGNORE_LINE_PATTERN.test(line)) {
@@ -946,12 +1064,14 @@ function findInvoiceNumber(
           value: candidate,
           confidence: scaleConfidence(overallConfidence * 0.48 + 0.04, 0.25, 0.64),
           score: 0.34,
+          sourceLabel: "Unlabelled",
+          reason: "Unlabelled number with no field label nearby",
         });
       }
     }
   }
 
-  return pickBestCandidate(weakCandidates);
+  return sortByScoreThenConfidence(dedupeInvoiceCandidates(weakCandidates));
 }
 
 function parseAmountValue(candidate: string) {
@@ -1014,6 +1134,12 @@ function getPositiveAmountRule(line: string) {
   return STRONG_AMOUNT_RULES.find((rule) => rule.pattern.test(line)) ?? null;
 }
 
+// A line that is essentially a date (e.g. "06/20/14", "2026-05-01"). Its digits
+// must never become amount candidates unless the line also carries a real amount
+// label — otherwise day/month/year leak in as money on receipts with no total.
+const DATE_ONLY_LINE_PATTERN =
+  /\b\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}\b/;
+
 function buildAmountCandidates(
   lines: string[],
   overallConfidence: number,
@@ -1024,12 +1150,21 @@ function buildAmountCandidates(
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
     const positiveRule = getPositiveAmountRule(line);
+
+    // Skip unlabelled date lines so their digits aren't mistaken for money.
+    if (!positiveRule && DATE_ONLY_LINE_PATTERN.test(line)) {
+      continue;
+    }
+
     const contexts = [line];
 
     if (
       positiveRule &&
       index < lines.length - 1 &&
-      extractAmountCandidates(line).length === 0
+      extractAmountCandidates(line).length === 0 &&
+      // Don't let a label line borrow the next line's digits if that line is a
+      // date (e.g. a "Deposit Receipt" header above a date row).
+      !DATE_ONLY_LINE_PATTERN.test(lines[index + 1])
     ) {
       contexts.push(`${line} ${lines[index + 1]}`);
     }
@@ -1042,6 +1177,8 @@ function buildAmountCandidates(
       }
 
       const token = tokens[tokens.length - 1];
+      const sourceLabel = positiveRule?.label ?? "Unlabelled amount";
+      const notes: string[] = [];
       let score = positiveRule?.score ?? 0.22;
       let confidence = positiveRule
         ? scaleConfidence(
@@ -1070,45 +1207,89 @@ function buildAmountCandidates(
 
       if (NEGATIVE_AMOUNT_PATTERNS.subtotal.test(contextLine)) {
         score -= 0.55;
+        notes.push("subtotal");
       }
 
       if (NEGATIVE_AMOUNT_PATTERNS.taxTotal.test(contextLine)) {
         score -= 0.85;
+        notes.push("tax total");
       } else if (
         NEGATIVE_AMOUNT_PATTERNS.tax.test(contextLine) &&
         !positiveRule?.pattern.test(contextLine)
       ) {
         score -= 0.72;
+        notes.push("tax");
       }
 
       if (NEGATIVE_AMOUNT_PATTERNS.tip.test(contextLine)) {
         score -= 0.4;
+        notes.push("tip");
       }
 
       if (NEGATIVE_AMOUNT_PATTERNS.change.test(contextLine)) {
         score -= 0.7;
+        notes.push("change");
       }
 
       if (NEGATIVE_AMOUNT_PATTERNS.tendered.test(contextLine) && !positiveRule) {
         score -= 0.3;
+        notes.push("cash tendered");
       }
 
       if (NEGATIVE_AMOUNT_PATTERNS.discount.test(contextLine)) {
         score -= 0.48;
+        notes.push("discount");
       }
 
       if (NEGATIVE_AMOUNT_PATTERNS.rounding.test(contextLine)) {
         score -= 0.28;
+        notes.push("rounding");
       }
 
       if (NEGATIVE_AMOUNT_PATTERNS.auth.test(contextLine)) {
         score -= 0.72;
+        notes.push("authorization/reference");
       }
+
+      // Bank/ATM noise that must never be chosen as the expense amount. "Balance
+      // due" stays positive because it sets positiveRule, so these only fire on
+      // bare balances / account numbers.
+      if (NEGATIVE_AMOUNT_PATTERNS.balance.test(contextLine) && !positiveRule) {
+        score -= 0.95;
+        confidence = clampConfidence(confidence - 0.2);
+        notes.push("balance");
+      }
+
+      if (NEGATIVE_AMOUNT_PATTERNS.account.test(contextLine) && !positiveRule) {
+        score -= 0.95;
+        confidence = clampConfidence(confidence - 0.2);
+        notes.push("account number");
+      }
+
+      if (NEGATIVE_AMOUNT_PATTERNS.points.test(contextLine)) {
+        score -= 0.8;
+        notes.push("loyalty/points");
+      }
+
+      if (NEGATIVE_AMOUNT_PATTERNS.cardNumber.test(contextLine)) {
+        score -= 0.85;
+        notes.push("card number");
+      }
+
+      const reason = positiveRule
+        ? notes.length > 0
+          ? `Labelled "${sourceLabel}" (penalized: ${notes.join(", ")})`
+          : `Labelled "${sourceLabel}"`
+        : notes.length > 0
+          ? `Unlabelled value (penalized: ${notes.join(", ")})`
+          : "Unlabelled value near a number";
 
       candidates.push({
         value: token.value,
         confidence,
         score,
+        sourceLabel,
+        reason,
       });
     }
   }
@@ -1116,15 +1297,45 @@ function buildAmountCandidates(
   return candidates;
 }
 
-function findAmount(
+function sortByScoreThenConfidence<
+  T extends { score: number; confidence: number },
+>(candidates: T[]): T[] {
+  return [...candidates].sort((left, right) => {
+    if (right.score !== left.score) {
+      return right.score - left.score;
+    }
+    return right.confidence - left.confidence;
+  });
+}
+
+function dedupeAmountCandidates(candidates: AmountCandidate[]): AmountCandidate[] {
+  const byValue = new Map<number, AmountCandidate>();
+  for (const candidate of candidates) {
+    const existing = byValue.get(candidate.value);
+    if (
+      !existing ||
+      candidate.score > existing.score ||
+      (candidate.score === existing.score &&
+        candidate.confidence > existing.confidence)
+    ) {
+      byValue.set(candidate.value, candidate);
+    }
+  }
+  return Array.from(byValue.values());
+}
+
+// Ranked amount candidates (best first). Same eligibility logic as before, but
+// returns the full ordered list so the orchestrator can expose candidates and
+// apply the "never guess a zero amount" rule.
+function rankAmountCandidates(
   lines: string[],
   overallConfidence: number,
   context: ReceiptContext,
-): MatchCandidate<number> {
+): AmountCandidate[] {
   const candidates = buildAmountCandidates(lines, overallConfidence, context);
 
   if (candidates.length === 0) {
-    return null;
+    return [];
   }
 
   const hasStrongTotal = candidates.some((candidate) => candidate.score >= 1);
@@ -1132,9 +1343,225 @@ function findAmount(
     hasStrongTotal ? candidate.score >= 0.55 : candidate.score >= 0.18,
   );
 
-  return pickBestCandidate(
-    eligibleCandidates.length > 0 ? eligibleCandidates : candidates,
+  const pool = eligibleCandidates.length > 0 ? eligibleCandidates : candidates;
+  return sortByScoreThenConfidence(dedupeAmountCandidates(pool));
+}
+
+// ── Receipt-type classification ──────────────────────────────────────────────
+
+const BANK_SIGNAL_PATTERN =
+  /\b(?:atm|automated\s+teller|withdraw(?:al)?|deposit|available\s+balance|account\s+balance|ledger\s+balance|teller|transaction\s+receipt|wire\s+transfer|e-?transfer|account\s*(?:#|no\.?|number)|a\/c|sequence\s*(?:#|no\.?|number))\b/i;
+const WITHDRAWAL_PATTERN = /\bwithdraw(?:al)?\b/i;
+const DEPOSIT_PATTERN = /\bdeposit\b/i;
+const TRANSFER_PATTERN = /\b(?:wire\s+transfer|e-?transfer|funds?\s+transfer|transfer\s+to|transfer\s+from)\b/i;
+const RESTAURANT_PATTERN =
+  /\b(?:server|waiter|waitress|table\s*(?:#|no\.?)?|gratuity|guests?|covers?|dine\s*-?\s*in|tip)\b/i;
+const RETAIL_PATTERN =
+  /\b(?:subtotal|cashier|items?\b|qty|quantity|sku|barcode|upc|register|store\s*(?:#|no\.?|number))\b/i;
+const TOTAL_SIGNAL_PATTERN = /\b(?:grand\s+total|total|amount\s+paid|balance\s+due)\b/i;
+
+function classifyReceiptType(lines: string[]): ReceiptType {
+  const text = lines.join("\n");
+
+  if (BANK_SIGNAL_PATTERN.test(text)) {
+    if (WITHDRAWAL_PATTERN.test(text)) return "bank_withdrawal";
+    if (TRANSFER_PATTERN.test(text) && !DEPOSIT_PATTERN.test(text)) return "transfer";
+    if (DEPOSIT_PATTERN.test(text)) return "bank_deposit";
+    return "informational";
+  }
+
+  if (RESTAURANT_PATTERN.test(text)) return "restaurant";
+  if (RETAIL_PATTERN.test(text) || TOTAL_SIGNAL_PATTERN.test(text)) return "retail";
+  return "unknown";
+}
+
+// ── Multi-receipt detection (needs block geometry; Tesseract → []) ────────────
+
+function detectMultipleReceipts(blocks: OcrBlock[]): boolean {
+  const boxed = blocks.filter(
+    (block): block is OcrBlock & { bbox: [number, number, number, number] } =>
+      Array.isArray(block.bbox),
   );
+
+  // Need a reasonable number of positioned blocks to trust geometry.
+  if (boxed.length < 8) return false;
+
+  const lefts = boxed.map((block) => block.bbox[0]);
+  const rights = boxed.map((block) => block.bbox[2]);
+  const pageWidth = Math.max(...rights) - Math.min(...lefts);
+  if (pageWidth <= 0) return false;
+
+  const centers = boxed
+    .map((block) => (block.bbox[0] + block.bbox[2]) / 2)
+    .sort((a, b) => a - b);
+
+  let largestGap = 0;
+  let gapIndex = 0;
+  for (let i = 1; i < centers.length; i += 1) {
+    const gap = centers[i] - centers[i - 1];
+    if (gap > largestGap) {
+      largestGap = gap;
+      gapIndex = i;
+    }
+  }
+
+  const leftCount = gapIndex;
+  const rightCount = centers.length - gapIndex;
+  const minCluster = Math.max(2, Math.floor(centers.length * 0.3));
+
+  // A wide horizontal split between two well-populated x-clusters ⇒ likely two
+  // receipts side by side.
+  return (
+    largestGap > 0.22 * pageWidth &&
+    leftCount >= minCluster &&
+    rightCount >= minCluster
+  );
+}
+
+// ── Candidate → output mapping (best-effort geometry from blocks) ─────────────
+
+function attachGeometry(value: string, blocks: OcrBlock[]) {
+  if (!value) return {};
+  const block = blocks.find(
+    (candidate) => Array.isArray(candidate.bbox) && candidate.text.includes(value),
+  );
+  if (!block?.bbox) return {};
+  const [x1, y1, x2, y2] = block.bbox;
+  return { bbox: block.bbox, x: (x1 + x2) / 2, y: (y1 + y2) / 2 };
+}
+
+type RankedText = {
+  value: string;
+  confidence: number;
+  sourceLabel: string;
+  reason: string;
+};
+
+function toTextCandidates(
+  candidates: RankedText[],
+  blocks: OcrBlock[],
+  scale: number,
+): OcrTextCandidate[] {
+  return candidates.slice(0, 4).map((candidate) => ({
+    value: candidate.value,
+    confidence: clampConfidence(candidate.confidence * scale),
+    sourceLabel: candidate.sourceLabel,
+    reason: candidate.reason,
+    ...attachGeometry(candidate.value, blocks),
+  }));
+}
+
+function toAmountCandidates(
+  candidates: AmountCandidate[],
+  blocks: OcrBlock[],
+  scale: number,
+): OcrAmountCandidate[] {
+  return candidates.slice(0, 4).map((candidate) => ({
+    value: candidate.value,
+    confidence: clampConfidence(candidate.confidence * scale),
+    sourceLabel: candidate.sourceLabel,
+    reason: candidate.reason,
+    ...attachGeometry(candidate.value.toFixed(2), blocks),
+  }));
+}
+
+// Labels that justify accepting a literal 0 amount (an explicit "Total 0.00").
+// Deliberately excludes Withdraw/Withdrawal/Deposit — a $0.00 money-movement line
+// is not a real spend, so it is left blank for manual review rather than picked.
+const EXPLICIT_TOTAL_LABELS = new Set([
+  "Grand Total",
+  "Net Total",
+  "Total",
+  "Total Due",
+  "Total Paid",
+  "Amount Paid",
+  "Amount Due",
+  "Balance Due",
+  "Payment Total",
+  "Invoice Total",
+]);
+
+// Pick the best amount with the safety rules: never auto-pick a 0 unless it came
+// from an explicit total/paid label; never auto-pick for informational receipts.
+function pickBestAmount(
+  candidates: AmountCandidate[],
+  receiptType: ReceiptType,
+): AmountCandidate | null {
+  if (receiptType === "informational") {
+    return null;
+  }
+
+  for (const candidate of candidates) {
+    if (candidate.value === 0 && !EXPLICIT_TOTAL_LABELS.has(candidate.sourceLabel)) {
+      continue;
+    }
+    return candidate;
+  }
+
+  return null;
+}
+
+// Deposit/informational receipts are dominated by balances and rarely represent
+// a spend — keep any amount low-confidence so it is reviewed, never auto-saved.
+function dampenAmountsForType(
+  candidates: AmountCandidate[],
+  receiptType: ReceiptType,
+): AmountCandidate[] {
+  const factor =
+    receiptType === "bank_deposit"
+      ? 0.55
+      : receiptType === "informational" || receiptType === "transfer"
+        ? 0.35
+        : 1;
+
+  if (factor === 1) return candidates;
+
+  return candidates.map((candidate) => ({
+    ...candidate,
+    confidence: clampConfidence(candidate.confidence * factor),
+  }));
+}
+
+const MULTI_RECEIPT_WARNING =
+  "Looks like more than one receipt was detected. Upload one receipt at a time for best results.";
+const PARSER_REVIEW_WARNING =
+  "We could read some receipt text, but could not confidently identify the date or total. Please review and fill in the missing fields manually.";
+
+function buildWarnings(
+  result: Pick<
+    OcrResult,
+    "confidence" | "receiptType" | "multipleReceipts"
+  >,
+  hasText: boolean,
+): string[] {
+  const warnings: string[] = [];
+
+  if (result.multipleReceipts) {
+    warnings.push(MULTI_RECEIPT_WARNING);
+  }
+
+  if (
+    hasText &&
+    (result.confidence.invoiceDate === 0 || result.confidence.amount === 0)
+  ) {
+    warnings.push(PARSER_REVIEW_WARNING);
+  }
+
+  if (result.receiptType === "bank_deposit") {
+    warnings.push(
+      "This looks like a deposit receipt — confirm whether it should be recorded as an expense.",
+    );
+  } else if (result.receiptType === "transfer") {
+    warnings.push(
+      "This looks like a transfer receipt — confirm whether it should be recorded as an expense.",
+    );
+  } else if (result.receiptType === "informational") {
+    warnings.push(
+      "This looks like an informational/balance receipt — there may be no expense amount to record.",
+    );
+  }
+
+  return warnings;
 }
 
 export function createEmptyOcrResult(provider: string): OcrResult {
@@ -1148,6 +1575,14 @@ export function createEmptyOcrResult(provider: string): OcrResult {
       invoiceDate: 0,
       amount: 0,
     },
+    receiptType: "unknown",
+    multipleReceipts: false,
+    warnings: [],
+    candidates: {
+      invoiceNumber: [],
+      invoiceDate: [],
+      amount: [],
+    },
   };
 }
 
@@ -1155,27 +1590,54 @@ export function parseInvoiceFieldsFromText(
   rawText: string,
   provider: string,
   overallConfidence: number,
+  blocks: OcrBlock[] = [],
 ): OcrResult {
   const lines = normalizeLines(rawText);
   const baseConfidence = clampConfidence(
     overallConfidence > 1 ? overallConfidence / 100 : overallConfidence,
   );
   const context = buildReceiptContext(lines);
-  const invoiceNumber = findInvoiceNumber(lines, baseConfidence);
-  const invoiceDate = findInvoiceDate(lines, baseConfidence, context);
-  const amount = findAmount(lines, baseConfidence, context);
+  const receiptType = classifyReceiptType(lines);
 
-  return {
-    invoiceNumber: invoiceNumber?.value ?? "",
-    invoiceDate: invoiceDate?.value ?? "",
-    amount: amount?.value ?? 0,
+  const invoiceCandidates = rankInvoiceCandidates(lines, baseConfidence);
+  const dateCandidates = rankDateCandidates(lines, baseConfidence, context);
+  const amountCandidates = dampenAmountsForType(
+    rankAmountCandidates(lines, baseConfidence, context),
+    receiptType,
+  );
+
+  // Side-by-side receipts wreck label↔value association — lower confidence and
+  // warn rather than confidently picking across two documents.
+  const multipleReceipts = detectMultipleReceipts(blocks);
+  const scale = multipleReceipts ? 0.5 : 1;
+
+  const bestInvoice = invoiceCandidates[0] ?? null;
+  const bestDate = dateCandidates[0] ?? null;
+  const bestAmount = pickBestAmount(amountCandidates, receiptType);
+
+  const result: OcrResult = {
+    invoiceNumber: bestInvoice?.value ?? "",
+    invoiceDate: bestDate?.value ?? "",
+    amount: bestAmount?.value ?? 0,
     provider,
     confidence: {
-      invoiceNumber: invoiceNumber?.confidence ?? 0,
-      invoiceDate: invoiceDate?.confidence ?? 0,
-      amount: amount?.confidence ?? 0,
+      invoiceNumber: clampConfidence((bestInvoice?.confidence ?? 0) * scale),
+      invoiceDate: clampConfidence((bestDate?.confidence ?? 0) * scale),
+      amount: clampConfidence((bestAmount?.confidence ?? 0) * scale),
+    },
+    receiptType,
+    multipleReceipts,
+    warnings: [],
+    candidates: {
+      invoiceNumber: toTextCandidates(invoiceCandidates, blocks, scale),
+      invoiceDate: toTextCandidates(dateCandidates, blocks, scale),
+      amount: toAmountCandidates(amountCandidates, blocks, scale),
     },
   };
+
+  result.warnings = buildWarnings(result, lines.length > 0);
+
+  return result;
 }
 
 export function hasAnyOcrField(result: Pick<OcrResult, "confidence">) {

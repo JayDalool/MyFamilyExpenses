@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { csrfFetch } from "@/lib/auth/csrf-client";
 import type { OcrResult } from "@/lib/ocr/types";
-import { hasAnyOcrField, hasStrongOcrMatch } from "@/lib/ocr/ocr-parsing";
+import { hasStrongOcrMatch } from "@/lib/ocr/ocr-parsing";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -163,6 +163,126 @@ function OcrFieldRow({
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── OCR details / candidate picker ──────────────────────────────────────────
+
+const RECEIPT_TYPE_LABELS: Record<string, string> = {
+  retail: "Retail receipt",
+  restaurant: "Restaurant receipt",
+  bank_withdrawal: "Bank/ATM withdrawal",
+  bank_deposit: "Bank deposit",
+  transfer: "Transfer",
+  informational: "Informational / balance",
+  unknown: "Unrecognized",
+};
+
+function CandidateRow<T extends string | number>({
+  title,
+  items,
+  format,
+  onPick,
+}: {
+  title: string;
+  items: { value: T; confidence: number; sourceLabel: string; reason: string }[];
+  format: (value: T) => string;
+  onPick: (value: T) => void;
+}) {
+  if (items.length === 0) return null;
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs font-semibold text-slate-500">{title}</p>
+      <div className="flex flex-wrap gap-1.5">
+        {items.map((item, index) => (
+          <button
+            className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700 transition hover:border-brand-400 hover:bg-brand-50"
+            key={`${String(item.value)}-${index}`}
+            onClick={() => onPick(item.value)}
+            title={item.reason}
+            type="button"
+          >
+            <span className="font-semibold">{format(item.value)}</span>
+            <span className="text-slate-400">
+              {item.sourceLabel} · {Math.round(item.confidence * 100)}%
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function OcrDetailsPanel({
+  extraction,
+  onPickInvoice,
+  onPickDate,
+  onPickAmount,
+}: {
+  extraction: OcrResult;
+  onPickInvoice: (value: string) => void;
+  onPickDate: (value: string) => void;
+  onPickAmount: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const { candidates } = extraction;
+  const total =
+    candidates.invoiceNumber.length +
+    candidates.invoiceDate.length +
+    candidates.amount.length;
+
+  return (
+    <div className="rounded-2xl border border-slate-200">
+      <button
+        className="flex w-full items-center justify-between px-4 py-3 text-left"
+        onClick={() => setOpen((prev) => !prev)}
+        type="button"
+      >
+        <span className="text-sm font-semibold text-slate-700">
+          OCR details
+          <span className="ml-2 font-normal text-slate-400">
+            {RECEIPT_TYPE_LABELS[extraction.receiptType] ?? extraction.receiptType}
+            {total > 0 ? ` · ${total} candidate${total === 1 ? "" : "s"}` : ""}
+          </span>
+        </span>
+        <span className="text-slate-400">{open ? "Hide" : "Show"}</span>
+      </button>
+
+      {open ? (
+        <div className="space-y-3 border-t border-slate-100 px-4 py-3">
+          {total === 0 ? (
+            <p className="text-xs text-slate-500">
+              No candidates were detected. Enter the fields manually.
+            </p>
+          ) : (
+            <>
+              <p className="text-xs text-slate-500">
+                Tap a value to use it. These are the parser&apos;s ranked guesses.
+              </p>
+              <CandidateRow
+                format={(value) => value}
+                items={candidates.invoiceNumber}
+                onPick={onPickInvoice}
+                title="Invoice / reference number"
+              />
+              <CandidateRow
+                format={(value) => value}
+                items={candidates.invoiceDate}
+                onPick={onPickDate}
+                title="Date"
+              />
+              <CandidateRow
+                format={(value) => value.toFixed(2)}
+                items={candidates.amount}
+                onPick={(value) => onPickAmount(String(value))}
+                title="Amount"
+              />
+            </>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -350,17 +470,20 @@ export function ExpenseWizard({
 
       const extraction = payload?.data?.extraction;
 
-      if (!extraction || !hasAnyOcrField(extraction)) {
+      if (!extraction) {
         setOcrWarning(
           "Could not read this receipt clearly. The image may be too small, blurry, or angled. You can upload a clearer photo or fill in the fields manually.",
         );
         return;
       }
 
+      // Keep the extraction even when no confident fields were found — it carries
+      // ranked candidates, receipt type, and warnings the review step surfaces.
       setExtracted(extraction);
       setInvoiceNumber(applyOcrValue(extraction.invoiceNumber, extraction.confidence.invoiceNumber));
       setInvoiceDate(applyOcrValue(extraction.invoiceDate, extraction.confidence.invoiceDate));
       setAmount(applyOcrAmount(extraction));
+      setOcrWarning(extraction.warnings?.[0] ?? null);
     } catch {
       setOcrWarning(
         "Could not read this receipt clearly. The image may be too small, blurry, or angled. You can upload a clearer photo or fill in the fields manually.",
@@ -681,7 +804,7 @@ export function ExpenseWizard({
                   <p className="animate-pulse text-center text-sm text-slate-500">
                     Reading receipt...
                   </p>
-                ) : extracted ? (
+                ) : extracted && extracted.warnings.length === 0 ? (
                   <p className="text-center text-sm text-emerald-700">
                     {hasStrongOcrMatch(extracted)
                       ? "Receipt read successfully — review the details on the next step."
@@ -823,6 +946,33 @@ export function ExpenseWizard({
               </div>
             )}
 
+            {/* Parser warnings (multi-receipt, low confidence, receipt type) */}
+            {extracted && extracted.warnings.length > 0 ? (
+              <div className="space-y-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+                {extracted.warnings.map((warning, index) => (
+                  <p
+                    className="flex items-start gap-2 text-xs text-amber-800"
+                    key={index}
+                  >
+                    <svg
+                      className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-amber-600"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                      />
+                    </svg>
+                    {warning}
+                  </p>
+                ))}
+              </div>
+            ) : null}
+
             {/* Compact receipt preview */}
             {previewUrl ? (
               <div className="overflow-hidden rounded-2xl border border-slate-200">
@@ -897,6 +1047,16 @@ export function ExpenseWizard({
                 </p>
               </div>
             </div>
+
+            {/* OCR details / candidate picker */}
+            {extracted ? (
+              <OcrDetailsPanel
+                extraction={extracted}
+                onPickAmount={setAmount}
+                onPickDate={setInvoiceDate}
+                onPickInvoice={setInvoiceNumber}
+              />
+            ) : null}
 
             {/* Save error */}
             {saveError ? (

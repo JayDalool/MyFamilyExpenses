@@ -93,10 +93,15 @@ test("extract response stays compatible with the wizard contract", async () => {
   await withEnv({ OCR_PROVIDER: "mock", NODE_ENV: "test" }, async () => {
     const result = await extractInvoiceData({ fileName: "receipt.png" });
 
-    assert.deepEqual(
-      Object.keys(result).sort(),
-      ["amount", "confidence", "invoiceDate", "invoiceNumber", "provider"],
-    );
+    // The original five wizard-contract keys must still be present (additive
+    // Stage A fields are allowed alongside them).
+    for (const key of ["amount", "confidence", "invoiceDate", "invoiceNumber", "provider"]) {
+      assert.ok(key in result, `missing core key: ${key}`);
+    }
+    // Stage A additive fields.
+    for (const key of ["receiptType", "multipleReceipts", "warnings", "candidates"]) {
+      assert.ok(key in result, `missing Stage A key: ${key}`);
+    }
     assert.deepEqual(
       Object.keys(result.confidence).sort(),
       ["amount", "invoiceDate", "invoiceNumber"],
@@ -529,11 +534,10 @@ test("runExtraction returns the full internal envelope", async () => {
     assert.match(envelope.parserResult.invoiceDate, /^\d{4}-\d{2}-\d{2}$/);
     assert.equal(typeof envelope.parserResult.amount, "number");
 
-    // response stays exactly the wizard-visible OcrResult shape.
-    assert.deepEqual(
-      Object.keys(envelope.response).sort(),
-      ["amount", "confidence", "invoiceDate", "invoiceNumber", "provider"],
-    );
+    // response keeps the wizard-visible core fields (plus additive Stage A data).
+    for (const key of ["amount", "confidence", "invoiceDate", "invoiceNumber", "provider"]) {
+      assert.ok(key in envelope.response, `missing core key: ${key}`);
+    }
     assert.deepEqual(envelope.response, envelope.parserResult);
   });
 });
@@ -754,11 +758,10 @@ test("runExtraction with the paddle engine returns the full envelope", async () 
         // Parser owns structured fields, derived from the engine's rawText.
         assert.equal(envelope.parserResult.invoiceNumber, "INV-7788");
         assert.equal(envelope.parserResult.amount, 51.2);
-        // Visible response keeps the wizard-compatible OcrResult shape.
-        assert.deepEqual(
-          Object.keys(envelope.response).sort(),
-          ["amount", "confidence", "invoiceDate", "invoiceNumber", "provider"],
-        );
+        // Visible response keeps the wizard-compatible core fields.
+        for (const key of ["amount", "confidence", "invoiceDate", "invoiceNumber", "provider"]) {
+          assert.ok(key in envelope.response, `missing core key: ${key}`);
+        }
         assert.equal(envelope.response.provider, "paddle");
       },
     );

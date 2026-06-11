@@ -1,10 +1,9 @@
 import path from "node:path";
 import { mkdir } from "node:fs/promises";
 import type { Worker, WorkerOptions } from "tesseract.js";
-import { writeOcrDebugArtifact } from "@/lib/ocr/ocr-debug";
 import { OcrProviderError } from "@/lib/ocr/ocr-errors";
-import { parseInvoiceFieldsFromText } from "@/lib/ocr/ocr-parsing";
-import type { OcrInput, OcrProvider, OcrResult } from "@/lib/ocr/types";
+import { normalizeConfidence } from "@/lib/ocr/normalize";
+import type { EngineResult, OcrEngine, OcrInput } from "@/lib/ocr/types";
 
 let workerPromise: Promise<Worker> | null = null;
 
@@ -12,10 +11,7 @@ function isPdfFile(input: OcrInput) {
   const lowerFileName = input.fileName.toLowerCase();
   const lowerMimeType = input.mimeType?.toLowerCase();
 
-  return (
-    lowerMimeType === "application/pdf" ||
-    lowerFileName.endsWith(".pdf")
-  );
+  return lowerMimeType === "application/pdf" || lowerFileName.endsWith(".pdf");
 }
 
 function resolveLocalDirectory(configuredPath: string | undefined, fallbackPath: string) {
@@ -65,10 +61,12 @@ async function getWorker() {
   return workerPromise;
 }
 
-export class TesseractOcrProvider implements OcrProvider {
+// Recognition-only engine. Returns raw text + an overall score; structured field
+// parsing happens in the orchestrator via the Node-owned ReceiptParser.
+export class TesseractOcrEngine implements OcrEngine {
   readonly name = "tesseract";
 
-  async extract(input: OcrInput): Promise<OcrResult> {
+  async recognize(input: OcrInput): Promise<EngineResult> {
     if (isPdfFile(input)) {
       throw new OcrProviderError(
         "PDF_NOT_SUPPORTED",
@@ -88,23 +86,22 @@ export class TesseractOcrProvider implements OcrProvider {
       );
     }
 
+    const startedAt = Date.now();
+
     try {
       const worker = await getWorker();
       const { data } = await worker.recognize(imageSource);
-      const result = parseInvoiceFieldsFromText(
-        data.text ?? "",
-        this.name,
-        data.confidence ?? 0,
-      );
 
-      await writeOcrDebugArtifact({
-        input,
+      return {
         rawText: data.text ?? "",
-        result,
-        overallConfidence: data.confidence ?? 0,
-      });
-
-      return result;
+        blocks: [],
+        // Tesseract reports confidence on a 0–100 scale; normalize at the engine
+        // boundary so everything downstream sees a provider-neutral 0–1 score.
+        meanScore: normalizeConfidence(data.confidence),
+        provider: this.name,
+        modelVersion: "tesseract.js-eng",
+        durationMs: Date.now() - startedAt,
+      };
     } catch (error) {
       const message =
         error instanceof Error && error.message

@@ -257,7 +257,7 @@ Use [CHECKLIST.md](./CHECKLIST.md) as the full server rollout checklist.
 ## Notes
 
 - Uploaded files are stored in the local `uploads` directory.
-- The OCR provider selection is controlled by `OCR_PROVIDER` in `.env`.
-- The OCR seam is ready for future providers via [lib/ocr/types.ts](./lib/ocr/types.ts), [lib/ocr/tesseract-ocr-provider.ts](./lib/ocr/tesseract-ocr-provider.ts), and [lib/ocr/mock-ocr-provider.ts](./lib/ocr/mock-ocr-provider.ts).
+- The OCR engine is selected by `OCR_PROVIDER` in `.env`. Allowed values are `tesseract` (default) and `mock` (local/test/dev only — blocked in production). Unknown values fail closed. PaddleOCR is planned and not yet selectable.
+- The OCR seam splits recognition from parsing: the engine boundary and types live in [lib/ocr/types.ts](./lib/ocr/types.ts), engines in [lib/ocr/tesseract-ocr-engine.ts](./lib/ocr/tesseract-ocr-engine.ts) and [lib/ocr/mock-ocr-engine.ts](./lib/ocr/mock-ocr-engine.ts) (scores normalized to 0–1 via [lib/ocr/normalize.ts](./lib/ocr/normalize.ts)), and the Node-owned parser in [lib/ocr/ocr-parsing.ts](./lib/ocr/ocr-parsing.ts). The orchestrator and provider selection live in [lib/ocr/ocr.service.ts](./lib/ocr/ocr.service.ts).
 - Architecture and deployment docs are available in the [docs](./docs) folder.
 - Use `npm run prisma:seed` any time you want to safely restore the seeded users and category list on a local machine.

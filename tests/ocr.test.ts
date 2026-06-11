@@ -1,13 +1,40 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { OcrProviderError } from "../lib/ocr/ocr-errors";
+import { OcrConfigError, OcrProviderError } from "../lib/ocr/ocr-errors";
 import {
   hasAnyOcrField,
   parseInvoiceFieldsFromText,
 } from "../lib/ocr/ocr-parsing";
-import { extractInvoiceData } from "../lib/ocr/ocr.service";
-import { MockOcrProvider } from "../lib/ocr/mock-ocr-provider";
-import { TesseractOcrProvider } from "../lib/ocr/tesseract-ocr-provider";
+import {
+  extractInvoiceData,
+  resolveOcrProviderName,
+  runExtraction,
+} from "../lib/ocr/ocr.service";
+import { MockOcrEngine } from "../lib/ocr/mock-ocr-engine";
+import { TesseractOcrEngine } from "../lib/ocr/tesseract-ocr-engine";
+import { normalizeConfidence } from "../lib/ocr/normalize";
+
+function withEnv(
+  overrides: Record<string, string | undefined>,
+  run: () => void | Promise<void>,
+) {
+  const original: Record<string, string | undefined> = {};
+  for (const key of Object.keys(overrides)) {
+    original[key] = process.env[key];
+    const value = overrides[key];
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  const restore = () => {
+    for (const key of Object.keys(overrides)) {
+      if (original[key] === undefined) delete process.env[key];
+      else process.env[key] = original[key];
+    }
+  };
+  return Promise.resolve()
+    .then(run)
+    .finally(restore);
+}
 
 test("mock OCR service returns invoice fields", async () => {
   const originalProvider = process.env.OCR_PROVIDER;
@@ -29,14 +56,70 @@ test("mock OCR service returns invoice fields", async () => {
   }
 });
 
-test("mock OCR provider exposes a clean provider contract", async () => {
-  const provider = new MockOcrProvider();
-  const result = await provider.extract({
+test("mock OCR engine returns recognition-only output", async () => {
+  const engine = new MockOcrEngine();
+  const result = await engine.recognize({
     fileName: "receipt.pdf",
   });
 
-  assert.equal(provider.name, "mock");
-  assert.equal(result.provider, provider.name);
+  assert.equal(engine.name, "mock");
+  assert.equal(result.provider, engine.name);
+  assert.equal(typeof result.rawText, "string");
+  assert.ok(result.rawText.length > 0);
+  assert.ok(Array.isArray(result.blocks));
+  // Recognition output must not carry structured invoice fields.
+  assert.equal("invoiceNumber" in result, false);
+  assert.equal("amount" in result, false);
+});
+
+test("the parser (not the engine) owns structured field extraction", async () => {
+  const engine = new MockOcrEngine();
+  const recognition = await engine.recognize({ fileName: "receipt.png" });
+
+  const parsed = parseInvoiceFieldsFromText(
+    recognition.rawText,
+    recognition.provider,
+    recognition.meanScore,
+  );
+
+  assert.match(parsed.invoiceNumber, /^MOCK-/);
+  assert.match(parsed.invoiceDate, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(typeof parsed.amount, "number");
+  assert.equal(parsed.provider, "mock");
+});
+
+test("extract response stays compatible with the wizard contract", async () => {
+  await withEnv({ OCR_PROVIDER: "mock", NODE_ENV: "test" }, async () => {
+    const result = await extractInvoiceData({ fileName: "receipt.png" });
+
+    assert.deepEqual(
+      Object.keys(result).sort(),
+      ["amount", "confidence", "invoiceDate", "invoiceNumber", "provider"],
+    );
+    assert.deepEqual(
+      Object.keys(result.confidence).sort(),
+      ["amount", "invoiceDate", "invoiceNumber"],
+    );
+  });
+});
+
+test("unknown OCR_PROVIDER fails closed", async () => {
+  await withEnv({ OCR_PROVIDER: "paddleocr", NODE_ENV: "test" }, async () => {
+    assert.throws(() => resolveOcrProviderName(), (error: unknown) => error instanceof OcrConfigError);
+    await assert.rejects(
+      extractInvoiceData({ fileName: "receipt.png" }),
+      (error: unknown) => error instanceof OcrConfigError,
+    );
+  });
+});
+
+test("mock provider is prohibited in production", async () => {
+  await withEnv({ OCR_PROVIDER: "mock", NODE_ENV: "production" }, () => {
+    assert.throws(
+      () => resolveOcrProviderName(),
+      (error: unknown) => error instanceof OcrConfigError,
+    );
+  });
 });
 
 test("parser extracts invoice fields from receipt text", () => {
@@ -364,11 +447,11 @@ test("parser prefers receipt ids over payment reference numbers on Canadian card
   assert.equal(parsed.amount, 11.49);
 });
 
-test("tesseract provider rejects pdf files with a clear error", async () => {
-  const provider = new TesseractOcrProvider();
+test("tesseract engine rejects pdf files with a clear error", async () => {
+  const engine = new TesseractOcrEngine();
 
   await assert.rejects(
-    provider.extract({
+    engine.recognize({
       fileName: "receipt.pdf",
       mimeType: "application/pdf",
     }),
@@ -376,4 +459,80 @@ test("tesseract provider rejects pdf files with a clear error", async () => {
       error instanceof OcrProviderError &&
       error.code === "PDF_NOT_SUPPORTED",
   );
+});
+
+// ── Engine score normalization (0–1 contract) ────────────────────────────────
+
+test("normalizeConfidence maps native units into the 0–1 range", () => {
+  // Tesseract-style 0–100 scores are scaled down.
+  assert.equal(normalizeConfidence(92), 0.92);
+  assert.equal(normalizeConfidence(100), 1);
+  // Already-normalized 0–1 scores pass through.
+  assert.equal(normalizeConfidence(0.8), 0.8);
+  assert.equal(normalizeConfidence(0), 0);
+  assert.equal(normalizeConfidence(1), 1);
+  // Out-of-range values clamp into [0, 1].
+  assert.equal(normalizeConfidence(150), 1);
+  assert.equal(normalizeConfidence(-5), 0);
+  // Unsafe inputs fall back to 0.
+  assert.equal(normalizeConfidence(Number.NaN), 0);
+  assert.equal(normalizeConfidence(Infinity), 0);
+  assert.equal(normalizeConfidence(null), 0);
+  assert.equal(normalizeConfidence(undefined), 0);
+});
+
+test("mock engine reports a normalized 0–1 meanScore", async () => {
+  const engine = new MockOcrEngine();
+  const result = await engine.recognize({ fileName: "receipt.png" });
+
+  assert.ok(result.meanScore >= 0 && result.meanScore <= 1);
+});
+
+test("engine block scores, when present, are in the 0–1 range", async () => {
+  const engine = new MockOcrEngine();
+  const result = await engine.recognize({ fileName: "receipt.png" });
+
+  for (const block of result.blocks) {
+    assert.ok(
+      block.score >= 0 && block.score <= 1,
+      `block score ${block.score} must be normalized to 0–1`,
+    );
+  }
+});
+
+// ── runExtraction internal envelope ──────────────────────────────────────────
+
+test("runExtraction returns the full internal envelope", async () => {
+  await withEnv({ OCR_PROVIDER: "mock", NODE_ENV: "test" }, async () => {
+    const envelope = await runExtraction({ fileName: "receipt.png" });
+
+    // Three seams: raw recognition, parsed fields, and the UI projection.
+    assert.deepEqual(
+      Object.keys(envelope).sort(),
+      ["engineResult", "parserResult", "response"],
+    );
+
+    // engineResult carries provider-neutral recognition with a normalized score.
+    const { engineResult } = envelope;
+    assert.equal(typeof engineResult.rawText, "string");
+    assert.equal(engineResult.provider, "mock");
+    assert.equal(engineResult.modelVersion, "mock-1");
+    assert.equal(typeof engineResult.durationMs, "number");
+    assert.ok(engineResult.meanScore >= 0 && engineResult.meanScore <= 1);
+    // Recognition output must not carry structured invoice fields.
+    assert.equal("invoiceNumber" in engineResult, false);
+    assert.equal("amount" in engineResult, false);
+
+    // parserResult owns the structured parsed fields.
+    assert.match(envelope.parserResult.invoiceNumber, /^MOCK-/);
+    assert.match(envelope.parserResult.invoiceDate, /^\d{4}-\d{2}-\d{2}$/);
+    assert.equal(typeof envelope.parserResult.amount, "number");
+
+    // response stays exactly the wizard-visible OcrResult shape.
+    assert.deepEqual(
+      Object.keys(envelope.response).sort(),
+      ["amount", "confidence", "invoiceDate", "invoiceNumber", "provider"],
+    );
+    assert.deepEqual(envelope.response, envelope.parserResult);
+  });
 });

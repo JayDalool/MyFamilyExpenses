@@ -106,9 +106,9 @@ If you use Windows + WSL2, use the Linux path inside WSL, not a Windows-mounted 
 | `INVOICE_STORAGE_ROOT` | Final invoice storage path | `/var/lib/myfamilyexpenses/invoices` |
 | `TEMP_UPLOAD_ROOT` | Draft upload path | `/var/lib/myfamilyexpenses/tmp` |
 | `MAX_UPLOAD_MB` | Max upload size | `15` |
-| `OCR_PROVIDER` | OCR backend selector | `paddleocr` |
-| `OCR_SERVICE_URL` | Internal OCR worker URL | `http://ocr-worker:8000` |
-| `OCR_TIMEOUT_MS` | OCR request timeout | `45000` |
+| `OCR_PROVIDER` | OCR engine selector | `tesseract` |
+| `OCR_SERVICE_URL` | Internal OCR worker URL (planned PaddleOCR sidecar — see note) | `http://ocr-worker:8000` |
+| `OCR_TIMEOUT_MS` | OCR request timeout (planned PaddleOCR sidecar — see note) | `45000` |
 | `RATE_LIMIT_LOGIN_PER_15M` | Login rate limit | `5` |
 | `RATE_LIMIT_UPLOADS_PER_HOUR` | Upload rate limit | `30` |
 | `SMTP_ENABLED` | Enable signup verification + self-service password reset emails | `false` |
@@ -120,6 +120,21 @@ If you use Windows + WSL2, use the Linux path inside WSL, not a Windows-mounted 
 | `SMTP_FROM` | Sender address | `noreply@example.com` |
 | `DEV_SHOW_VERIFICATION_LINKS` | Return signup verification and password reset URLs in API responses (development only, ignored in production) | `false` |
 | `LOG_LEVEL` | App log verbosity | `info` |
+
+### OCR provider note (current vs planned)
+
+- **Production: set `OCR_PROVIDER=tesseract`.** This is the only supported
+  production engine today. Image OCR runs in-process via `tesseract.js`; PDF OCR
+  is not supported yet and PDFs fall back to manual entry.
+- **Local / test / dev only: `OCR_PROVIDER=mock`** for deterministic, synthetic
+  output. The `mock` engine is **hard-blocked in production** (selecting it with
+  `NODE_ENV=production` is a fatal config error).
+- Unknown `OCR_PROVIDER` values **fail closed** with a config error — there is no
+  silent fallback to mock.
+- **PaddleOCR is planned, not implemented.** The `ocr-worker` sidecar,
+  `OCR_SERVICE_URL`, and `OCR_TIMEOUT_MS` in this guide describe the future
+  topology. Do **not** set `OCR_PROVIDER=paddleocr` until the Paddle engine and
+  service actually exist — it would fail closed today.
 
 ### Important deployment note
 

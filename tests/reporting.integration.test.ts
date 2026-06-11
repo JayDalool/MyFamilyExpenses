@@ -315,6 +315,9 @@ integrationTest("dashboard analytics totals and breakdowns are active-only and h
     assert.equal(analyticsA.topSpenderThisMonth?.name, fixture.userA.name);
     assert.equal(analyticsA.categoryBreakdownThisYear[0]?.total, 100);
     assert.equal(analyticsA.memberBreakdownThisYear[0]?.total, 100);
+    // Member snapshot (this month) attributes June spend to the paid-by member.
+    assert.equal(analyticsA.memberBreakdownThisMonth[0]?.userId, fixture.userA.id);
+    assert.equal(analyticsA.memberBreakdownThisMonth[0]?.total, 60);
     assert.equal(analyticsA.expenseCount.allTime, 5);
     assert.deepEqual(analyticsB.thisMonth, { total: 100, count: 1 });
     assert.equal(analyticsB.categoryBreakdownThisYear[0]?.name, fixture.categoryB.name);

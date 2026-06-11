@@ -260,6 +260,14 @@ export type DashboardAnalytics = {
     total: number;
     count: number;
   }>;
+  // Additive: per-member spending for the current month (paid-by attribution),
+  // for the dashboard "Member snapshot". Reuses the already-computed month groups.
+  memberBreakdownThisMonth: Array<{
+    userId: string;
+    name: string;
+    total: number;
+    count: number;
+  }>;
   dailyTrendThisMonth: Array<{ day: string; total: number; count: number }>;
   expenseCount: { thisMonth: number; thisYear: number; allTime: number };
 };
@@ -446,14 +454,21 @@ export async function getDashboardAnalytics(
         .sort((left, right) => right.total - left.total)[0]
     : null;
 
-  const topSpenderThisMonth = memberGroupsMonth.length
-    ? memberGroupsMonth
-        .map((row) => ({
-          userId: row.paidByUserId,
-          name: userNames.get(row.paidByUserId) ?? "Unknown member",
-          total: Number(row._sum.amount ?? 0),
-        }))
-        .sort((left, right) => right.total - left.total)[0]
+  const memberBreakdownThisMonth = memberGroupsMonth
+    .map((row) => ({
+      userId: row.paidByUserId,
+      name: userNames.get(row.paidByUserId) ?? "Unknown member",
+      total: Number(row._sum.amount ?? 0),
+      count: row._count._all,
+    }))
+    .sort((left, right) => right.total - left.total);
+
+  const topSpenderThisMonth = memberBreakdownThisMonth[0]
+    ? {
+        userId: memberBreakdownThisMonth[0].userId,
+        name: memberBreakdownThisMonth[0].name,
+        total: memberBreakdownThisMonth[0].total,
+      }
     : null;
 
   const trendMonthsWithSpend = monthlyTrend.filter((m) => m.total > 0).length;
@@ -484,6 +499,7 @@ export async function getDashboardAnalytics(
     monthlyTrend,
     categoryBreakdownThisYear,
     memberBreakdownThisYear,
+    memberBreakdownThisMonth,
     dailyTrendThisMonth,
     expenseCount: {
       thisMonth: thisMonthAgg._count._all,

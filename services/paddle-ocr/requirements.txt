@@ -1,0 +1,12 @@
+# PaddleOCR sidecar dependencies (CPU-only).
+# Versions are pinned for reproducibility; bump deliberately and re-test, since
+# paddlepaddle/paddleocr releases occasionally change the .ocr() output shape.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+numpy==1.26.4
+opencv-python-headless==4.10.0.84
+# Heavy ML deps. paddlepaddle is the CPU build; install a matching GPU build only
+# if OCR_USE_GPU=1 and a CUDA runtime is present.
+paddlepaddle==2.6.2
+paddleocr==2.9.1

@@ -1,11 +1,14 @@
 # Phase 5 — OCR Foundation + PaddleOCR Plan (rev. 2, post-Codex review)
 
-Status: **OCR contract foundation implemented; no OCR persistence, no OCR
-migrations, no Paddle yet.** The engine/parser boundary, the provider-neutral
-score normalization, fail-closed provider selection, and the internal extraction
-envelope now exist in `lib/ocr`. Persistence (`ReceiptExtractionAttempt` /
-`ReceiptExtraction`), the upload/review UI, and the PaddleOCR service remain
-deferred.
+Status: **OCR contract foundation + PaddleOCR scaffold implemented; no OCR
+persistence, no OCR migrations yet.** The engine/parser boundary, the
+provider-neutral score normalization, fail-closed provider selection, and the
+internal extraction envelope exist in `lib/ocr`. An **experimental** PaddleOCR
+path now exists too: the Next engine (`lib/ocr/paddle-ocr-engine.ts`), the
+internal FastAPI sidecar (`services/paddle-ocr`), and opt-in Docker wiring
+(`docker-compose.ocr.yml`). Production default remains `OCR_PROVIDER=tesseract`.
+Persistence (`ReceiptExtractionAttempt` / `ReceiptExtraction`), the
+upload/review UI, and OCR-output persistence remain deferred.
 Codex verdict on rev. 1: GO with changes. Categories UI cleanup may proceed
 immediately; OCR schema/service work is NO-GO until the four blockers below are
 resolved in the design. This revision resolves them at the plan level.
@@ -20,17 +23,20 @@ budgets, subscriptions.
 
 - Engine/parser seam exists: `lib/ocr/ocr.service.ts` resolves the engine from
   `OCR_PROVIDER` when OCR is invoked (not at app startup). Allowed values are an
-  explicit allowlist — `tesseract` (default) and `mock` (local/test/dev only,
-  hard-blocked in production). An unknown `OCR_PROVIDER` (e.g. a typo like
-  `paddleocr`) **fails closed** with an `OcrConfigError`; it does **not** fall
-  back to mock. PaddleOCR is **planned/future** and is not yet an allowed value.
+  explicit allowlist — `tesseract` (default), `mock` (local/test/dev only,
+  hard-blocked in production), and `paddle` (experimental; requires
+  `OCR_SERVICE_URL` or it fails closed at selection time). An unknown
+  `OCR_PROVIDER` (e.g. `paddleocr` — the canonical name is `paddle`) **fails
+  closed** with an `OcrConfigError`; it does **not** fall back to mock.
 - Engines are recognition-only and return a provider-neutral `EngineResult`
   (`rawText`, `blocks`, `meanScore`, `provider`, `modelVersion`, `durationMs`),
   with `meanScore` and block scores normalized to 0–1 **at the engine boundary**
   (`lib/ocr/normalize.ts`). Engines: `TesseractOcrEngine`
   (`lib/ocr/tesseract-ocr-engine.ts`, in-process WASM, images only, throws
-  `PDF_NOT_SUPPORTED`) and `MockOcrEngine` (`lib/ocr/mock-ocr-engine.ts`,
-  synthetic text). Engines do **not** produce structured fields.
+  `PDF_NOT_SUPPORTED`), `MockOcrEngine` (`lib/ocr/mock-ocr-engine.ts`,
+  synthetic text), and `PaddleOcrEngine` (`lib/ocr/paddle-ocr-engine.ts`,
+  **experimental** HTTP client to the internal sidecar; image-only; Zod-validated
+  response; 5–8 s timeout). Engines do **not** produce structured fields.
 - The Node-owned `ReceiptParser` (`lib/ocr/ocr-parsing.ts`,
   `parseInvoiceFieldsFromText`) turns `rawText` into **structured fields**
   (`invoiceNumber`, `invoiceDate`, `amount` + per-field confidence). This is the
@@ -124,7 +130,9 @@ while `response` is the only part returned to the browser.
 
 **Status of this step:** the contract refactor (engine boundary, parser
 ownership, envelope, fail-closed provider selection, mock-prod prohibition) is
-**implemented now**. Persistence, attempts, Paddle, and Docker remain deferred.
+**implemented now**, and an **experimental** Paddle engine + sidecar + opt-in
+Docker wiring now exist against this same contract. Persistence and attempts
+remain deferred.
 
 ## 4. Blocker C — unknown/mock provider safety (fail closed)
 
@@ -136,9 +144,10 @@ ownership, envelope, fail-closed provider selection, mock-prod prohibition) is
   never fabricate financial data.
 - `MockOcrEngine` is **prohibited when `NODE_ENV=production`** — selecting it
   there is also a hard config error.
-- Allowed values are an explicit allowlist: **`tesseract`** and **`mock`
-  (local/test/dev only)**. PaddleOCR (`paddle`) is **planned/future** and is
-  intentionally **not** on the allowlist until the engine + service exist.
+- Allowed values are an explicit allowlist: **`tesseract`**, **`mock`
+  (local/test/dev only)**, and **`paddle`** (experimental). The canonical Paddle
+  name is `paddle`; **`paddleocr` is not an alias** and fails closed. Selecting
+  `paddle` without `OCR_SERVICE_URL` is also a hard config error (fail closed).
 
 ## 5. Blocker D — security & resource requirements (before any Paddle work)
 
@@ -217,13 +226,15 @@ lands); HEIC support (unless approved — H5).
 
 1. **Categories UI cleanup** — separate small commit (done in this branch).
 2. OCR contract refactor: `OcrEngine` DTO + `ReceiptParser` boundary (+ fail-
-   closed provider selection from §4).
+   closed provider selection from §4). **(done)**
 3. OCR rate limits, resource protections, security hardening (incl. nosniff).
 4. Trusted `ReceiptExtractionAttempt` handoff.
 5. Final `ReceiptExtraction` schema/persistence — exercised with **mock /
    Tesseract only**.
 6. Upload/review UI additions (only after persistence exists).
-7. PaddleOCR service + provider + Docker integration.
+7. PaddleOCR service + provider + Docker integration. **(scaffolded early,
+   experimental — engine, sidecar, and opt-in Compose override exist; model not
+   yet load-tested; brought forward ahead of steps 3–6, which remain open).**
 8. Tests + deployment verification per chunk.
 
 ## 9. Open questions (for product owner)

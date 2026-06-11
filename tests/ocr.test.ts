@@ -12,6 +12,7 @@ import {
 } from "../lib/ocr/ocr.service";
 import { MockOcrEngine } from "../lib/ocr/mock-ocr-engine";
 import { TesseractOcrEngine } from "../lib/ocr/tesseract-ocr-engine";
+import { PaddleOcrEngine } from "../lib/ocr/paddle-ocr-engine";
 import { normalizeConfidence } from "../lib/ocr/normalize";
 
 function withEnv(
@@ -534,5 +535,232 @@ test("runExtraction returns the full internal envelope", async () => {
       ["amount", "confidence", "invoiceDate", "invoiceNumber", "provider"],
     );
     assert.deepEqual(envelope.response, envelope.parserResult);
+  });
+});
+
+// ── PaddleOCR HTTP engine ────────────────────────────────────────────────────
+
+const PADDLE_ENV = {
+  OCR_PROVIDER: "paddle",
+  OCR_SERVICE_URL: "http://ocr-test:8000",
+  NODE_ENV: "test",
+} as const;
+
+function validPaddleDto() {
+  return {
+    text: "Invoice No: INV-7788\nDate: 2026-05-01\nGrand Total: $51.20",
+    blocks: [
+      {
+        text: "Grand Total: $51.20",
+        bbox: [
+          [10, 20],
+          [200, 20],
+          [200, 48],
+          [10, 48],
+        ],
+        score: 0.93,
+      },
+    ],
+    meanScore: 0.9,
+    modelVersion: "PP-OCRv4",
+  };
+}
+
+// Swap global fetch for the duration of `run`, then restore.
+function withFetch(
+  stub: (input: unknown, init?: unknown) => Promise<Response>,
+  run: () => Promise<void>,
+) {
+  const original = globalThis.fetch;
+  globalThis.fetch = stub as typeof globalThis.fetch;
+  return Promise.resolve()
+    .then(run)
+    .finally(() => {
+      globalThis.fetch = original;
+    });
+}
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+const sampleBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+
+test("OCR_PROVIDER=paddle is a recognized provider", async () => {
+  await withEnv(PADDLE_ENV, () => {
+    assert.equal(resolveOcrProviderName(), "paddle");
+  });
+});
+
+test("OCR_PROVIDER=paddle requires OCR_SERVICE_URL", async () => {
+  await withEnv(
+    { OCR_PROVIDER: "paddle", OCR_SERVICE_URL: undefined, NODE_ENV: "test" },
+    async () => {
+      // Name resolves, but constructing the engine fails closed without a URL.
+      assert.equal(resolveOcrProviderName(), "paddle");
+      await assert.rejects(
+        extractInvoiceData({ fileName: "receipt.png", fileBytes: sampleBytes }),
+        (error: unknown) => error instanceof OcrConfigError,
+      );
+    },
+  );
+});
+
+test("paddle engine maps a valid service DTO to an EngineResult", async () => {
+  await withEnv(PADDLE_ENV, async () => {
+    await withFetch(
+      async () => jsonResponse(validPaddleDto()),
+      async () => {
+        const engine = new PaddleOcrEngine();
+        const result = await engine.recognize({
+          fileName: "receipt.png",
+          mimeType: "image/png",
+          fileBytes: sampleBytes,
+        });
+
+        assert.equal(result.provider, "paddle");
+        assert.equal(result.modelVersion, "PP-OCRv4");
+        assert.match(result.rawText, /INV-7788/);
+        assert.equal(result.blocks.length, 1);
+        // Polygon → axis-aligned bbox [minX, minY, maxX, maxY].
+        assert.deepEqual(result.blocks[0].bbox, [10, 20, 200, 48]);
+        assert.equal(typeof result.durationMs, "number");
+        // Recognition output carries no structured invoice fields.
+        assert.equal("invoiceNumber" in result, false);
+      },
+    );
+  });
+});
+
+test("paddle engine normalizes and clamps scores to 0–1", async () => {
+  await withEnv(PADDLE_ENV, async () => {
+    const dto = validPaddleDto();
+    // Service mis-reports out-of-range scores; the engine must clamp/normalize.
+    dto.meanScore = 95; // 0–100 style
+    dto.blocks[0].score = 1.5; // above range
+    await withFetch(
+      async () => jsonResponse(dto),
+      async () => {
+        const engine = new PaddleOcrEngine();
+        const result = await engine.recognize({
+          fileName: "receipt.png",
+          fileBytes: sampleBytes,
+        });
+
+        assert.ok(result.meanScore >= 0 && result.meanScore <= 1);
+        assert.equal(result.meanScore, 0.95);
+        for (const block of result.blocks) {
+          assert.ok(block.score >= 0 && block.score <= 1);
+        }
+      },
+    );
+  });
+});
+
+test("paddle engine rejects a malformed service response", async () => {
+  await withEnv(PADDLE_ENV, async () => {
+    await withFetch(
+      async () => jsonResponse({ unexpected: true }),
+      async () => {
+        const engine = new PaddleOcrEngine();
+        await assert.rejects(
+          engine.recognize({ fileName: "receipt.png", fileBytes: sampleBytes }),
+          (error: unknown) =>
+            error instanceof OcrProviderError && error.code === "OCR_FAILED",
+        );
+      },
+    );
+  });
+});
+
+test("paddle engine surfaces a controlled error on HTTP 5xx", async () => {
+  await withEnv(PADDLE_ENV, async () => {
+    await withFetch(
+      async () => new Response("upstream error", { status: 503 }),
+      async () => {
+        const engine = new PaddleOcrEngine();
+        await assert.rejects(
+          engine.recognize({ fileName: "receipt.png", fileBytes: sampleBytes }),
+          (error: unknown) =>
+            error instanceof OcrProviderError && error.code === "OCR_FAILED",
+        );
+      },
+    );
+  });
+});
+
+test("paddle engine surfaces a controlled error on network failure", async () => {
+  await withEnv(PADDLE_ENV, async () => {
+    await withFetch(
+      async () => {
+        throw new Error("ECONNREFUSED");
+      },
+      async () => {
+        const engine = new PaddleOcrEngine();
+        await assert.rejects(
+          engine.recognize({ fileName: "receipt.png", fileBytes: sampleBytes }),
+          (error: unknown) =>
+            error instanceof OcrProviderError && error.code === "OCR_FAILED",
+        );
+      },
+    );
+  });
+});
+
+test("paddle engine surfaces a controlled error on timeout (abort)", async () => {
+  await withEnv(PADDLE_ENV, async () => {
+    await withFetch(
+      async () => {
+        const abortError = new Error("The operation was aborted");
+        abortError.name = "AbortError";
+        throw abortError;
+      },
+      async () => {
+        const engine = new PaddleOcrEngine();
+        await assert.rejects(
+          engine.recognize({ fileName: "receipt.png", fileBytes: sampleBytes }),
+          (error: unknown) =>
+            error instanceof OcrProviderError &&
+            error.code === "OCR_FAILED" &&
+            /timed out/i.test(error.message),
+        );
+      },
+    );
+  });
+});
+
+test("runExtraction with the paddle engine returns the full envelope", async () => {
+  await withEnv(PADDLE_ENV, async () => {
+    await withFetch(
+      async () => jsonResponse(validPaddleDto()),
+      async () => {
+        const envelope = await runExtraction({
+          fileName: "receipt.png",
+          fileBytes: sampleBytes,
+        });
+
+        assert.deepEqual(
+          Object.keys(envelope).sort(),
+          ["engineResult", "parserResult", "response"],
+        );
+        assert.equal(envelope.engineResult.provider, "paddle");
+        assert.ok(
+          envelope.engineResult.meanScore >= 0 &&
+            envelope.engineResult.meanScore <= 1,
+        );
+        // Parser owns structured fields, derived from the engine's rawText.
+        assert.equal(envelope.parserResult.invoiceNumber, "INV-7788");
+        assert.equal(envelope.parserResult.amount, 51.2);
+        // Visible response keeps the wizard-compatible OcrResult shape.
+        assert.deepEqual(
+          Object.keys(envelope.response).sort(),
+          ["amount", "confidence", "invoiceDate", "invoiceNumber", "provider"],
+        );
+        assert.equal(envelope.response.provider, "paddle");
+      },
+    );
   });
 });

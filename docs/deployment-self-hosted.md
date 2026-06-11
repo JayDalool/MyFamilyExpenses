@@ -106,9 +106,9 @@ If you use Windows + WSL2, use the Linux path inside WSL, not a Windows-mounted 
 | `INVOICE_STORAGE_ROOT` | Final invoice storage path | `/var/lib/myfamilyexpenses/invoices` |
 | `TEMP_UPLOAD_ROOT` | Draft upload path | `/var/lib/myfamilyexpenses/tmp` |
 | `MAX_UPLOAD_MB` | Max upload size | `15` |
-| `OCR_PROVIDER` | OCR engine selector | `tesseract` |
-| `OCR_SERVICE_URL` | Internal OCR worker URL (planned PaddleOCR sidecar — see note) | `http://ocr-worker:8000` |
-| `OCR_TIMEOUT_MS` | OCR request timeout (planned PaddleOCR sidecar — see note) | `45000` |
+| `OCR_PROVIDER` | OCR engine selector (`tesseract` \| `paddle` \| `mock` non-prod) | `tesseract` |
+| `OCR_SERVICE_URL` | Internal PaddleOCR sidecar URL (required when `OCR_PROVIDER=paddle`) | `http://ocr:8000` |
+| `OCR_TIMEOUT_MS` | Paddle request timeout; engine clamps to 1000–8000 | `7000` |
 | `RATE_LIMIT_LOGIN_PER_15M` | Login rate limit | `5` |
 | `RATE_LIMIT_UPLOADS_PER_HOUR` | Upload rate limit | `30` |
 | `SMTP_ENABLED` | Enable signup verification + self-service password reset emails | `false` |
@@ -130,11 +130,43 @@ If you use Windows + WSL2, use the Linux path inside WSL, not a Windows-mounted 
   output. The `mock` engine is **hard-blocked in production** (selecting it with
   `NODE_ENV=production` is a fatal config error).
 - Unknown `OCR_PROVIDER` values **fail closed** with a config error — there is no
-  silent fallback to mock.
-- **PaddleOCR is planned, not implemented.** The `ocr-worker` sidecar,
-  `OCR_SERVICE_URL`, and `OCR_TIMEOUT_MS` in this guide describe the future
-  topology. Do **not** set `OCR_PROVIDER=paddleocr` until the Paddle engine and
-  service actually exist — it would fail closed today.
+  silent fallback to mock. The canonical Paddle name is **`paddle`**;
+  `paddleocr` is **not** accepted and fails closed.
+- **PaddleOCR is scaffolded and experimental — not the production default.** An
+  internal sidecar (`services/paddle-ocr`) and the Next engine
+  (`lib/ocr/paddle-ocr-engine.ts`) exist and are wired through Docker Compose,
+  but the model has not been load-tested here. Keep `OCR_PROVIDER=tesseract` in
+  production until you have validated Paddle yourself. It does **not** add OCR
+  persistence yet.
+
+#### Enabling the PaddleOCR sidecar (opt-in)
+
+The OCR service is in a separate Compose override so it never starts in a normal
+deploy. To run it:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.ocr.yml up -d
+```
+
+Including `docker-compose.ocr.yml` does two things: it starts the internal `ocr`
+service and sets `OCR_PROVIDER=paddle`, `OCR_SERVICE_URL=http://ocr:8000`, and
+`OCR_TIMEOUT_MS` on the `app` container. With the base `docker-compose.yml`
+alone, none of this exists and the app stays on Tesseract.
+
+Hard requirements (enforced by the override / service):
+
+- **No public port** — the `ocr` service is reachable only on the internal
+  Docker network via the name `ocr`. Never add a host `ports:` mapping for it.
+- **No uploads volume mounted into Paddle** — bytes are passed per request.
+- **No DB access and no app secrets** are given to the OCR service.
+- The Next engine enforces a **5–8 s total timeout** (`OCR_TIMEOUT_MS`, clamped
+  to 1000–8000 ms). On timeout / network error / 5xx / malformed response it
+  returns a controlled OCR error so the user can enter fields manually — it does
+  **not** fabricate data and does **not** silently fall back to mock.
+- Resources: PaddleOCR is CPU-bound (~1–4 s/image) and needs ~1–2 GB RAM. Run
+  one worker per container and scale with replicas; CPU/memory limits are set in
+  the override. See `services/paddle-ocr/README.md` for model preloading and
+  tuning.
 
 ### Important deployment note
 

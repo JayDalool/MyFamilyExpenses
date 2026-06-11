@@ -7,6 +7,7 @@ import {
 import { writeOcrDebugArtifact } from "@/lib/ocr/ocr-debug";
 import { createEmptyOcrResult, parseInvoiceFieldsFromText } from "@/lib/ocr/ocr-parsing";
 import { MockOcrEngine } from "@/lib/ocr/mock-ocr-engine";
+import { PaddleOcrEngine } from "@/lib/ocr/paddle-ocr-engine";
 import { TesseractOcrEngine } from "@/lib/ocr/tesseract-ocr-engine";
 import type {
   EngineResult,
@@ -16,7 +17,7 @@ import type {
   OcrResult,
 } from "@/lib/ocr/types";
 
-const KNOWN_OCR_PROVIDERS = ["tesseract", "mock"] as const;
+const KNOWN_OCR_PROVIDERS = ["tesseract", "mock", "paddle"] as const;
 type KnownOcrProvider = (typeof KNOWN_OCR_PROVIDERS)[number];
 
 // Raw configured name (non-throwing). Used only for labelling fallback results.
@@ -51,6 +52,9 @@ function getOcrEngine(): OcrEngine {
       return new TesseractOcrEngine();
     case "mock":
       return new MockOcrEngine();
+    case "paddle":
+      // Throws OcrConfigError if OCR_SERVICE_URL is missing (fail closed).
+      return new PaddleOcrEngine();
     default:
       // Unreachable: resolveOcrProviderName already validated the name.
       throw new OcrConfigError(`Unsupported OCR provider "${name}".`);

@@ -1,0 +1,52 @@
+# PaddleOCR sidecar override (experimental, opt-in).
+#
+# This file is NOT part of the default deploy. The OCR service only starts when
+# you explicitly include it:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.ocr.yml up -d
+#
+# It adds an internal-only `ocr` service and injects the Paddle wiring into the
+# existing `app` service. With the base compose alone, the app keeps using
+# OCR_PROVIDER=tesseract and this service does not exist.
+#
+# Security: no public port mapping (internal Docker network only), no uploads
+# volume mounted here, no DB access, no app secrets.
+
+services:
+  ocr:
+    build:
+      context: ./services/paddle-ocr
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    # Internal only: deliberately NO `ports:` block — reachable only from other
+    # compose services via the service name `ocr`.
+    expose:
+      - "8000"
+    environment:
+      OCR_LANG: ${OCR_LANG:-en}
+      OCR_MODEL_VERSION: ${OCR_MODEL_VERSION:-PP-OCRv4}
+      OCR_MAX_UPLOAD_BYTES: ${OCR_MAX_UPLOAD_BYTES:-15728640}
+      OCR_USE_GPU: ${OCR_USE_GPU:-0}
+    healthcheck:
+      # Ready only once the model is loaded (see app.py /healthz).
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz').status==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2g
+
+  # Inject Paddle wiring into the existing app container only when this override
+  # is included. Base docker-compose.yml is unchanged for non-Paddle deploys.
+  app:
+    environment:
+      OCR_PROVIDER: paddle
+      OCR_SERVICE_URL: http://ocr:8000
+      OCR_TIMEOUT_MS: ${OCR_TIMEOUT_MS:-7000}
+    depends_on:
+      ocr:
+        condition: service_healthy

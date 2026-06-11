@@ -13,6 +13,10 @@ through the `OcrEngine` boundary (`lib/ocr/paddle-ocr-engine.ts`) when
 
 - A small **FastAPI** app exposing exactly two routes.
 - **Image OCR only.** No PDF / rasterization.
+- **Safe preprocessing** (`preprocess.py`): small/low-res images are upscaled
+  (cubic) and mildly enhanced (grayscale + CLAHE contrast + gentle sharpen)
+  before recognition; large, already-clear images are left untouched. The output
+  DTO is unchanged.
 - Returns an **app-owned DTO**, never raw Paddle JSON.
 - Receives **file bytes** via multipart upload — never filesystem paths.
 - **No database access, no app secrets**, intended for an **internal Docker

@@ -2,10 +2,19 @@ import { NextResponse } from "next/server";
 import { getCurrentHousehold } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import { extractInvoiceData, isOcrProviderError } from "@/lib/ocr/ocr.service";
+import { hasAnyOcrField } from "@/lib/ocr/ocr-parsing";
+import { isLowQualityImage } from "@/lib/ocr/image-quality";
 import { detectExpenseUploadMimeType, validateExpenseUploadFile } from "@/lib/uploads";
 import { extractExpenseSchema } from "@/lib/validation/expense";
 import { writeAuditLog } from "@/lib/audit";
 import { canCreateExpense } from "@/lib/auth/permissions";
+
+// User-facing OCR guidance. We prefer a friendly fallback (and always allow
+// manual entry) over hard-rejecting an upload.
+const LOW_QUALITY_MESSAGE =
+  "Could not read this receipt clearly. The image may be too small, blurry, or angled. You can upload a clearer photo or fill in the fields manually.";
+const UNREADABLE_MESSAGE =
+  "Could not read this receipt clearly. You can upload a clearer photo or fill in the fields manually.";
 
 export async function POST(request: Request) {
   const auth = await getCurrentHousehold();
@@ -82,12 +91,45 @@ export async function POST(request: Request) {
     );
   }
 
+  // Known low-resolution images won't OCR well. We don't pre-reject (a small but
+  // readable receipt should still succeed) — this only tailors the guidance shown
+  // when OCR can't extract anything.
+  const lowQuality = isLowQualityImage(fileBytes);
+
   try {
     const extraction = await extractInvoiceData({
       fileName: file.name,
       mimeType: detectedMimeType ?? file.type,
       fileBytes,
     });
+
+    // OCR ran but found no usable fields — return a controlled, quality-aware
+    // warning (reusing the existing error envelope) so the wizard can guide the
+    // user. Manual entry still works.
+    if (!hasAnyOcrField(extraction)) {
+      await writeAuditLog({
+        userId: auth.user.id,
+        householdId: auth.householdId,
+        action: "expense.upload.ocr_failed",
+        metadata: {
+          categoryId: parsed.data.categoryId,
+          fileSize: file.size,
+          mimeType: detectedMimeType ?? file.type,
+          provider: extraction.provider,
+          errorCode: lowQuality ? "LOW_QUALITY_IMAGE" : "OCR_NO_FIELDS",
+        },
+      });
+
+      return NextResponse.json(
+        {
+          error: {
+            code: lowQuality ? "LOW_QUALITY_IMAGE" : "OCR_NO_FIELDS",
+            message: lowQuality ? LOW_QUALITY_MESSAGE : UNREADABLE_MESSAGE,
+          },
+        },
+        { status: 422 },
+      );
+    }
 
     await writeAuditLog({
       userId: auth.user.id,
@@ -113,12 +155,24 @@ export async function POST(request: Request) {
           fileSize: file.size,
           mimeType: detectedMimeType ?? file.type,
           errorCode: error.code,
+          lowQuality,
         },
       });
 
+      // PDF is its own clear case. For generic OCR failures on a known
+      // low-resolution image, prefer the more specific low-quality guidance.
+      if (error.code === "PDF_NOT_SUPPORTED") {
+        return NextResponse.json({ error: { message: error.message } }, { status: 422 });
+      }
+
       return NextResponse.json(
-        { error: { message: error.message } },
-        { status: error.code === "PDF_NOT_SUPPORTED" ? 422 : 400 },
+        {
+          error: {
+            code: lowQuality ? "LOW_QUALITY_IMAGE" : undefined,
+            message: lowQuality ? LOW_QUALITY_MESSAGE : error.message,
+          },
+        },
+        { status: 400 },
       );
     }
 
@@ -138,8 +192,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error: {
-          message:
-            "Could not read this invoice automatically. You can continue and fill in the fields manually.",
+          message: lowQuality ? LOW_QUALITY_MESSAGE : UNREADABLE_MESSAGE,
         },
       },
       { status: 500 },

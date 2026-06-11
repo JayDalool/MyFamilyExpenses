@@ -32,6 +32,8 @@ import os
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
+from preprocess import preprocess_for_ocr
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("paddle-ocr")
 
@@ -148,6 +150,7 @@ async def ocr(file: UploadFile = File(...)) -> JSONResponse:
         raise HTTPException(status_code=400, detail="invalid_image")
 
     try:
+        image = preprocess_for_ocr(image)
         dto = _run_ocr(image)
     except Exception:  # noqa: BLE001
         logger.error("OCR processing failed (bytes=%d)", len(data))

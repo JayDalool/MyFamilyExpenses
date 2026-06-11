@@ -343,7 +343,7 @@ export function ExpenseWizard({
       if (!res.ok) {
         setOcrWarning(
           payload?.error?.message ??
-            "Could not read this receipt automatically. Fill in the fields below to continue.",
+            "Could not read this receipt clearly. The image may be too small, blurry, or angled. You can upload a clearer photo or fill in the fields manually.",
         );
         return;
       }
@@ -352,7 +352,7 @@ export function ExpenseWizard({
 
       if (!extraction || !hasAnyOcrField(extraction)) {
         setOcrWarning(
-          "Could not read this receipt automatically. Fill in the fields below to continue.",
+          "Could not read this receipt clearly. The image may be too small, blurry, or angled. You can upload a clearer photo or fill in the fields manually.",
         );
         return;
       }
@@ -363,7 +363,7 @@ export function ExpenseWizard({
       setAmount(applyOcrAmount(extraction));
     } catch {
       setOcrWarning(
-        "Could not read this receipt automatically. Fill in the fields below to continue.",
+        "Could not read this receipt clearly. The image may be too small, blurry, or angled. You can upload a clearer photo or fill in the fields manually.",
       );
     } finally {
       setIsExtracting(false);

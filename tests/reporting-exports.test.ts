@@ -78,6 +78,40 @@ test("PDF export produces a non-empty PDF document", async () => {
   assert.match(pdf.subarray(-1024).toString("latin1"), /%%EOF/);
 });
 
+// Counts page objects in the PDF (the page dictionaries are not compressed, only
+// content streams are). Excludes the single /Type /Pages tree node.
+function countPdfPages(pdf: Buffer): number {
+  return (pdf.toString("latin1").match(/\/Type\s*\/Page(?![s])/g) ?? []).length;
+}
+
+test("PDF export does not emit a trailing blank page for a short report", async () => {
+  // Regression: a width/align footer drawn in the bottom margin used to make
+  // pdfkit auto-append a blank second page. A one-row report must be one page.
+  const pdf = await reportToPdf(report);
+
+  assert.equal(countPdfPages(pdf), 1);
+});
+
+test("PDF export paginates a long expense register without a blank final page", async () => {
+  const many: AccountantReport = {
+    ...report,
+    totals: { total: 6000, count: 120, average: 50 },
+    expenses: Array.from({ length: 120 }, (_, index) => ({
+      ...report.expenses[0]!,
+      id: `expense-${index}`,
+      invoiceNumber: `INV-${1000 + index}`,
+    })),
+  };
+
+  const pdf = await reportToPdf(many);
+  const pages = countPdfPages(pdf);
+
+  // 120 rows must span multiple pages, but no more than the rows can fill (a
+  // trailing blank page would push this past the realistic maximum).
+  assert.ok(pages >= 2, `expected multiple pages, got ${pages}`);
+  assert.ok(pages <= 4, `unexpectedly many pages (possible blank page): ${pages}`);
+});
+
 test("XLSX export produces a non-empty OOXML zip", () => {
   const xlsx = reportToXlsx(report);
 

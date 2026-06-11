@@ -14,7 +14,7 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py ./
+COPY app.py preprocess.py ./
 
 # Run as a non-root user (no app secrets, no DB, no mounted uploads here).
 RUN useradd --create-home --uid 10001 ocr \

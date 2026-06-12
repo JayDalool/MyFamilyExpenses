@@ -32,6 +32,9 @@ export type OcrCandidate<T> = {
   confidence: number;
   sourceLabel: string;
   reason: string;
+  // Which engine/strategy produced this candidate (e.g. "paddle", "tesseract",
+  // "legacy"). Optional/additive — older producers may omit it.
+  source?: string;
   bbox?: [number, number, number, number];
   x?: number;
   y?: number;
@@ -44,6 +47,9 @@ export type OcrCandidates = {
   invoiceNumber: OcrTextCandidate[];
   invoiceDate: OcrTextCandidate[];
   amount: OcrAmountCandidate[];
+  // Merchant/vendor name candidates (top-of-receipt). Used as a receipt-label
+  // fallback when no invoice/reference number exists.
+  merchant: OcrTextCandidate[];
 };
 
 // Provenance for a (possibly multi-engine) extraction. Additive/optional so the
@@ -72,6 +78,9 @@ export type OcrResult = {
   multipleReceipts: boolean;
   warnings: string[];
   candidates: OcrCandidates;
+  // Best merchant/vendor guess (top of receipt), or "" if none. Used only as a
+  // display/label fallback — never presented as an OCR-detected invoice number.
+  merchant: string;
   // ── Stage A.2 provenance (set by the orchestrator, optional) ──
   meta?: OcrExtractionMeta;
 };

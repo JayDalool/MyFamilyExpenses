@@ -170,6 +170,21 @@ export function mergeExtractions(
     0,
   );
 
+  const merchant = mergeScalar(
+    {
+      value: primary.merchant,
+      confidence: primary.merchant !== "" ? 1 : 0,
+      present: primary.merchant !== "",
+    },
+    {
+      value: secondary.merchant,
+      confidence: secondary.merchant !== "" ? 1 : 0,
+      present: secondary.merchant !== "",
+    },
+    invoiceKey,
+    "",
+  );
+
   const merged: OcrResult = {
     invoiceNumber: invoice.value,
     invoiceDate: date.value,
@@ -202,7 +217,13 @@ export function mergeExtractions(
         secondary.candidates.amount,
         (value) => amountKey(value),
       ),
+      merchant: mergeCandidateList(
+        primary.candidates.merchant,
+        secondary.candidates.merchant,
+        invoiceKey,
+      ),
     },
+    merchant: merchant.value,
   };
 
   // Recompute warnings from the merged fields so a fallback that filled a missing

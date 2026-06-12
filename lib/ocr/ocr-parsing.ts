@@ -1459,12 +1459,14 @@ function toTextCandidates(
   candidates: RankedText[],
   blocks: OcrBlock[],
   scale: number,
+  source: string,
 ): OcrTextCandidate[] {
   return candidates.slice(0, 4).map((candidate) => ({
     value: candidate.value,
     confidence: clampConfidence(candidate.confidence * scale),
     sourceLabel: candidate.sourceLabel,
     reason: candidate.reason,
+    source,
     ...attachGeometry(candidate.value, blocks),
   }));
 }
@@ -1473,14 +1475,59 @@ function toAmountCandidates(
   candidates: AmountCandidate[],
   blocks: OcrBlock[],
   scale: number,
+  source: string,
 ): OcrAmountCandidate[] {
   return candidates.slice(0, 4).map((candidate) => ({
     value: candidate.value,
     confidence: clampConfidence(candidate.confidence * scale),
     sourceLabel: candidate.sourceLabel,
     reason: candidate.reason,
+    source,
     ...attachGeometry(candidate.value.toFixed(2), blocks),
   }));
+}
+
+// ── Merchant / vendor extraction (top of receipt) ────────────────────────────
+
+const MERCHANT_SKIP_LINE_PATTERN =
+  /\b(?:total|sub-?total|tax|gst|hst|pst|qst|amount|balance|change|invoice\s*(?:#|no\.?|number)|receipt\s*(?:#|no\.?|number)|date|tel|phone|fax|www\.|http|order\s*(?:#|no\.?)|cashier|server|table)\b/i;
+const MERCHANT_GENERIC_HEADER_PATTERN =
+  /^(?:invoice|bill|statement|tax\s+invoice)$/i;
+
+// Best-effort merchant name from the first few lines. Skips dates, totals,
+// addresses, phone numbers, and pure-number lines. Generic single-word headers
+// (e.g. "INVOICE") are only used if nothing better appears.
+function rankMerchantCandidates(lines: string[]): RankedText[] {
+  const candidates: RankedText[] = [];
+  const maxTop = Math.min(6, lines.length);
+
+  for (let index = 0; index < maxTop; index += 1) {
+    const line = lines[index];
+    if (!line) continue;
+    if (ADDRESS_OR_CONTACT_LINE_PATTERN.test(line)) continue;
+    if (STRUCTURE_DATE_PATTERN.test(line)) continue;
+    if (MERCHANT_SKIP_LINE_PATTERN.test(line)) continue;
+    if (PHONE_PATTERN.test(line)) continue;
+
+    const letters = line.replace(/[^A-Za-z]/g, "");
+    if (letters.length < 2) continue; // need real words, not a number row
+    if (letters.length / line.length < 0.5) continue; // mostly punctuation/digits
+
+    const cleaned = line.replace(/\s+/g, " ").trim().slice(0, 40);
+    const generic = MERCHANT_GENERIC_HEADER_PATTERN.test(cleaned);
+
+    candidates.push({
+      value: cleaned,
+      // Top line is the most likely merchant; later lines decay.
+      confidence: clampConfidence((generic ? 0.4 : 0.78) - index * 0.08),
+      sourceLabel: "Merchant",
+      reason: generic
+        ? "Generic header near the top of the receipt"
+        : "Name near the top of the receipt",
+    });
+  }
+
+  return candidates.sort((a, b) => b.confidence - a.confidence);
 }
 
 // Labels that justify accepting a literal 0 amount (an explicit "Total 0.00").
@@ -1600,7 +1647,9 @@ export function createEmptyOcrResult(provider: string): OcrResult {
       invoiceNumber: [],
       invoiceDate: [],
       amount: [],
+      merchant: [],
     },
+    merchant: "",
   };
 }
 
@@ -1623,6 +1672,7 @@ export function parseInvoiceFieldsFromText(
     rankAmountCandidates(lines, baseConfidence, context),
     receiptType,
   );
+  const merchantCandidates = rankMerchantCandidates(lines);
 
   // Side-by-side receipts wreck label↔value association — lower confidence and
   // warn rather than confidently picking across two documents.
@@ -1647,10 +1697,12 @@ export function parseInvoiceFieldsFromText(
     multipleReceipts,
     warnings: [],
     candidates: {
-      invoiceNumber: toTextCandidates(invoiceCandidates, blocks, scale),
-      invoiceDate: toTextCandidates(dateCandidates, blocks, scale),
-      amount: toAmountCandidates(amountCandidates, blocks, scale),
+      invoiceNumber: toTextCandidates(invoiceCandidates, blocks, scale, provider),
+      invoiceDate: toTextCandidates(dateCandidates, blocks, scale, provider),
+      amount: toAmountCandidates(amountCandidates, blocks, scale, provider),
+      merchant: toTextCandidates(merchantCandidates, blocks, 1, provider),
     },
+    merchant: merchantCandidates[0]?.value ?? "",
   };
 
   result.warnings = buildWarnings(result, lines.length > 0);

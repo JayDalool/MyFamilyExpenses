@@ -26,7 +26,8 @@ function makeResult(overrides: Partial<OcrResult> = {}): OcrResult {
     receiptType: "retail",
     multipleReceipts: false,
     warnings: [],
-    candidates: { invoiceNumber: [], invoiceDate: [], amount: [] },
+    candidates: { invoiceNumber: [], invoiceDate: [], amount: [], merchant: [] },
+    merchant: "",
     ...overrides,
   };
 }
@@ -54,13 +55,13 @@ test("agreement between engines boosts amount confidence", () => {
   const primary = makeResult({
     amount: 84.8,
     confidence: { invoiceNumber: 0, invoiceDate: 0, amount: 0.8 },
-    candidates: { invoiceNumber: [], invoiceDate: [], amount: [amountCandidate(84.8, 0.8)] },
+    candidates: { invoiceNumber: [], invoiceDate: [], amount: [amountCandidate(84.8, 0.8)], merchant: [] },
   });
   const secondary = makeResult({
     provider: "tesseract",
     amount: 84.8,
     confidence: { invoiceNumber: 0, invoiceDate: 0, amount: 0.7 },
-    candidates: { invoiceNumber: [], invoiceDate: [], amount: [amountCandidate(84.8, 0.7)] },
+    candidates: { invoiceNumber: [], invoiceDate: [], amount: [amountCandidate(84.8, 0.7)], merchant: [] },
   });
 
   const merged = mergeExtractions(primary, secondary);
@@ -74,7 +75,7 @@ test("a field the primary missed is filled from the fallback engine", () => {
   const primary = makeResult({
     amount: 84.8,
     confidence: { invoiceNumber: 0, invoiceDate: 0, amount: 0.8 },
-    candidates: { invoiceNumber: [], invoiceDate: [], amount: [amountCandidate(84.8, 0.8)] },
+    candidates: { invoiceNumber: [], invoiceDate: [], amount: [amountCandidate(84.8, 0.8)], merchant: [] },
   });
   const secondary = makeResult({
     provider: "tesseract",
@@ -84,6 +85,7 @@ test("a field the primary missed is filled from the fallback engine", () => {
       invoiceNumber: [],
       invoiceDate: [textCandidate("2018-01-01", 0.75)],
       amount: [],
+      merchant: [],
     },
   });
 
@@ -98,13 +100,13 @@ test("conflicting amounts are both surfaced and confidence is lowered", () => {
   const primary = makeResult({
     amount: 84.8,
     confidence: { invoiceNumber: 0, invoiceDate: 0, amount: 0.8 },
-    candidates: { invoiceNumber: [], invoiceDate: [], amount: [amountCandidate(84.8, 0.8)] },
+    candidates: { invoiceNumber: [], invoiceDate: [], amount: [amountCandidate(84.8, 0.8)], merchant: [] },
   });
   const secondary = makeResult({
     provider: "tesseract",
     amount: 90.0,
     confidence: { invoiceNumber: 0, invoiceDate: 0, amount: 0.7 },
-    candidates: { invoiceNumber: [], invoiceDate: [], amount: [amountCandidate(90.0, 0.7)] },
+    candidates: { invoiceNumber: [], invoiceDate: [], amount: [amountCandidate(90.0, 0.7)], merchant: [] },
   });
 
   const merged = mergeExtractions(primary, secondary);

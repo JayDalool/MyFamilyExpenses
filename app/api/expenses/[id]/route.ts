@@ -7,7 +7,7 @@ import {
   softDeleteExpenseForUser,
   updateExpenseForUser,
 } from "@/lib/expenses";
-import { finalExpenseSchema } from "@/lib/validation/expense";
+import { finalExpenseSchema, friendlyExpenseError } from "@/lib/validation/expense";
 import { writeAuditLog } from "@/lib/audit";
 import { revalidateExpenseViews } from "@/lib/revalidation";
 import { canManageExpense } from "@/lib/auth/permissions";
@@ -57,7 +57,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   if (!parsed.success) {
     return NextResponse.json(
-      { error: { message: parsed.error.issues[0]?.message ?? "Invalid expense data." } },
+      { error: { message: friendlyExpenseError(parsed.error) } },
       { status: 400 },
     );
   }

@@ -13,7 +13,12 @@ import {
 } from "@/lib/ocr/ocr.service";
 import { saveUploadedFile, deleteUploadedFile } from "@/lib/storage";
 import { detectExpenseUploadMimeType, validateExpenseUploadFile } from "@/lib/uploads";
-import { expenseInputSchema, finalExpenseSchema } from "@/lib/validation/expense";
+import {
+  expenseInputSchema,
+  finalExpenseSchema,
+  friendlyExpenseError,
+} from "@/lib/validation/expense";
+import { generateReceiptLabel } from "@/lib/ocr/receipt-label";
 import { writeAuditLog } from "@/lib/audit";
 import { revalidateExpenseViews } from "@/lib/revalidation";
 import { canCreateExpense } from "@/lib/auth/permissions";
@@ -88,7 +93,7 @@ export async function POST(request: Request) {
 
   if (!input.success) {
     return NextResponse.json(
-      { error: { message: input.error.issues[0]?.message ?? "Invalid expense payload." } },
+      { error: { message: friendlyExpenseError(input.error) } },
       { status: 400 },
     );
   }
@@ -167,17 +172,29 @@ export async function POST(request: Request) {
       }
     }
 
+    // Prefer the user's typed value, then a confidently OCR-detected value.
+    const resolvedInvoice =
+      input.data.invoiceNumber ??
+      (ocrData.confidence.invoiceNumber > 0 ? ocrData.invoiceNumber : undefined);
+    const resolvedDate =
+      input.data.invoiceDate ??
+      (ocrData.confidence.invoiceDate > 0 ? ocrData.invoiceDate : undefined);
+    const resolvedAmount =
+      input.data.amount ??
+      (ocrData.confidence.amount > 0 ? ocrData.amount : undefined);
+
+    // No invoice/reference on the receipt (bank/ATM, cash slip)? Generate a safe
+    // storage label from merchant + date so the save isn't blocked. This is NOT
+    // presented to the user as an OCR-detected invoice number, and we never
+    // generate the amount (wrong amount is worse than blank).
+    const invoiceForSave =
+      resolvedInvoice ?? generateReceiptLabel(ocrData.merchant, resolvedDate);
+
     const finalized = finalExpenseSchema.safeParse({
       categoryId: input.data.categoryId,
-      invoiceNumber:
-        input.data.invoiceNumber ??
-        (ocrData.confidence.invoiceNumber > 0 ? ocrData.invoiceNumber : undefined),
-      invoiceDate:
-        input.data.invoiceDate ??
-        (ocrData.confidence.invoiceDate > 0 ? ocrData.invoiceDate : undefined),
-      amount:
-        input.data.amount ??
-        (ocrData.confidence.amount > 0 ? ocrData.amount : undefined),
+      invoiceNumber: invoiceForSave,
+      invoiceDate: resolvedDate,
+      amount: resolvedAmount,
     });
 
     if (!finalized.success) {
@@ -188,7 +205,7 @@ export async function POST(request: Request) {
       }
 
       return NextResponse.json(
-        { error: { message: finalized.error.issues[0]?.message ?? "Expense could not be saved." } },
+        { error: { message: friendlyExpenseError(finalized.error) } },
         { status: 400 },
       );
     }

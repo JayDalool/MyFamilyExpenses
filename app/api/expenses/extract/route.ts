@@ -5,7 +5,7 @@ import { extractInvoiceData, isOcrProviderError } from "@/lib/ocr/ocr.service";
 import { hasAnyOcrField } from "@/lib/ocr/ocr-parsing";
 import { isLowQualityImage } from "@/lib/ocr/image-quality";
 import { detectExpenseUploadMimeType, validateExpenseUploadFile } from "@/lib/uploads";
-import { extractExpenseSchema } from "@/lib/validation/expense";
+import { extractExpenseSchema, friendlyExpenseError } from "@/lib/validation/expense";
 import { writeAuditLog } from "@/lib/audit";
 import { canCreateExpense } from "@/lib/auth/permissions";
 
@@ -68,9 +68,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error: {
-          message:
-            parsed.error.issues[0]?.message ??
-            "Select a category before scanning or uploading.",
+          message: friendlyExpenseError(parsed.error),
         },
       },
       { status: 400 },

@@ -68,6 +68,27 @@ export const extractExpenseSchema = z.object({
   categoryId: z.string().uuid("Select a category before scanning or uploading"),
 });
 
+// Map a Zod validation failure for an expense payload to a friendly, field-aware
+// message. Raw Zod text (e.g. "Invalid input: expected string, received
+// undefined") must NEVER reach the user — always route failures through here.
+const FRIENDLY_EXPENSE_FIELD_MESSAGES: Record<string, string> = {
+  categoryId: "Please select a category.",
+  invoiceNumber: "Please add an invoice or reference number.",
+  invoiceDate:
+    "Please enter the receipt date (YYYY-MM-DD) — we couldn't read it automatically.",
+  amount: "Please enter the amount — we couldn't read it confidently.",
+  paidByUserId: "Please select a valid household member.",
+};
+
+export function friendlyExpenseError(error: z.ZodError): string {
+  const issue = error.issues[0];
+  const field = typeof issue?.path[0] === "string" ? (issue.path[0] as string) : "";
+  return (
+    FRIENDLY_EXPENSE_FIELD_MESSAGES[field] ??
+    "Some details are missing or invalid. Please review the fields and try again."
+  );
+}
+
 export const expenseHistoryFiltersSchema = z
   .object({
     invoiceNumber: z.preprocess(

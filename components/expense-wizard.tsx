@@ -192,7 +192,13 @@ function CandidateRow<T extends string | number>({
   onPick,
 }: {
   title: string;
-  items: { value: T; confidence: number; sourceLabel: string; reason: string }[];
+  items: {
+    value: T;
+    confidence: number;
+    sourceLabel: string;
+    reason: string;
+    source?: string;
+  }[];
   format: (value: T) => string;
   onPick: (value: T) => void;
 }) {
@@ -212,6 +218,7 @@ function CandidateRow<T extends string | number>({
           >
             <span className="font-semibold">{format(item.value)}</span>
             <span className="text-slate-400">
+              {item.source ? `${item.source} · ` : ""}
               {item.sourceLabel} · {Math.round(item.confidence * 100)}%
             </span>
           </button>
@@ -258,6 +265,12 @@ function OcrDetailsPanel({
 
       {open ? (
         <div className="space-y-3 border-t border-slate-100 px-4 py-3">
+          {extraction.merchant ? (
+            <p className="text-xs text-slate-500">
+              Merchant:{" "}
+              <span className="font-semibold text-slate-700">{extraction.merchant}</span>
+            </p>
+          ) : null}
           {total === 0 ? (
             <p className="text-xs text-slate-500">
               No candidates were detected. Enter the fields manually.

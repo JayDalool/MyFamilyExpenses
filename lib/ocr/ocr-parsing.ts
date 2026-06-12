@@ -7,6 +7,9 @@ import type {
   ReceiptType,
 } from "@/lib/ocr/types";
 
+// Bump when parser logic changes so persisted attempts can be attributed to the
+// rule version that produced them (used by ReceiptExtractionAttempt).
+export const PARSER_VERSION = "stage-a3";
 
 type AmountToken = {
   value: number;

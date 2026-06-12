@@ -86,10 +86,11 @@ model Membership {
   removedAt   DateTime?     @map("removed_at") @db.Timestamptz(6)
   createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  household     Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  expenses     Expense[] @relation("ExpenseMembership")
-  paidExpenses Expense[] @relation("ExpensePaidByMembership")
+  user               User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  household           Household                   @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  expenses           Expense[]                   @relation("ExpenseMembership")
+  paidExpenses       Expense[]                   @relation("ExpensePaidByMembership")
+  extractionAttempts ReceiptExtractionAttempt[]  @relation("AttemptMembership")
 
   @@unique([userId, householdId])
   @@index([householdId])
@@ -178,6 +179,8 @@ model Expense {
   membership    Membership @relation("ExpenseMembership", fields: [userId, householdId], references: [userId, householdId], onDelete: Restrict)
   // Composite FK: ensures the paid-by member belongs to the same household.
   paidByMembership Membership @relation("ExpensePaidByMembership", fields: [paidByUserId, householdId], references: [userId, householdId], onDelete: Restrict)
+  // The OCR extraction attempt this expense was created from (single-use link).
+  extractionAttempt ReceiptExtractionAttempt? @relation("ExpenseAttempt")
 
   @@index([householdId, invoiceDate])
   @@index([householdId, deletedAt, invoiceDate])
@@ -202,6 +205,47 @@ model AuditLog {
   @@index([householdId, createdAt])
   @@index([action, createdAt])
   @@map("audit_logs")
+}
+
+// Short-lived, trusted, server-side record of what OCR/the parser saw for an
+// upload, captured BEFORE the user edits anything. Tenant-scoped via a composite
+// FK to Membership and single-use (consumedAt / consumedByExpenseId). Raw text
+// and blocks are redacted of card/account numbers before storage. Phase B
+// foundation for later correction-feedback learning.
+model ReceiptExtractionAttempt {
+  id                  String    @id @default(uuid()) @db.Uuid
+  userId              String    @map("user_id") @db.Uuid
+  householdId         String    @map("household_id") @db.Uuid
+  fileSha256          String    @map("file_sha256")
+  provider            String
+  strategy            String
+  providersUsed       Json      @map("providers_used")
+  modelVersions       Json      @map("model_versions")
+  parserVersion       String    @map("parser_version")
+  rawText             String?   @map("raw_text")
+  blocks              Json?
+  candidates          Json
+  selectedExtraction  Json      @map("selected_extraction")
+  warnings            Json
+  receiptType         String    @map("receipt_type")
+  merchantGuess       String?   @map("merchant_guess")
+  imageQuality        Json      @map("image_quality")
+  confidence          Json
+  durationMs          Int       @map("duration_ms")
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt           DateTime  @map("expires_at") @db.Timestamptz(6)
+  consumedAt          DateTime? @map("consumed_at") @db.Timestamptz(6)
+  consumedByExpenseId String?   @unique @map("consumed_by_expense_id") @db.Uuid
+
+  // Tenant integrity: an attempt can only ever belong to a real member of the
+  // household (mirrors the expense/category composite tenant FKs).
+  membership Membership @relation("AttemptMembership", fields: [userId, householdId], references: [userId, householdId], onDelete: Cascade)
+  // The expense that consumed this attempt (nullable, unique).
+  consumedByExpense Expense? @relation("ExpenseAttempt", fields: [consumedByExpenseId], references: [id], onDelete: SetNull)
+
+  @@index([householdId, createdAt])
+  @@index([expiresAt])
+  @@map("receipt_extraction_attempts")
 }
 
 enum AuthProvider {

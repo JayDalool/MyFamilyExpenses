@@ -21,7 +21,7 @@ type MemberOption = {
 type Step = "category" | "upload" | "review";
 
 type ExtractResponse = {
-  data?: { extraction?: OcrResult };
+  data?: { extraction?: OcrResult; attemptId?: string | null };
   error?: { message?: string };
 };
 
@@ -400,6 +400,7 @@ export function ExpenseWizard({
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [extracted, setExtracted] = useState<OcrResult | null>(null);
+  const [attemptId, setAttemptId] = useState<string | null>(null);
   const [isExtracting, setIsExtracting] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [invoiceDate, setInvoiceDate] = useState("");
@@ -438,6 +439,7 @@ export function ExpenseWizard({
   const clearSelectedFile = () => {
     setFile(null);
     setExtracted(null);
+    setAttemptId(null);
     setInvoiceNumber("");
     setInvoiceDate("");
     setAmount("");
@@ -499,6 +501,7 @@ export function ExpenseWizard({
       // Keep the extraction even when no confident fields were found — it carries
       // ranked candidates, receipt type, and warnings the review step surfaces.
       setExtracted(extraction);
+      setAttemptId(payload?.data?.attemptId ?? null);
       setInvoiceNumber(applyOcrValue(extraction.invoiceNumber, extraction.confidence.invoiceNumber));
       setInvoiceDate(applyOcrValue(extraction.invoiceDate, extraction.confidence.invoiceDate));
       setAmount(applyOcrAmount(extraction));
@@ -525,6 +528,7 @@ export function ExpenseWizard({
     if (invoiceNumber) fd.append("invoiceNumber", invoiceNumber);
     if (invoiceDate) fd.append("invoiceDate", invoiceDate);
     if (amount) fd.append("amount", amount);
+    if (attemptId) fd.append("attemptId", attemptId);
 
     try {
       const res = await csrfFetch("/api/expenses", { method: "POST", body: fd });

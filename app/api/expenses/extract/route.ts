@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { getCurrentHousehold } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
-import { extractInvoiceData, isOcrProviderError } from "@/lib/ocr/ocr.service";
+import { runExtraction, isOcrProviderError } from "@/lib/ocr/ocr.service";
 import { hasAnyOcrField } from "@/lib/ocr/ocr-parsing";
+import {
+  computeFileSha256,
+  createExtractionAttempt,
+} from "@/lib/ocr/extraction-attempt";
 import { isLowQualityImage } from "@/lib/ocr/image-quality";
 import { detectExpenseUploadMimeType, validateExpenseUploadFile } from "@/lib/uploads";
 import { extractExpenseSchema, friendlyExpenseError } from "@/lib/validation/expense";
@@ -97,11 +101,12 @@ export async function POST(request: Request) {
   const lowQuality = isLowQualityImage(fileBytes);
 
   try {
-    const extraction = await extractInvoiceData({
+    const envelope = await runExtraction({
       fileName: file.name,
       mimeType: detectedMimeType ?? file.type,
       fileBytes,
     });
+    const extraction = envelope.response;
 
     // Always return the extraction (Stage A): even with no confident fields it
     // carries ranked candidates, receipt type, multi-receipt detection, and
@@ -140,7 +145,21 @@ export async function POST(request: Request) {
       },
     });
 
-    return NextResponse.json({ data: { extraction: { ...extraction, warnings } } });
+    // Persist a trusted server-side snapshot of what OCR/the parser saw, before
+    // the user edits anything. Best-effort: a failure here never blocks the user
+    // (the response simply carries no attemptId and save still works).
+    const fileSha256 = computeFileSha256(fileBytes);
+    const attemptId = await createExtractionAttempt({
+      userId: auth.user.id,
+      householdId: auth.householdId,
+      fileSha256,
+      fileBytes,
+      envelope,
+    });
+
+    return NextResponse.json({
+      data: { extraction: { ...extraction, warnings }, attemptId },
+    });
   } catch (error) {
     if (isOcrProviderError(error)) {
       await writeAuditLog({

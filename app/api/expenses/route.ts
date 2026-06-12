@@ -19,6 +19,10 @@ import {
   friendlyExpenseError,
 } from "@/lib/validation/expense";
 import { generateReceiptLabel } from "@/lib/ocr/receipt-label";
+import {
+  computeFileSha256,
+  consumeExtractionAttempt,
+} from "@/lib/ocr/extraction-attempt";
 import { writeAuditLog } from "@/lib/audit";
 import { revalidateExpenseViews } from "@/lib/revalidation";
 import { canCreateExpense } from "@/lib/auth/permissions";
@@ -228,6 +232,21 @@ export async function POST(request: Request) {
       },
     });
 
+    // Best-effort, single-use link to the trusted extraction attempt. Done AFTER
+    // the expense exists and outside any transaction: a failed/expired/foreign
+    // attempt must never undo the saved expense (the user's primary artifact).
+    const attemptId = String(formData.get("attemptId") ?? "").trim();
+    let attemptLinked = false;
+    if (attemptId) {
+      attemptLinked = await consumeExtractionAttempt({
+        attemptId,
+        userId: auth.user.id,
+        householdId: auth.householdId,
+        fileSha256: computeFileSha256(fileBytes),
+        expenseId: expense.id,
+      });
+    }
+
     await writeAuditLog({
       userId: auth.user.id,
       householdId: auth.householdId,
@@ -239,6 +258,9 @@ export async function POST(request: Request) {
         amount: expense.amount.toString(),
         fileSize: file.size,
         mimeType: detectedMimeType ?? file.type,
+        // Deploy signal: whether a trusted extraction attempt was linked.
+        attemptProvided: Boolean(attemptId),
+        attemptLinked,
       },
     });
     await writeAuditLog({

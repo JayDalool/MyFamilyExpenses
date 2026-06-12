@@ -7,6 +7,7 @@ import {
 import { writeOcrDebugArtifact } from "@/lib/ocr/ocr-debug";
 import { createEmptyOcrResult, parseInvoiceFieldsFromText } from "@/lib/ocr/ocr-parsing";
 import { mergeExtractions } from "@/lib/ocr/merge";
+import { legacyParse } from "@/lib/ocr/legacy-parser";
 import { isLowQualityImage } from "@/lib/ocr/image-quality";
 import { MockOcrEngine } from "@/lib/ocr/mock-ocr-engine";
 import { PaddleOcrEngine } from "@/lib/ocr/paddle-ocr-engine";
@@ -23,7 +24,7 @@ import type {
 const KNOWN_OCR_PROVIDERS = ["tesseract", "mock", "paddle"] as const;
 type KnownOcrProvider = (typeof KNOWN_OCR_PROVIDERS)[number];
 
-const OCR_STRATEGIES = ["single", "fallback", "parallel"] as const;
+const OCR_STRATEGIES = ["single", "fallback", "parallel", "ensemble"] as const;
 type OcrStrategy = (typeof OCR_STRATEGIES)[number];
 
 // Below these, the primary result is "weak" and a fallback engine may help.
@@ -58,7 +59,9 @@ export function resolveOcrProviderName(): KnownOcrProvider {
 // single (default): run the selected provider only.
 // fallback: run the selected provider, then a second engine only if the result
 //           is weak (missing/low-confidence critical fields).
-// parallel: always run both and merge (opt-in; for local testing).
+// parallel: always run both engines and merge (opt-in; for local testing).
+// ensemble: parallel engines PLUS the legacy/simple parser strategy on each
+//           engine's text, all merged with voting/agreement boosts.
 export function resolveOcrStrategy(): OcrStrategy {
   const raw = (process.env.OCR_STRATEGY ?? "single").toLowerCase();
 
@@ -178,8 +181,8 @@ export async function runExtraction(input: OcrInput): Promise<OcrExtractionEnvel
     secondaryName = secondaryProviderName(primaryName);
     const reason = !primary
       ? "primary_failed"
-      : strategy === "parallel"
-        ? "parallel"
+      : strategy === "parallel" || strategy === "ensemble"
+        ? strategy
         : fallbackReasonFor(
             primary.parserResult,
             primary.engineResult.rawText,
@@ -207,10 +210,19 @@ export async function runExtraction(input: OcrInput): Promise<OcrExtractionEnvel
   }
 
   const primaryRun = primary ?? secondary!;
+
+  // Ensemble: also run the legacy/simple parser on each engine's text and fold
+  // its high-precision candidates in. Agreement with the layout parser boosts
+  // confidence; on its own it only fires on obvious patterns ("Total 84.80").
+  const withLegacy = (run: EngineRun): OcrResult =>
+    strategy === "ensemble"
+      ? mergeExtractions(run.parserResult, legacyParse(run.engineResult.rawText))
+      : run.parserResult;
+
   const merged =
     primary && secondary
-      ? mergeExtractions(primary.parserResult, secondary.parserResult)
-      : primaryRun.parserResult;
+      ? mergeExtractions(withLegacy(primary), withLegacy(secondary))
+      : withLegacy(primaryRun);
 
   const providersUsed: string[] = [];
   const modelVersions: (string | null)[] = [];

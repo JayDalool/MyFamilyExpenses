@@ -55,7 +55,7 @@ export type OcrCandidates = {
 // Provenance for a (possibly multi-engine) extraction. Additive/optional so the
 // single-engine path and existing consumers are unaffected.
 export type OcrExtractionMeta = {
-  strategy: "single" | "fallback" | "parallel";
+  strategy: "single" | "fallback" | "parallel" | "ensemble";
   primaryProvider: string;
   fallbackProvider: string | null;
   providersUsed: string[];

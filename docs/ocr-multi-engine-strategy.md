@@ -22,15 +22,47 @@ external AI — everything runs in-process.
 | Env | Values | Default | Meaning |
 |---|---|---|---|
 | `OCR_PROVIDER` | `tesseract` \| `paddle` \| `mock` | `tesseract` | Primary engine. `mock` is dev/test only (blocked in production). |
-| `OCR_STRATEGY` | `single` \| `fallback` \| `parallel` | `single` | How many engines run. |
+| `OCR_STRATEGY` | `single` \| `fallback` \| `parallel` \| `ensemble` | `single` | How many engines/strategies run. |
 
 - **single** (default): run the selected provider only. Behavior is identical to
   before Stage A.2 — production stays on `tesseract`/`single` unless changed.
 - **fallback**: run the primary, then the *other* reliable engine **only if** the
   primary result is weak. Recommended override: `OCR_PROVIDER=paddle` +
   `OCR_STRATEGY=fallback`.
-- **parallel**: always run both and merge. Opt-in, for local testing — it doubles
-  OCR cost per receipt.
+- **parallel**: always run both engines and merge. Opt-in, for local testing — it
+  doubles OCR cost per receipt.
+- **ensemble**: parallel engines **plus** the legacy/simple parser strategy run on
+  each engine's text, all merged with the same voting/agreement boosts. This is
+  the "many readers, then vote" mode.
+
+### Engines vs parsers vs merger
+
+- **Engine** = OCR recognition (Paddle, Tesseract). Produces text + optional block
+  geometry. It never extracts fields.
+- **Parser strategy** = turns recognized text into field candidates. Two run:
+  - the **layout-aware parser** (`ocr-parsing.ts`) — the full strategy that uses
+    labels, receipt-type, geometry, denylists, and ranked candidates;
+  - the **legacy/simple parser** (`legacy-parser.ts`) — a small, high-precision
+    regex strategy that only fires on the most obvious patterns ("Total 84.80",
+    "Date: 01-01-2018", "Invoice No X"). It is **new in Stage A.3**, written to fit
+    the "simple reader that's reliable on easy receipts" role (it is not a
+    resurrected old parser). It is trustworthy when it speaks and silent
+    otherwise, which makes it a good corroborating voter.
+- **Merger / decision engine** (`merge.ts`) = normalizes and votes across all
+  candidate sources. Agreement boosts; disagreement lowers confidence and surfaces
+  both candidates; a field only one source found is filled from that source.
+
+### Field weighting (decision engine)
+
+- **Amounts**: labelled totals from any source win over item prices; agreement
+  across sources helps most; Paddle layout (bottom/right totals) and the legacy
+  "Total <amount>.<cc>" matcher are both strong signals; never trust an
+  unlabelled/weak number.
+- **Dates**: a labelled Date line wins; agreement boosts; genuinely ambiguous
+  day/month (both ≤ 12, not equal) lowers confidence — the legacy parser declines
+  ambiguous dates entirely and leaves them to the layout parser.
+- **Merchant/letters**: top-of-receipt lines only; address/phone/tax lines are
+  rejected; used as a label fallback, never as an invoice number.
 
 The fallback/secondary engine is the other of `paddle`/`tesseract`; `mock` has no
 fallback. If the secondary can't be constructed (e.g. `paddle` without
@@ -94,6 +126,30 @@ Each extraction response carries `meta` (optional, backward-compatible):
   invoice number no longer makes a receipt look failed. A small image with useful
   fields shows a soft "verify values" note instead of the harsh "could not read"
   warning.
+
+## Error handling & no-invoice receipts (Stage A.3)
+
+- **No raw schema errors reach users.** Every expense validation failure is mapped
+  to a friendly, field-aware message (`friendlyExpenseError`). The old
+  "Invalid input: expected string, received undefined" leak (a missing
+  `invoiceNumber` hitting a required `z.string()`) is gone.
+- **No-invoice receipts are saveable.** Bank/ATM and cash slips often have no
+  invoice/reference number. The DB still requires a non-empty `invoiceNumber`, so
+  when one is genuinely absent the save route generates a **receipt label** from
+  merchant + date (e.g. `McDonalds-2018-01-01`, `Receipt-2024-06-11`). This label
+  is a storage value only — it is **never shown to the user as an OCR-detected
+  invoice number**, and the amount is **never** generated (wrong amount is worse
+  than blank).
+- **Merchant extraction** pulls a vendor name from the top of the receipt (skipping
+  address/phone/total/date lines) for use as the label fallback and for display.
+
+### Future product fix (Stage B/C)
+
+Make `invoiceNumber` optional and add a dedicated `receiptLabel` /
+`documentReference` column instead of overloading `invoiceNumber`. With the
+`ReceiptCorrection` corpus, generated labels can become merchant-sequenced
+("McDonalds 1", "McDonalds 2") — but that needs a uniqueness/lookup query and a
+migration, so it is deferred (not done tonight).
 
 ## Still not learning
 

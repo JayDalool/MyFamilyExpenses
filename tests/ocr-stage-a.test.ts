@@ -3,17 +3,34 @@ import test from "node:test";
 import { parseInvoiceFieldsFromText } from "../lib/ocr/ocr-parsing";
 import type { OcrBlock } from "../lib/ocr/types";
 
-// Build N blocks split into two x-clusters to simulate two receipts side by side.
-function twoColumnBlocks(): OcrBlock[] {
+// Two real receipts side by side: each cluster has its own header/date/total.
+function twoReceiptBlocks(): OcrBlock[] {
+  const left = ["STORE A", "Date 2026-05-01", "Bread 3.50", "Milk 4.20", "Total 7.70", "Cash 10.00"];
+  const right = ["STORE B", "Date 2026-05-02", "Eggs 2.00", "Juice 3.10", "Total 5.10", "Visa 5.10"];
   const blocks: OcrBlock[] = [];
-  // Left receipt column (x ≈ 20–120).
-  for (let i = 0; i < 6; i += 1) {
-    blocks.push({ text: `left ${i}`, bbox: [20, i * 30, 120, i * 30 + 20], score: 0.9 });
-  }
-  // Right receipt column (x ≈ 520–620), a wide horizontal gap away.
-  for (let i = 0; i < 6; i += 1) {
-    blocks.push({ text: `right ${i}`, bbox: [520, i * 30, 620, i * 30 + 20], score: 0.9 });
-  }
+  left.forEach((text, i) =>
+    blocks.push({ text, bbox: [20, i * 30, 140, i * 30 + 20], score: 0.9 }),
+  );
+  right.forEach((text, i) =>
+    blocks.push({ text, bbox: [520, i * 30, 640, i * 30 + 20], score: 0.9 }),
+  );
+  return blocks;
+}
+
+// A single receipt whose item names (left) and prices (right) form two x-columns.
+// This must NOT be flagged as multiple receipts.
+function singleReceiptColumnBlocks(): OcrBlock[] {
+  const items = ["Bread", "Milk", "Eggs", "Juice", "Coffee", "Subtotal", "Tax", "Total"];
+  const prices = ["3.50", "4.20", "2.00", "3.10", "6.00", "18.80", "1.20", "20.00"];
+  const blocks: OcrBlock[] = [];
+  // Left column: item/label names (x ≈ 20–180).
+  items.forEach((text, i) =>
+    blocks.push({ text, bbox: [20, i * 30, 180, i * 30 + 20], score: 0.9 }),
+  );
+  // Right column: bare prices, far to the right (x ≈ 520–600).
+  prices.forEach((text, i) =>
+    blocks.push({ text, bbox: [520, i * 30, 600, i * 30 + 20], score: 0.9 }),
+  );
   return blocks;
 }
 
@@ -82,7 +99,7 @@ test("two receipts in one image are flagged and confidence is lowered", () => {
   ].join("\n");
 
   const single = parseInvoiceFieldsFromText(text, "paddle", 0.9, []);
-  const multi = parseInvoiceFieldsFromText(text, "paddle", 0.9, twoColumnBlocks());
+  const multi = parseInvoiceFieldsFromText(text, "paddle", 0.9, twoReceiptBlocks());
 
   assert.equal(single.multipleReceipts, false);
   assert.equal(multi.multipleReceipts, true);
@@ -92,6 +109,24 @@ test("two receipts in one image are flagged and confidence is lowered", () => {
   );
   // Confidence is dampened when multiple receipts are detected.
   assert.ok(multi.confidence.amount < single.confidence.amount);
+});
+
+test("a single receipt with an item column and price column is NOT multi-receipt", () => {
+  const result = parseInvoiceFieldsFromText(
+    [
+      "FRESH MART",
+      "Bread 3.50",
+      "Milk 4.20",
+      "Subtotal 7.70",
+      "Total 7.70",
+    ].join("\n"),
+    "paddle",
+    0.9,
+    singleReceiptColumnBlocks(),
+  );
+
+  assert.equal(result.multipleReceipts, false);
+  assert.ok(!result.warnings.some((w) => /more than one receipt/i.test(w)));
 });
 
 test("a receipt with no invoice number does not invent one", () => {
@@ -157,6 +192,49 @@ test("ambiguous dates get lower confidence than unambiguous ones", () => {
   assert.ok(
     ambiguous.candidates.invoiceDate.some((c) => /ambiguous/i.test(c.reason)),
   );
+});
+
+test("clear cash receipt: confident total/date, no hallucinated invoice", () => {
+  const result = parseInvoiceFieldsFromText(
+    [
+      "CASH RECEIPT",
+      "Address: 1234 Lorem Ipsum, Dolor",
+      "Tel: 123-456-7890",
+      "Date: 01-01-2018     10:35",
+      "Item A         40.00",
+      "Item B         36.80",
+      "Total          84.80",
+      "Sub-total      76.80",
+      "Sales Tax       8.00",
+      "Balance        84.80",
+    ].join("\n"),
+    "paddle",
+    0.9,
+  );
+
+  // No invoice number invented from the address / phone / item text.
+  assert.equal(result.invoiceNumber, "");
+  assert.equal(result.confidence.invoiceNumber, 0);
+  assert.equal(result.candidates.invoiceNumber.length, 0);
+
+  // Date parses with medium/high confidence (01-01 is not really ambiguous).
+  assert.equal(result.invoiceDate, "2018-01-01");
+  assert.ok(
+    result.confidence.invoiceDate >= 0.6,
+    `date confidence ${result.confidence.invoiceDate} should be >= 0.6`,
+  );
+
+  // Total wins; sub-total and balance do not become the amount.
+  assert.equal(result.amount, 84.8);
+  assert.ok(
+    result.confidence.amount >= 0.7,
+    `amount confidence ${result.confidence.amount} should be >= 0.7`,
+  );
+
+  // No multi-receipt warning (no blocks, single body) and no scary warnings.
+  assert.equal(result.multipleReceipts, false);
+  assert.ok(!result.warnings.some((w) => /more than one receipt/i.test(w)));
+  assert.ok(!result.warnings.some((w) => /could not read/i.test(w)));
 });
 
 test("withdrawal amount is exposed as a ranked candidate with its label", () => {

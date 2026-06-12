@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { csrfFetch } from "@/lib/auth/csrf-client";
 import type { OcrResult } from "@/lib/ocr/types";
-import { hasStrongOcrMatch } from "@/lib/ocr/ocr-parsing";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -49,12 +48,19 @@ function applyOcrAmount(extraction: OcrResult) {
   return extraction.confidence.amount > 0 ? String(extraction.amount) : "";
 }
 
-function getMissingFieldNames(result: OcrResult): string[] {
+// Critical fields for a household expense are date and amount; the invoice/
+// reference number is optional (many receipts — bank/ATM, cash slips — have none).
+function getMissingCriticalFieldNames(result: OcrResult): string[] {
   const missing: string[] = [];
-  if (result.confidence.invoiceNumber === 0) missing.push("invoice number");
   if (result.confidence.invoiceDate === 0) missing.push("date");
   if (result.confidence.amount === 0) missing.push("amount");
   return missing;
+}
+
+// "Good enough to feel confident": date and amount both detected with at least
+// medium confidence (a barely-detected field still shows amber, not green).
+function hasCriticalFields(result: OcrResult): boolean {
+  return result.confidence.invoiceDate >= 0.4 && result.confidence.amount >= 0.4;
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
@@ -806,7 +812,7 @@ export function ExpenseWizard({
                   </p>
                 ) : extracted && extracted.warnings.length === 0 ? (
                   <p className="text-center text-sm text-emerald-700">
-                    {hasStrongOcrMatch(extracted)
+                    {hasCriticalFields(extracted)
                       ? "Receipt read successfully — review the details on the next step."
                       : "Receipt partially read — check the highlighted fields on the next step."}
                   </p>
@@ -864,9 +870,10 @@ export function ExpenseWizard({
               </span>
             </div>
 
-            {/* OCR status banner */}
+            {/* OCR status banner — critical fields are date + amount; the
+                invoice number is optional and never makes the receipt look failed. */}
             {extracted ? (
-              hasStrongOcrMatch(extracted) ? (
+              hasCriticalFields(extracted) ? (
                 <div className="flex items-start gap-3 rounded-2xl bg-emerald-50 px-4 py-3">
                   <svg
                     className="mt-0.5 h-4 w-4 flex-shrink-0 text-emerald-600"
@@ -883,10 +890,12 @@ export function ExpenseWizard({
                   </svg>
                   <div>
                     <p className="text-sm font-semibold text-emerald-800">
-                      All fields auto-detected
+                      Date and amount detected
                     </p>
                     <p className="mt-0.5 text-xs text-emerald-700">
-                      Review the values below, then save.
+                      {extracted.confidence.invoiceNumber > 0
+                        ? "Review the values below, then save."
+                        : "No invoice/reference number was found — that's optional. Review and save."}
                     </p>
                   </div>
                 </div>
@@ -907,14 +916,14 @@ export function ExpenseWizard({
                   </svg>
                   <div>
                     <p className="text-sm font-semibold text-amber-800">
-                      Some fields need attention
+                      A couple of details need attention
                     </p>
-                    {getMissingFieldNames(extracted).length > 0 ? (
+                    {getMissingCriticalFieldNames(extracted).length > 0 ? (
                       <p className="mt-0.5 text-xs text-amber-700">
-                        {getMissingFieldNames(extracted).join(", ")}{" "}
-                        {getMissingFieldNames(extracted).length > 1 ? "were" : "was"} not detected
+                        {getMissingCriticalFieldNames(extracted).join(" and ")}{" "}
+                        {getMissingCriticalFieldNames(extracted).length > 1 ? "were" : "was"} not detected
                         — fill{" "}
-                        {getMissingFieldNames(extracted).length > 1 ? "them" : "it"} in below.
+                        {getMissingCriticalFieldNames(extracted).length > 1 ? "them" : "it"} in below.
                       </p>
                     ) : (
                       <p className="mt-0.5 text-xs text-amber-700">

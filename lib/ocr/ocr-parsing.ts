@@ -285,8 +285,10 @@ const CANADIAN_POSTAL_CODE_PATTERN =
 
 const TAX_IDENTIFIER_PATTERN = /^\d{9}(?:RT\d{4})?$/i;
 
-const WEAK_INVOICE_PATTERN =
-  /\b(?:[A-Za-z]{1,8}[-/]?\d{3,}[A-Za-z0-9/-]*|\d{3,}[A-Za-z]{1,8}[A-Za-z0-9/-]*)\b/g;
+// Address / contact lines never carry a receipt's invoice number. Used to reject
+// candidates even from labelled rules that accidentally land on such a line.
+const ADDRESS_OR_CONTACT_LINE_PATTERN =
+  /\b(?:address|adress|street|road|avenue|ave|blvd|boulevard|suite|ste|unit|po\s*box|tel|telephone|phone|fax|mobile|cell|lorem|ipsum|dolor)\b/i;
 
 function clampConfidence(value: number) {
   return Math.max(0, Math.min(1, Number(value.toFixed(2))));
@@ -658,6 +660,20 @@ function extractSlashDateCandidates(
       continue;
     }
 
+    // day == month (e.g. 01-01-2018) — both interpretations yield the same date,
+    // so there is no real ambiguity. Emit one confident candidate.
+    if (first === second) {
+      pushDateCandidate(
+        candidates,
+        toIsoDate(year, first, second),
+        options,
+        options.hasDateLabel ? 1.0 : 0.62,
+        0,
+        { sourceLabel: "Date", reason: "Slash date" },
+      );
+      continue;
+    }
+
     const preferDayFirst = separator === "." || options.preferDayFirst;
     const dayFirstBase = options.hasDateLabel
       ? preferDayFirst
@@ -888,10 +904,13 @@ function isInvoiceNumberCandidate(
     return false;
   }
 
-  // Account/card lines never yield a receipt number. Labelled invoice/receipt/
-  // transaction rules don't fire on these lines, so this mainly guards the weak
-  // fallback and any stray long account run.
+  // Account/card lines never yield a receipt number.
   if (ACCOUNT_OR_CARD_LINE_PATTERN.test(line)) {
+    return false;
+  }
+
+  // Address / phone / placeholder lines never yield a receipt number.
+  if (ADDRESS_OR_CONTACT_LINE_PATTERN.test(line)) {
     return false;
   }
 
@@ -1043,35 +1062,12 @@ function rankInvoiceCandidates(
     }
   }
 
-  if (labeledCandidates.length > 0) {
-    return sortByScoreThenConfidence(dedupeInvoiceCandidates(labeledCandidates));
-  }
-
-  const weakCandidates: InvoiceCandidate[] = [];
-
-  for (const line of lines) {
-    if (WEAK_INVOICE_IGNORE_LINE_PATTERN.test(line)) {
-      continue;
-    }
-
-    const matches = line.match(WEAK_INVOICE_PATTERN) ?? [];
-
-    for (const match of matches) {
-      const candidate = normalizeInvoiceNumber(match);
-
-      if (isInvoiceNumberCandidate(candidate, "weak", line)) {
-        weakCandidates.push({
-          value: candidate,
-          confidence: scaleConfidence(overallConfidence * 0.48 + 0.04, 0.25, 0.64),
-          score: 0.34,
-          sourceLabel: "Unlabelled",
-          reason: "Unlabelled number with no field label nearby",
-        });
-      }
-    }
-  }
-
-  return sortByScoreThenConfidence(dedupeInvoiceCandidates(weakCandidates));
+  // Labelled candidates only. The unlabelled/"weak" fallback was removed in
+  // Stage A.2: scanning generic text for number-ish strings hallucinated invoice
+  // numbers from addresses, phone numbers, and item lines. If no clear
+  // invoice/receipt/transaction/reference/order/bill label is present, the
+  // invoice number is left blank (it is optional for household expenses).
+  return sortByScoreThenConfidence(dedupeInvoiceCandidates(labeledCandidates));
 }
 
 function parseAmountValue(candidate: string) {
@@ -1377,44 +1373,66 @@ function classifyReceiptType(lines: string[]): ReceiptType {
 
 // ── Multi-receipt detection (needs block geometry; Tesseract → []) ────────────
 
+// A cluster looks like a real receipt body (not just a price column) when it
+// contains receipt structure — a total/amount keyword or a date.
+const RECEIPT_STRUCTURE_KEYWORD =
+  /\b(?:total|sub-?total|amount|balance|change|tax|cash|receipt|invoice|cashier|tendered|visa|debit|mastercard|interac|thank\s+you)\b/i;
+const STRUCTURE_DATE_PATTERN = /\b\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}\b/;
+
+function clusterHasReceiptStructure(
+  blocks: (OcrBlock & { bbox: [number, number, number, number] })[],
+): boolean {
+  const joined = blocks.map((block) => block.text).join(" ");
+  return RECEIPT_STRUCTURE_KEYWORD.test(joined) || STRUCTURE_DATE_PATTERN.test(joined);
+}
+
+// Multi-receipt detection. A single receipt with a left item column and a right
+// price column also forms two x-clusters, so a wide gap is NOT enough — we
+// require BOTH sides to carry receipt structure (their own total/date/header),
+// which a bare price column does not.
 function detectMultipleReceipts(blocks: OcrBlock[]): boolean {
   const boxed = blocks.filter(
     (block): block is OcrBlock & { bbox: [number, number, number, number] } =>
       Array.isArray(block.bbox),
   );
 
-  // Need a reasonable number of positioned blocks to trust geometry.
-  if (boxed.length < 8) return false;
+  // Need enough positioned blocks to trust geometry as two receipt bodies.
+  if (boxed.length < 10) return false;
 
   const lefts = boxed.map((block) => block.bbox[0]);
   const rights = boxed.map((block) => block.bbox[2]);
   const pageWidth = Math.max(...rights) - Math.min(...lefts);
   if (pageWidth <= 0) return false;
 
-  const centers = boxed
-    .map((block) => (block.bbox[0] + block.bbox[2]) / 2)
-    .sort((a, b) => a - b);
+  const sorted = [...boxed].sort(
+    (a, b) => (a.bbox[0] + a.bbox[2]) / 2 - (b.bbox[0] + b.bbox[2]) / 2,
+  );
 
   let largestGap = 0;
   let gapIndex = 0;
-  for (let i = 1; i < centers.length; i += 1) {
-    const gap = centers[i] - centers[i - 1];
+  for (let i = 1; i < sorted.length; i += 1) {
+    const gap =
+      (sorted[i].bbox[0] + sorted[i].bbox[2]) / 2 -
+      (sorted[i - 1].bbox[0] + sorted[i - 1].bbox[2]) / 2;
     if (gap > largestGap) {
       largestGap = gap;
       gapIndex = i;
     }
   }
 
-  const leftCount = gapIndex;
-  const rightCount = centers.length - gapIndex;
-  const minCluster = Math.max(2, Math.floor(centers.length * 0.3));
+  const left = sorted.slice(0, gapIndex);
+  const right = sorted.slice(gapIndex);
+  const minCluster = Math.max(3, Math.floor(sorted.length * 0.3));
 
-  // A wide horizontal split between two well-populated x-clusters ⇒ likely two
-  // receipts side by side.
+  // Require a wide split, both clusters well-populated, AND both clusters to look
+  // like a receipt body. A price column has no total/date/header, so a normal
+  // two-column receipt never triggers this.
   return (
-    largestGap > 0.22 * pageWidth &&
-    leftCount >= minCluster &&
-    rightCount >= minCluster
+    largestGap > 0.28 * pageWidth &&
+    left.length >= minCluster &&
+    right.length >= minCluster &&
+    clusterHasReceiptStructure(left) &&
+    clusterHasReceiptStructure(right)
   );
 }
 
@@ -1527,7 +1545,7 @@ const MULTI_RECEIPT_WARNING =
 const PARSER_REVIEW_WARNING =
   "We could read some receipt text, but could not confidently identify the date or total. Please review and fill in the missing fields manually.";
 
-function buildWarnings(
+export function buildWarnings(
   result: Pick<
     OcrResult,
     "confidence" | "receiptType" | "multipleReceipts"

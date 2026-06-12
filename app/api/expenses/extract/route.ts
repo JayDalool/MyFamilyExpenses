@@ -15,6 +15,8 @@ const LOW_QUALITY_MESSAGE =
   "Could not read this receipt clearly. The image may be too small, blurry, or angled. You can upload a clearer photo or fill in the fields manually.";
 const UNREADABLE_MESSAGE =
   "Could not read this receipt clearly. You can upload a clearer photo or fill in the fields manually.";
+// Softer note used when the image is small but useful fields were still found.
+const SMALL_IMAGE_NOTE = "Image is small — please verify the values below.";
 
 export async function POST(request: Request) {
   const auth = await getCurrentHousehold();
@@ -109,8 +111,15 @@ export async function POST(request: Request) {
     // image-based warning on top of any parser warnings. Manual entry always
     // works. Genuine engine failures still throw and are handled below.
     const detected = hasAnyOcrField(extraction);
+    // Useful = the critical household fields (date or amount) were found. When
+    // they are, a small/low-res image gets only a soft "verify" note instead of
+    // the harsh "could not read clearly" warning.
+    const hasUsefulFields =
+      extraction.confidence.invoiceDate > 0 || extraction.confidence.amount > 0;
     const warnings = lowQuality
-      ? [LOW_QUALITY_MESSAGE, ...extraction.warnings]
+      ? hasUsefulFields
+        ? [SMALL_IMAGE_NOTE, ...extraction.warnings]
+        : [LOW_QUALITY_MESSAGE, ...extraction.warnings]
       : extraction.warnings.length > 0
         ? extraction.warnings
         : detected

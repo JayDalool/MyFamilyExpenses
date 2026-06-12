@@ -46,6 +46,17 @@ export type OcrCandidates = {
   amount: OcrAmountCandidate[];
 };
 
+// Provenance for a (possibly multi-engine) extraction. Additive/optional so the
+// single-engine path and existing consumers are unaffected.
+export type OcrExtractionMeta = {
+  strategy: "single" | "fallback" | "parallel";
+  primaryProvider: string;
+  fallbackProvider: string | null;
+  providersUsed: string[];
+  modelVersions: (string | null)[];
+  fallbackReason: string | null;
+};
+
 // Structured fields produced by the Node-owned ReceiptParser. The first five
 // fields are the stable wizard contract; the Stage A fields below are additive
 // (ranked candidates, classification, multi-receipt detection, warnings) and the
@@ -61,6 +72,8 @@ export type OcrResult = {
   multipleReceipts: boolean;
   warnings: string[];
   candidates: OcrCandidates;
+  // ── Stage A.2 provenance (set by the orchestrator, optional) ──
+  meta?: OcrExtractionMeta;
 };
 
 // ── Engine boundary (recognition only) ───────────────────────────────────────

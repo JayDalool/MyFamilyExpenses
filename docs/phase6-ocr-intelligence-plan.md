@@ -1,7 +1,11 @@
 # Phase 6 — OCR Intelligence Plan
 
-Status: **Stage A implemented (no database, no persistence).** Stages B–F are
-designed but not built. No migrations were added in this phase.
+Status: **Stage A + A.2 implemented (no database, no persistence).** Stages B–F
+are designed but not built. No migrations were added in this phase.
+
+Stage A.2 added a 3-layer multi-engine pipeline (single/fallback/parallel),
+candidate merging, and parser confidence/calibration fixes — see
+[docs/ocr-multi-engine-strategy.md](./ocr-multi-engine-strategy.md).
 
 ## Does the app learn from corrections today?
 

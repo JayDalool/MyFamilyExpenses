@@ -45,6 +45,7 @@ services:
   app:
     environment:
       OCR_PROVIDER: paddle
+      OCR_STRATEGY: ensemble
       OCR_SERVICE_URL: http://ocr:8000
       OCR_TIMEOUT_MS: ${OCR_TIMEOUT_MS:-7000}
     depends_on:

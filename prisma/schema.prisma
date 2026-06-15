@@ -91,6 +91,7 @@ model Membership {
   expenses           Expense[]                   @relation("ExpenseMembership")
   paidExpenses       Expense[]                   @relation("ExpensePaidByMembership")
   extractionAttempts ReceiptExtractionAttempt[]  @relation("AttemptMembership")
+  correctionFeedback ReceiptCorrectionFeedback[] @relation("FeedbackMembership")
 
   @@unique([userId, householdId])
   @@index([householdId])
@@ -181,6 +182,8 @@ model Expense {
   paidByMembership Membership @relation("ExpensePaidByMembership", fields: [paidByUserId, householdId], references: [userId, householdId], onDelete: Restrict)
   // The OCR extraction attempt this expense was created from (single-use link).
   extractionAttempt ReceiptExtractionAttempt? @relation("ExpenseAttempt")
+  // Durable predicted-vs-final correction feedback (Phase C learning signal).
+  correctionFeedback ReceiptCorrectionFeedback? @relation("ExpenseFeedback")
 
   @@index([householdId, invoiceDate])
   @@index([householdId, deletedAt, invoiceDate])
@@ -242,10 +245,74 @@ model ReceiptExtractionAttempt {
   membership Membership @relation("AttemptMembership", fields: [userId, householdId], references: [userId, householdId], onDelete: Cascade)
   // The expense that consumed this attempt (nullable, unique).
   consumedByExpense Expense? @relation("ExpenseAttempt", fields: [consumedByExpenseId], references: [id], onDelete: SetNull)
+  // Durable correction feedback derived from this attempt. The attempt itself is
+  // short-lived and gets purged by cleanup (consumed/expired); feedback survives
+  // because it copies everything it needs at write time and the FK is SetNull.
+  correctionFeedback ReceiptCorrectionFeedback? @relation("AttemptFeedback")
 
   @@index([householdId, createdAt])
   @@index([expiresAt])
   @@map("receipt_extraction_attempts")
+}
+
+// Durable, tenant-scoped record comparing what OCR/the parser predicted against
+// the values the user actually saved. Written best-effort AFTER a successful
+// expense save that consumed a ReceiptExtractionAttempt. It deliberately stores
+// only DERIVED data (predicted/final values, confidence, value-free candidate
+// summary) — never raw OCR text, blocks, or file bytes. This is the learning
+// corpus foundation (Phase D vendor templates); it does not change parser rules.
+model ReceiptCorrectionFeedback {
+  id            String  @id @default(uuid()) @db.Uuid
+  userId        String  @map("user_id") @db.Uuid
+  householdId   String  @map("household_id") @db.Uuid
+  expenseId     String  @unique @map("expense_id") @db.Uuid
+  // Nullable + SetNull: the source attempt is short-lived and gets purged, but the
+  // feedback must outlive it (durable corpus). Everything needed is copied below.
+  attemptId     String? @unique @map("attempt_id") @db.Uuid
+  receiptType   String  @map("receipt_type")
+  // Already redacted at attempt-creation time (copied from attempt.merchantGuess).
+  merchantGuess String? @map("merchant_guess")
+  parserVersion String  @map("parser_version")
+  provider      String
+  strategy      String
+  providersUsed Json    @map("providers_used")
+  categoryId    String? @map("category_id") @db.Uuid
+  paidByUserId  String? @map("paid_by_user_id") @db.Uuid
+
+  predictedInvoiceNumber  String?  @map("predicted_invoice_number")
+  finalInvoiceNumber      String?  @map("final_invoice_number")
+  invoiceNumberChanged    Boolean  @map("invoice_number_changed")
+  invoiceNumberConfidence Float?   @map("invoice_number_confidence")
+
+  predictedInvoiceDate  String?  @map("predicted_invoice_date")
+  finalInvoiceDate      String?  @map("final_invoice_date")
+  invoiceDateChanged    Boolean  @map("invoice_date_changed")
+  invoiceDateConfidence Float?   @map("invoice_date_confidence")
+
+  predictedAmount  Decimal? @map("predicted_amount") @db.Decimal(12, 2)
+  finalAmount      Decimal  @map("final_amount") @db.Decimal(12, 2)
+  amountChanged    Boolean  @map("amount_changed")
+  amountConfidence Float?   @map("amount_confidence")
+
+  predictedMerchant String?  @map("predicted_merchant")
+  finalMerchant     String?  @map("final_merchant")
+  merchantChanged   Boolean? @map("merchant_changed")
+
+  warnings          Json
+  candidatesSummary Json     @map("candidates_summary")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Tenant integrity: feedback can only belong to a real member of the household
+  // (mirrors the attempt/expense/category composite tenant FKs).
+  membership Membership @relation("FeedbackMembership", fields: [userId, householdId], references: [userId, householdId], onDelete: Cascade)
+  // Source attempt (nullable; SetNull so attempt cleanup never deletes feedback).
+  attempt    ReceiptExtractionAttempt? @relation("AttemptFeedback", fields: [attemptId], references: [id], onDelete: SetNull)
+  // The saved expense this feedback describes (one-to-one).
+  expense    Expense @relation("ExpenseFeedback", fields: [expenseId], references: [id], onDelete: Cascade)
+
+  @@index([householdId, createdAt])
+  @@index([merchantGuess])
+  @@map("receipt_correction_feedback")
 }
 
 enum AuthProvider {

@@ -23,6 +23,7 @@ import {
   computeFileSha256,
   consumeExtractionAttempt,
 } from "@/lib/ocr/extraction-attempt";
+import { recordCorrectionFeedback } from "@/lib/ocr/correction-feedback";
 import { writeAuditLog } from "@/lib/audit";
 import { revalidateExpenseViews } from "@/lib/revalidation";
 import { canCreateExpense } from "@/lib/auth/permissions";
@@ -247,6 +248,27 @@ export async function POST(request: Request) {
       });
     }
 
+    // Phase C: durable predicted-vs-final learning signal. Only written when a
+    // trusted attempt was actually consumed/linked (so no attemptId, expired,
+    // foreign, or unmatched attempts produce no feedback). Best-effort — a failure
+    // here never undoes the saved expense.
+    let feedbackRecorded = false;
+    if (attemptLinked) {
+      feedbackRecorded = await recordCorrectionFeedback({
+        attemptId,
+        expenseId: expense.id,
+        userId: auth.user.id,
+        householdId: auth.householdId,
+        final: {
+          invoiceNumber: finalized.data.invoiceNumber,
+          invoiceDate: finalized.data.invoiceDate,
+          amount: finalized.data.amount,
+          categoryId: expense.categoryId,
+          paidByUserId: expense.paidByUserId,
+        },
+      });
+    }
+
     await writeAuditLog({
       userId: auth.user.id,
       householdId: auth.householdId,
@@ -261,6 +283,7 @@ export async function POST(request: Request) {
         // Deploy signal: whether a trusted extraction attempt was linked.
         attemptProvided: Boolean(attemptId),
         attemptLinked,
+        feedbackRecorded,
       },
     });
     await writeAuditLog({

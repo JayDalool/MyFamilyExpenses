@@ -1,7 +1,15 @@
 # Phase 6 — OCR Intelligence Plan
 
-Status: **Stage A + A.2 implemented (no database, no persistence).** Stages B–F
-are designed but not built. No migrations were added in this phase.
+Status: **Stage A + A.2 implemented (library only). Stage B (extraction
+attempts) and Stage C (correction feedback) implemented and persisted.** Stages
+D–F are designed but not built.
+
+- **Phase B = `ReceiptExtractionAttempt`** — short-lived, single-use,
+  tenant-scoped server-side snapshot of what OCR/the parser saw, captured before
+  the user edits anything. Migration `20260611000001`.
+- **Phase C = `ReceiptCorrectionFeedback`** — durable, tenant-scoped record
+  comparing OCR predictions against the values the user actually saved. Migration
+  `20260614000001`.
 
 Stage A.2 added a 3-layer multi-engine pipeline (single/fallback/parallel),
 candidate merging, and parser confidence/calibration fixes — see
@@ -9,13 +17,16 @@ candidate merging, and parser confidence/calibration fixes — see
 
 ## Does the app learn from corrections today?
 
-**No.** `Expense` stores only the final `invoiceNumber` / `invoiceDate` /
-`amount`; the OCR prediction is discarded the moment the user edits it. There is
-no `ReceiptExtractionAttempt` / `ReceiptCorrection` table and the save route
-never records "OCR predicted X → user corrected to Y". The parser
-(`lib/ocr/ocr-parsing.ts`) is a fixed rule engine that only improves when we
-change code. Capturing corrections as structured data is Stage B/C work and
-requires migrations we will design and approve separately.
+**It now captures the signal, but it does not yet act on it.** Every expense
+saved from a linked `ReceiptExtractionAttempt` writes a
+`ReceiptCorrectionFeedback` row recording "OCR predicted X → user saved Y" per
+field (invoice number, date, amount, plus the merchant guess and receipt type).
+This is the **learning corpus foundation** — it is read-only data for offline
+analysis. The parser (`lib/ocr/ocr-parsing.ts`) is still a fixed rule engine
+that only changes when we change code; **no production rule ever mutates from
+user input automatically.** Turning this corpus into improved extraction is
+Phase D (vendor/receipt templates), which goes through code review and the
+regression suite.
 
 ## Stage A — implemented now (no DB)
 
@@ -61,26 +72,35 @@ no migrations, no persistence, no external AI.
 are never auto-saved; the save route still only applies an OCR value when its
 confidence is > 0, and the parser refuses to emit confident-but-wrong amounts.
 
-## Stage B — tomorrow (needs migration + approval)
+## Stage B — implemented (`ReceiptExtractionAttempt`)
 
-`ReceiptExtractionAttempt`: short-lived, server-written, single-use, tenant-scoped
-row holding `rawText`, `blocks`, `candidates`, `confidence`, `receiptType`,
-`imageQuality`, `provider`, `modelVersion`, `parserVersion`, `fileSha256`,
-`expiresAt`. It is the trusted hand-off between `/extract` and save, so persisted
-provenance is never browser-supplied.
+Short-lived (60 min TTL), server-written, single-use, tenant-scoped row holding
+redacted `rawText`/`blocks`, `candidates`, `confidence`, `receiptType`,
+`imageQuality`, `provider`, `strategy`, `providersUsed`, `modelVersions`,
+`parserVersion`, `fileSha256`, `expiresAt`. It is the trusted hand-off between
+`/extract` and save, so persisted provenance is never browser-supplied. Consumed
+atomically via a conditional `updateMany`; purged by
+`npm run maintenance:extraction-attempts`. Card/account/phone digits are redacted
+before storage.
 
-## Stage C — learning loop (later)
+## Stage C — implemented (`ReceiptCorrectionFeedback`)
 
-`ReceiptCorrection`: on save, link `Expense ↔ attempt` and record predicted vs
-final per field, plus vendor guess, receipt type, category, paid-by, and
-`parserVersion`. **Corrections are data, not live rules** — they feed offline
-analysis and vendor-template authoring that go through code review and the
-regression suite. No production rule ever mutates from user input automatically.
+On a successful save that consumed an attempt, the save route writes one durable
+feedback row (best-effort — never blocks the save) recording predicted vs final
+per field, plus the redacted merchant guess, receipt type, category, paid-by,
+provider/strategy/`providersUsed`, and `parserVersion`. It stores **only derived
+data** — no raw OCR text, no blocks, no file bytes; the candidate summary is
+value-free (counts + top confidence/source). The source-attempt FK is
+`SetNull`, so the short-lived attempt can be purged without deleting the durable
+feedback. **Corrections are data, not live rules** — they feed offline analysis
+and vendor-template authoring that go through code review and the regression
+suite. No production rule ever mutates from user input automatically.
 
 ## Stages D–F (later)
 
-- **D.** Vendor/receipt templates (Starbucks, Walmart, gas, restaurant, bank/ATM).
-  Can start rule-based; becomes data-driven once Stage C has a corpus.
+- **D.** Vendor/receipt templates (Starbucks, Walmart, gas, restaurant, bank/ATM),
+  authored from the Stage C correction corpus. Can start rule-based; becomes
+  data-driven once Stage C has a corpus.
 - **E.** Regression dataset from anonymized receipts (Stage A already seeds this
   with `tests/ocr-stage-a.test.ts`).
 - **F.** Optional ML/LLM extraction — only after a written privacy/security

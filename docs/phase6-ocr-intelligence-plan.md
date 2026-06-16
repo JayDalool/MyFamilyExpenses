@@ -1,8 +1,9 @@
 # Phase 6 — OCR Intelligence Plan
 
 Status: **Stage A + A.2 implemented (library only). Stage B (extraction
-attempts) and Stage C (correction feedback) implemented and persisted.** Stages
-D–F are designed but not built.
+attempts) and Stage C (correction feedback) implemented and persisted. Stage D.1
+(learning insights + template recommendations + inert template skeleton)
+implemented — no new migration.** Stage D.2–F are designed but not built.
 
 - **Phase B = `ReceiptExtractionAttempt`** — short-lived, single-use,
   tenant-scoped server-side snapshot of what OCR/the parser saw, captured before
@@ -10,6 +11,11 @@ D–F are designed but not built.
 - **Phase C = `ReceiptCorrectionFeedback`** — durable, tenant-scoped record
   comparing OCR predictions against the values the user actually saved. Migration
   `20260614000001`.
+- **Phase D.1 = OCR learning insights + template recommendations** — a
+  household-scoped, authenticated analytics view (`/ocr-learning` and
+  `GET /api/ocr-learning/summary`) over the Phase C corpus, plus a code-only
+  merchant-template skeleton and a suggestion engine. **Read-only and inert: it
+  reports and suggests, it does not change parser behavior.** No migration.
 
 Stage A.2 added a 3-layer multi-engine pipeline (single/fallback/parallel),
 candidate merging, and parser confidence/calibration fixes — see
@@ -96,11 +102,44 @@ feedback. **Corrections are data, not live rules** — they feed offline analysi
 and vendor-template authoring that go through code review and the regression
 suite. No production rule ever mutates from user input automatically.
 
-## Stages D–F (later)
+## Stage D.1 — implemented (learning insights + template recommendations)
 
-- **D.** Vendor/receipt templates (Starbucks, Walmart, gas, restaurant, bank/ATM),
-  authored from the Stage C correction corpus. Can start rule-based; becomes
-  data-driven once Stage C has a corpus.
+The app now records learning signals (Stage C) **and surfaces them**, but it
+still does **not** auto-learn production rules. Three inert, read-only pieces:
+
+1. **Insights** (`lib/ocr/learning-insights.ts`) — a pure `summarizeLearningInsights`
+   over the feedback corpus (total records, amount/date/invoice correction rates,
+   per-merchant and per-receipt-type stats, provider/strategy performance, and
+   correct-vs-corrected examples). Empty-state safe. A single thin
+   `getHouseholdLearningInsights(householdId)` wrapper is the **only** place
+   household scoping is enforced, used by both the page and the API, with an
+   explicit `select` allowlist of derived fields.
+2. **Page + API** — `/ocr-learning` (server component) and
+   `GET /api/ocr-learning/summary`, both authenticated and household-scoped. They
+   show **no raw OCR text, no blocks, no card/account numbers, and no
+   invoice/reference strings** — only derived metrics, amounts/dates, and the
+   already-redacted merchant guess.
+3. **Template skeleton + recommendations** (`lib/ocr/templates/*`) — a code-only
+   `MerchantTemplate` shape with one conservative example (generic cash receipt)
+   and `buildTemplateRecommendations`, which emits human-readable suggestions
+   (e.g. "merchant X has amount changed >50% — review") gated by a minimum sample
+   size. Nothing in `ocr-parsing.ts` / `ocr.service.ts` imports the templates —
+   that import-absence is the guarantee that feedback never changes parsing
+   automatically.
+
+**Why human-reviewed templates are safer:** correction data is noisy and
+adversarial-adjacent (a few odd receipts, or a user who edits for reasons
+unrelated to OCR accuracy, would otherwise teach the parser the wrong rule).
+A wrong amount is worse than a blank one, so a person vets every template before
+it can affect what is auto-filled. The corpus *prioritizes* that human work; it
+does not replace it.
+
+## Stages D.2–F (later)
+
+- **D.2.** Wire reviewed vendor/receipt templates (Starbucks, Walmart, gas,
+  restaurant, bank/ATM) into the parser, authored from the Stage C corpus. Each
+  template lands via code review and the regression fixtures
+  (`tests/fixtures/receipts/*`).
 - **E.** Regression dataset from anonymized receipts (Stage A already seeds this
   with `tests/ocr-stage-a.test.ts`).
 - **F.** Optional ML/LLM extraction — only after a written privacy/security

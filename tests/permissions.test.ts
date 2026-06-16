@@ -9,6 +9,7 @@ import {
   canManageCategories,
   canManageExpense,
   canManageMembers,
+  canViewOcrLearning,
 } from "../lib/auth/permissions";
 
 function auth(role: HouseholdRole, userId = "user-a"): AuthContext {
@@ -52,6 +53,12 @@ test("household role permission matrix is enforced", () => {
   assert.equal(canManageMembers(admin), false);
   assert.equal(canManageMembers(member), false);
   assert.equal(canManageMembers(viewer), false);
+
+  // Internal OCR diagnostics: OWNER/ADMIN only.
+  assert.equal(canViewOcrLearning(owner), true);
+  assert.equal(canViewOcrLearning(admin), true);
+  assert.equal(canViewOcrLearning(member), false);
+  assert.equal(canViewOcrLearning(viewer), false);
 
   assert.equal(canInviteRole("OWNER", "ADMIN"), true);
   assert.equal(canInviteRole("OWNER", "OWNER"), false);

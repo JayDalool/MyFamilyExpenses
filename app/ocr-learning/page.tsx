@@ -1,6 +1,8 @@
+import { notFound } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { Alert, Badge, Card, Table } from "@/components/ui";
 import { requireHouseholdMember } from "@/lib/auth/session";
+import { canViewOcrLearning } from "@/lib/auth/permissions";
 import {
   getHouseholdLearningInsights,
   topByCorrectionCount,
@@ -8,6 +10,9 @@ import {
 } from "@/lib/ocr/learning-insights";
 import {
   buildTemplateRecommendations,
+  generateTemplateDraft,
+  validateTemplateDraft,
+  type RiskLevel,
   type RecommendationSeverity,
 } from "@/lib/ocr/templates";
 import { formatCurrency } from "@/lib/utils";
@@ -23,6 +28,12 @@ const severityBadge: Record<RecommendationSeverity, "warning" | "brand" | "neutr
   warning: "warning",
   suggestion: "brand",
   info: "neutral",
+};
+
+const riskBadge: Record<RiskLevel, "danger" | "warning" | "neutral"> = {
+  high: "danger",
+  medium: "warning",
+  low: "neutral",
 };
 
 function ExampleRows({ examples }: { examples: FeedbackExample[] }) {
@@ -65,34 +76,47 @@ function ExampleRows({ examples }: { examples: FeedbackExample[] }) {
 
 export default async function OcrLearningPage() {
   const auth = await requireHouseholdMember();
+  // Internal diagnostics: OWNER/ADMIN only. Hide existence from everyone else.
+  if (!canViewOcrLearning(auth)) {
+    notFound();
+  }
+
   const insights = await getHouseholdLearningInsights(auth.householdId);
   const recommendations = buildTemplateRecommendations(insights);
   const topMerchants = topByCorrectionCount(insights.merchants, 10);
   const topReceiptTypes = topByCorrectionCount(insights.receiptTypes, 10);
+  // Draft generation is human-review only: built here, written nowhere, never
+  // wired to the parser. Each draft is validated before display.
+  const drafts = recommendations
+    .map((rec) => {
+      const draft = generateTemplateDraft(rec);
+      return draft ? { draft, validation: validateTemplateDraft(draft) } : null;
+    })
+    .filter((d): d is NonNullable<typeof d> => d !== null);
 
   return (
     <AppShell auth={auth}>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">OCR learning insights</h1>
+          <h1 className="text-2xl font-bold text-slate-900">Internal OCR diagnostics</h1>
           <p className="text-sm text-slate-500">
-            {auth.householdName} — how often the scanner&apos;s reading matched what you saved.
+            {auth.householdName} — receipt-scanning accuracy and template review. Owner/admin only.
           </p>
         </div>
 
-        <Alert variant="info">
-          This page summarises receipt corrections to help us improve scanning. It records a
-          learning signal only — it does <strong>not</strong> change how receipts are read
-          automatically. Any parser/template change is reviewed by a person first. No raw receipt
-          text, card numbers, or reference numbers are shown here.
+        <Alert variant="warning">
+          <strong>Internal diagnostics — not shown to regular users.</strong> This page is for
+          people who run the household. <strong>No parser rules are auto-applied.</strong> Template
+          suggestions and drafts below require human review before they could ever change scanning.
+          No raw receipt text, card/account numbers, or reference numbers are shown here.
         </Alert>
 
         {insights.totalRecords === 0 ? (
           <Card>
             <h2 className="text-lg font-semibold text-slate-900">No OCR learning data yet</h2>
             <p className="mt-2 text-sm text-slate-500">
-              Once you scan receipts and save expenses, we&apos;ll compare what the scanner read
-              against what you saved and show the trends here.
+              Once receipts are scanned and expenses saved, correction trends and template
+              suggestions will appear here.
             </p>
           </Card>
         ) : (
@@ -104,27 +128,21 @@ export default async function OcrLearningPage() {
               </Card>
               <Card>
                 <p className="text-sm font-medium text-slate-500">Amount correction rate</p>
-                <p className="mt-2 text-2xl font-bold text-slate-900">
-                  {pct(insights.amountCorrectionRate.rate)}
-                </p>
+                <p className="mt-2 text-2xl font-bold text-slate-900">{pct(insights.amountCorrectionRate.rate)}</p>
                 <p className="text-xs text-slate-400">
                   {insights.amountCorrectionRate.changed} of {insights.amountCorrectionRate.total} changed
                 </p>
               </Card>
               <Card>
                 <p className="text-sm font-medium text-slate-500">Date correction rate</p>
-                <p className="mt-2 text-2xl font-bold text-slate-900">
-                  {pct(insights.dateCorrectionRate.rate)}
-                </p>
+                <p className="mt-2 text-2xl font-bold text-slate-900">{pct(insights.dateCorrectionRate.rate)}</p>
                 <p className="text-xs text-slate-400">
                   {insights.dateCorrectionRate.changed} of {insights.dateCorrectionRate.total} changed
                 </p>
               </Card>
               <Card>
                 <p className="text-sm font-medium text-slate-500">Invoice correction rate</p>
-                <p className="mt-2 text-2xl font-bold text-slate-900">
-                  {pct(insights.invoiceCorrectionRate.rate)}
-                </p>
+                <p className="mt-2 text-2xl font-bold text-slate-900">{pct(insights.invoiceCorrectionRate.rate)}</p>
                 <p className="text-xs text-slate-400">
                   {insights.invoiceCorrectionRate.changed} of {insights.invoiceCorrectionRate.total} changed
                 </p>
@@ -134,9 +152,9 @@ export default async function OcrLearningPage() {
             <Card>
               <h2 className="text-lg font-semibold text-slate-900">Template suggestions (for review)</h2>
               <p className="text-sm text-slate-500">
-                Ideas a person can review — nothing here is applied automatically.
+                Ideas a person reviews — nothing here is applied automatically.
               </p>
-              <div className="mt-3 space-y-2">
+              <div className="mt-3 space-y-3">
                 {recommendations.length === 0 ? (
                   <p className="py-3 text-sm text-slate-500">
                     Not enough data yet for confident suggestions. Keep scanning receipts.
@@ -144,19 +162,73 @@ export default async function OcrLearningPage() {
                 ) : (
                   recommendations.map((rec, i) => (
                     <div
-                      className="flex flex-col gap-1 rounded-lg border border-slate-200 p-3 sm:flex-row sm:items-center sm:justify-between"
+                      className="rounded-lg border border-slate-200 p-3"
                       key={`${rec.kind}-${rec.target}-${i}`}
                     >
-                      <p className="text-sm text-slate-700">{rec.message}</p>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <Badge variant={severityBadge[rec.severity]}>{rec.metric}</Badge>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant={severityBadge[rec.severity]}>{rec.kind}</Badge>
+                        <Badge variant={riskBadge[rec.riskLevel]}>risk: {rec.riskLevel}</Badge>
+                        <span className="text-sm font-medium text-slate-800">
+                          {rec.scope}: {rec.target}
+                        </span>
                         <span className="text-xs text-slate-400">n={rec.sampleSize}</span>
                       </div>
+                      <p className="mt-2 text-sm text-slate-700">{rec.message}</p>
+                      <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500">
+                        <span>amount {pct(rec.rates.amount)}</span>
+                        <span>date {pct(rec.rates.date)}</span>
+                        <span>invoice {pct(rec.rates.invoice)}</span>
+                      </div>
+                      <p className="mt-2 text-xs font-medium text-slate-600">
+                        Suggested next action: {rec.suggestedAction}
+                      </p>
                     </div>
                   ))
                 )}
               </div>
             </Card>
+
+            {drafts.length > 0 ? (
+              <Card>
+                <h2 className="text-lg font-semibold text-slate-900">Template drafts (read-only)</h2>
+                <p className="text-sm text-slate-500">
+                  Generated for review only — not saved, not connected to the parser. Copy into a
+                  reviewed static template after human checking.
+                </p>
+                <div className="mt-3 space-y-4">
+                  {drafts.map(({ draft, validation }) => (
+                    <div className="rounded-lg border border-slate-200 p-3" key={draft.id}>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-semibold text-slate-800">{draft.id}</span>
+                        <Badge variant={validation.valid ? "success" : "danger"}>
+                          {validation.valid ? "valid draft" : "invalid draft"}
+                        </Badge>
+                        <Badge variant={riskBadge[draft.evidence.riskLevel]}>
+                          risk: {draft.evidence.riskLevel}
+                        </Badge>
+                      </div>
+                      {validation.errors.length > 0 ? (
+                        <ul className="mt-2 list-disc pl-5 text-xs text-rose-600">
+                          {validation.errors.map((e, j) => (
+                            <li key={j}>{e}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      {validation.warnings.length > 0 ? (
+                        <ul className="mt-2 list-disc pl-5 text-xs text-amber-600">
+                          {validation.warnings.map((w, j) => (
+                            <li key={j}>{w}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      <pre className="mt-2 max-h-72 overflow-auto rounded-md bg-slate-900 p-3 text-xs text-slate-100">
+                        {JSON.stringify(draft, null, 2)}
+                      </pre>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            ) : null}
 
             <section className="grid gap-6 lg:grid-cols-2">
               <Card>

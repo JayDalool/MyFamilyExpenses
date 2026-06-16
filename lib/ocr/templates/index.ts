@@ -15,7 +15,16 @@ export {
   type TemplateRecommendation,
   type RecommendationKind,
   type RecommendationSeverity,
+  type RiskLevel,
+  type RecommendationRates,
 } from "./recommendations";
+export {
+  generateTemplateDraft,
+  validateTemplateDraft,
+  type TemplateDraft,
+  type TemplateDraftEvidence,
+  type DraftValidation,
+} from "./drafts";
 
 /**
  * Read-only lookup of a template for a merchant string. This is INERT — it is NOT

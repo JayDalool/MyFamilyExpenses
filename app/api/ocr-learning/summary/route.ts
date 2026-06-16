@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { getCurrentHousehold } from "@/lib/auth/session";
+import { canViewOcrLearning } from "@/lib/auth/permissions";
 import { getHouseholdLearningInsights } from "@/lib/ocr/learning-insights";
 import { buildTemplateRecommendations } from "@/lib/ocr/templates";
 
 export const dynamic = "force-dynamic";
 
-// Household-scoped OCR learning analytics. Returns only derived feedback metrics
-// (no raw OCR text, no blocks, no invoice/reference strings — see the insights
-// allowlist). Scoping is enforced inside getHouseholdLearningInsights.
+// Internal, household-scoped OCR learning analytics (OWNER/ADMIN only). Returns
+// only derived feedback metrics (no raw OCR text, no blocks, no invoice/reference
+// strings — see the insights allowlist). Scoping is enforced inside
+// getHouseholdLearningInsights.
 export async function GET() {
   const auth = await getCurrentHousehold();
 
@@ -15,6 +17,13 @@ export async function GET() {
     return NextResponse.json(
       { error: { message: "Authentication required." } },
       { status: 401 },
+    );
+  }
+
+  if (!canViewOcrLearning(auth)) {
+    return NextResponse.json(
+      { error: { message: "This diagnostics view is restricted to household owners and admins." } },
+      { status: 403 },
     );
   }
 

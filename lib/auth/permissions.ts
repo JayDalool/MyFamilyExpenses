@@ -24,6 +24,14 @@ export function canManageCategories(auth: AuthContext) {
   return auth.householdRole === "OWNER" || auth.householdRole === "ADMIN";
 }
 
+// Internal OCR diagnostics (/ocr-learning + its API) are NOT an end-user feature.
+// They expose correction analytics and template-review tooling intended for the
+// people who run the household, so they are restricted to OWNER/ADMIN. Regular
+// members and viewers must not see them.
+export function canViewOcrLearning(auth: AuthContext) {
+  return auth.householdRole === "OWNER" || auth.householdRole === "ADMIN";
+}
+
 export function canInviteRole(inviterRole: HouseholdRole, invitedRole: HouseholdRole) {
   if (invitedRole === "OWNER") return false;
   if (inviterRole === "OWNER") return true;

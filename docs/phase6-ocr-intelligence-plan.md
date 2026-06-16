@@ -1,21 +1,61 @@
 # Phase 6 — OCR Intelligence Plan
 
-Status: **Stage A + A.2 implemented (library only). Stage B (extraction
-attempts) and Stage C (correction feedback) implemented and persisted. Stage D.1
-(learning insights + template recommendations + inert template skeleton)
-implemented — no new migration.** Stage D.2–F are designed but not built.
+Status: **Stage A + A.2 implemented (library only). Phase B (extraction
+attempts) and Phase C (correction feedback) implemented and persisted. Phase D.1
+(internal learning insights) and Phase D.2 (internal template review/draft
+workflow) implemented — no migration for D.1/D.2.** Phase D.3 and Phase E are
+designed but not built.
 
-- **Phase B = `ReceiptExtractionAttempt`** — short-lived, single-use,
-  tenant-scoped server-side snapshot of what OCR/the parser saw, captured before
-  the user edits anything. Migration `20260611000001`.
-- **Phase C = `ReceiptCorrectionFeedback`** — durable, tenant-scoped record
-  comparing OCR predictions against the values the user actually saved. Migration
-  `20260614000001`.
-- **Phase D.1 = OCR learning insights + template recommendations** — a
-  household-scoped, authenticated analytics view (`/ocr-learning` and
-  `GET /api/ocr-learning/summary`) over the Phase C corpus, plus a code-only
-  merchant-template skeleton and a suggestion engine. **Read-only and inert: it
-  reports and suggests, it does not change parser behavior.** No migration.
+## What we are (and are not) building
+
+We are **not** building an end-user OCR analytics feature. Regular users only
+care that receipt upload works, the amount/date/merchant are filled correctly,
+they can save faster, and mistakes are easy to fix. They will never understand or
+want correction rates, parser strategies, or template recommendations.
+
+We **are** building an **internal OCR intelligence pipeline**: store what OCR
+saw, learn where it is wrong, let an owner/admin review that, and turn it into
+human-reviewed static templates that improve autofill safely. The diagnostics
+surface is hidden from normal navigation and gated to OWNER/ADMIN.
+
+### Phase B — Extraction Attempt Memory (`ReceiptExtractionAttempt`)
+Store short-lived OCR extraction attempts so OCR output survives long enough to
+compare against the final saved expense. **Not user-facing.** Migration
+`20260611000001`.
+
+### Phase C — Correction Feedback (`ReceiptCorrectionFeedback`)
+Store durable predicted-vs-final correction data — what OCR got right or wrong.
+**Not user-facing** except indirectly, later, through better autofill. Migration
+`20260614000001`.
+
+### Phase D.1 — Internal Learning Insights
+Internal/admin page (`/ocr-learning`, hidden from nav, OWNER/ADMIN only) and API
+(`GET /api/ocr-learning/summary`) showing correction patterns: bad merchants, bad
+receipt types, weak fields, provider/strategy performance. **No parser rules are
+auto-applied.** No migration.
+
+> **TODO (pre-SaaS/public release):** the gate is `canViewOcrLearning`
+> (OWNER/ADMIN). Re-confirm this is the right boundary — and consider a platform
+> superadmin/dev-only gate — before any multi-tenant/public launch.
+
+### Phase D.2 — Template Review Workflow
+Internal/admin workflow turning insights into human-review template **drafts**:
+each recommendation carries a risk level (amount-driven), per-field rates, a
+reason, and a suggested next action; merchant recommendations generate a
+read-only `TemplateDraft`. **Drafts are suggestions only** — no DB write, no
+parser integration, validated to contain no raw OCR text, blocks, card/account
+data, or receipt reference strings. No migration.
+
+### Phase D.3 — Approved Static Templates (later)
+After human review, approved templates become code-reviewed **static** templates
+wired into the parser **only** with tests and regression fixtures
+(`tests/fixtures/receipts/*`). They must improve confidence without making wrong
+financial values more likely — **a wrong amount is worse than a blank one.**
+
+### Phase E — User-Facing Smart Receipt Experience (later)
+Users see improved autofill, better confidence warnings, a simpler correction UI,
+merchant memory, and fewer mistakes. Users never see OCR correction analytics
+unless they are an admin/developer.
 
 Stage A.2 added a 3-layer multi-engine pipeline (single/fallback/parallel),
 candidate merging, and parser confidence/calibration fixes — see
@@ -102,10 +142,11 @@ feedback. **Corrections are data, not live rules** — they feed offline analysi
 and vendor-template authoring that go through code review and the regression
 suite. No production rule ever mutates from user input automatically.
 
-## Stage D.1 — implemented (learning insights + template recommendations)
+## Phase D.1 + D.2 — implemented (internal diagnostics)
 
-The app now records learning signals (Stage C) **and surfaces them**, but it
-still does **not** auto-learn production rules. Three inert, read-only pieces:
+The app now records learning signals (Phase C) **and surfaces them to owners/
+admins**, but it still does **not** auto-learn production rules. The pieces are
+inert and read-only:
 
 1. **Insights** (`lib/ocr/learning-insights.ts`) — a pure `summarizeLearningInsights`
    over the feedback corpus (total records, amount/date/invoice correction rates,
@@ -114,18 +155,25 @@ still does **not** auto-learn production rules. Three inert, read-only pieces:
    `getHouseholdLearningInsights(householdId)` wrapper is the **only** place
    household scoping is enforced, used by both the page and the API, with an
    explicit `select` allowlist of derived fields.
-2. **Page + API** — `/ocr-learning` (server component) and
-   `GET /api/ocr-learning/summary`, both authenticated and household-scoped. They
-   show **no raw OCR text, no blocks, no card/account numbers, and no
-   invoice/reference strings** — only derived metrics, amounts/dates, and the
-   already-redacted merchant guess.
+2. **Page + API (internal, OWNER/ADMIN only)** — `/ocr-learning` (server
+   component, hidden from the primary nav, `notFound()` for non-admins) and
+   `GET /api/ocr-learning/summary` (403 for non-admins), gated by
+   `canViewOcrLearning`. They show **no raw OCR text, no blocks, no card/account
+   numbers, and no invoice/reference strings** — only derived metrics,
+   amounts/dates, and the already-redacted merchant guess.
 3. **Template skeleton + recommendations** (`lib/ocr/templates/*`) — a code-only
    `MerchantTemplate` shape with one conservative example (generic cash receipt)
    and `buildTemplateRecommendations`, which emits human-readable suggestions
-   (e.g. "merchant X has amount changed >50% — review") gated by a minimum sample
-   size. Nothing in `ocr-parsing.ts` / `ocr.service.ts` imports the templates —
-   that import-absence is the guarantee that feedback never changes parsing
-   automatically.
+   (risk level, per-field rates, reason, suggested next action) gated by a minimum
+   sample size. Nothing in `ocr-parsing.ts` / `ocr.service.ts` imports the
+   templates — that import-absence (guarded by `tests/ocr-internal-guards.test.ts`)
+   is the guarantee that feedback never changes parsing automatically.
+4. **Template draft workflow (D.2)** — `generateTemplateDraft` turns a
+   merchant recommendation into a read-only `TemplateDraft` (regex-escaped
+   merchant + a HARDCODED label vocabulary + aggregate evidence; never receipt
+   rows), and `validateTemplateDraft` rejects card/account-like values, long digit
+   runs, and any `rawText`/`blocks` field while warning on risky preferred labels.
+   Drafts are displayed read-only, written nowhere, and connected to nothing.
 
 **Why human-reviewed templates are safer:** correction data is noisy and
 adversarial-adjacent (a few odd receipts, or a user who edits for reasons
@@ -134,14 +182,17 @@ A wrong amount is worse than a blank one, so a person vets every template before
 it can affect what is auto-filled. The corpus *prioritizes* that human work; it
 does not replace it.
 
-## Stages D.2–F (later)
+## Phase D.3 + beyond (later)
 
-- **D.2.** Wire reviewed vendor/receipt templates (Starbucks, Walmart, gas,
-  restaurant, bank/ATM) into the parser, authored from the Stage C corpus. Each
+- **D.3.** Wire reviewed vendor/receipt templates (Starbucks, Walmart, gas,
+  restaurant, bank/ATM) into the parser, authored from the D.2 drafts. Each
   template lands via code review and the regression fixtures
-  (`tests/fixtures/receipts/*`).
-- **E.** Regression dataset from anonymized receipts (Stage A already seeds this
-  with `tests/ocr-stage-a.test.ts`).
+  (`tests/fixtures/receipts/*`), and must not make wrong financial values more
+  likely.
+- **E.** User-facing smart receipt experience (better autofill, confidence
+  warnings, simpler correction UI, merchant memory). The regression dataset from
+  anonymized receipts seeds this (Stage A already seeds it with
+  `tests/ocr-stage-a.test.ts`).
 - **F.** Optional ML/LLM extraction — only after a written privacy/security
   design. Not started.
 

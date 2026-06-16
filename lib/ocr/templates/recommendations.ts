@@ -1,9 +1,10 @@
 import type { LearningInsights } from "@/lib/ocr/learning-insights";
 
-// Template recommendation engine (Phase D.1). Turns aggregated correction
-// feedback into human-readable SUGGESTIONS. It never edits parser rules, never
-// writes templates, and only emits suggestions backed by fields we actually
-// store. Every suggestion is for a person to review.
+// Template recommendation engine (Phase D.1/D.2). Turns aggregated correction
+// feedback into human-readable SUGGESTIONS with a risk level and a suggested next
+// action. It never edits parser rules, never writes templates, and only emits
+// suggestions backed by fields we actually store. Every suggestion is for a
+// person to review.
 
 export type RecommendationKind =
   | "ADD_MERCHANT_TEMPLATE"
@@ -12,6 +13,18 @@ export type RecommendationKind =
   | "NO_TEMPLATE_NEEDED";
 
 export type RecommendationSeverity = "info" | "suggestion" | "warning";
+
+// Risk = the risk that the parser is currently producing WRONG FINANCIAL VALUES
+// (not the risk of adding a template). "Wrong amount is worse than blank", so only
+// amount corrections can drive "high"; date tops out at "medium"; a missing
+// invoice (which becomes a generated label, no financial harm) is "low".
+export type RiskLevel = "low" | "medium" | "high";
+
+export type RecommendationRates = {
+  amount: number;
+  date: number;
+  invoice: number;
+};
 
 export type TemplateRecommendation = {
   kind: RecommendationKind;
@@ -22,6 +35,9 @@ export type TemplateRecommendation = {
   metric: string;
   message: string;
   severity: RecommendationSeverity;
+  riskLevel: RiskLevel;
+  suggestedAction: string;
+  rates: RecommendationRates;
 };
 
 // Thresholds. Per-merchant suggestions need enough samples to be meaningful;
@@ -30,8 +46,10 @@ export const MIN_MERCHANT_SAMPLES = 3;
 export const MIN_TYPE_SAMPLES = 5;
 export const HIGH_CORRECTION_RATE = 0.5; // ≥50% corrected → worth a human look
 export const HIGH_SUCCESS_RATE = 0.9; // ≥90% left unchanged → OCR already good
+export const HIGH_RISK_AMOUNT_RATE = 0.7; // ≥70% amount corrections → high risk
 
 const pct = (rate: number) => `${Math.round(rate * 100)}%`;
+const ratio = (part: number, total: number) => (total === 0 ? 0 : part / total);
 
 const BANK_TYPES = new Set([
   "bank_withdrawal",
@@ -39,6 +57,22 @@ const BANK_TYPES = new Set([
   "transfer",
   "informational",
 ]);
+
+const SUGGESTED_ACTION: Record<RecommendationKind, string> = {
+  ADD_MERCHANT_TEMPLATE:
+    "Generate a template draft and review it by hand before any parser change.",
+  REVIEW_AMOUNT_RULES: "Review the amount-parsing rules for this receipt type.",
+  KEEP_INVOICE_OPTIONAL:
+    "Keep the invoice/reference optional and rely on a generated label.",
+  NO_TEMPLATE_NEEDED: "No action needed — OCR is already accurate here.",
+};
+
+/** Amount-driven risk classification. Only amount corrections reach "high". */
+function amountRisk(amountChangeRate: number): RiskLevel {
+  if (amountChangeRate >= HIGH_RISK_AMOUNT_RATE) return "high";
+  if (amountChangeRate >= HIGH_CORRECTION_RATE) return "medium";
+  return "low";
+}
 
 /**
  * Build template recommendations from precomputed insights. Pure. Suggestions are
@@ -52,6 +86,11 @@ export function buildTemplateRecommendations(
   // ── Per merchant ───────────────────────────────────────────────────────────
   for (const m of insights.merchants) {
     if (m.total < MIN_MERCHANT_SAMPLES) continue;
+    const rates: RecommendationRates = {
+      amount: m.amountChangeRate,
+      date: ratio(m.dateChanged, m.total),
+      invoice: ratio(m.invoiceChanged, m.total),
+    };
 
     if (m.amountChangeRate >= HIGH_CORRECTION_RATE) {
       recs.push({
@@ -62,9 +101,12 @@ export function buildTemplateRecommendations(
         metric: `amount changed ${pct(m.amountChangeRate)}`,
         message:
           `Receipts from "${m.merchant}" had the amount corrected ${pct(m.amountChangeRate)} ` +
-          `of the time (${m.amountChanged}/${m.total}). Consider adding a reviewed merchant ` +
+          `of the time (${m.amountChanged}/${m.total}). Consider drafting a reviewed merchant ` +
           `template to improve amount parsing.`,
         severity: "warning",
+        riskLevel: amountRisk(m.amountChangeRate),
+        suggestedAction: SUGGESTED_ACTION.ADD_MERCHANT_TEMPLATE,
+        rates,
       });
     } else if (1 - m.amountChangeRate >= HIGH_SUCCESS_RATE) {
       recs.push({
@@ -77,6 +119,9 @@ export function buildTemplateRecommendations(
           `Amounts from "${m.merchant}" were already correct ${pct(1 - m.amountChangeRate)} of ` +
           `the time (${m.total} receipts). A template is probably not needed.`,
         severity: "info",
+        riskLevel: "low",
+        suggestedAction: SUGGESTED_ACTION.NO_TEMPLATE_NEEDED,
+        rates,
       });
     }
   }
@@ -84,6 +129,11 @@ export function buildTemplateRecommendations(
   // ── Per receipt type ────────────────────────────────────────────────────────
   for (const t of insights.receiptTypes) {
     if (t.total < MIN_TYPE_SAMPLES) continue;
+    const rates: RecommendationRates = {
+      amount: t.amountChangeRate,
+      date: ratio(t.dateChanged, t.total),
+      invoice: t.invoiceChangeRate,
+    };
 
     if (BANK_TYPES.has(t.receiptType) && t.invoiceChangeRate >= HIGH_CORRECTION_RATE) {
       recs.push({
@@ -97,6 +147,9 @@ export function buildTemplateRecommendations(
           `(changed ${pct(t.invoiceChangeRate)} of ${t.total}). Keep the invoice optional and ` +
           `rely on a generated label.`,
         severity: "suggestion",
+        riskLevel: "low",
+        suggestedAction: SUGGESTED_ACTION.KEEP_INVOICE_OPTIONAL,
+        rates,
       });
     }
 
@@ -111,6 +164,9 @@ export function buildTemplateRecommendations(
           `${t.receiptType} receipts had the amount corrected ${pct(t.amountChangeRate)} of the ` +
           `time (${t.amountChanged}/${t.total}). Review the amount parsing rules for this type.`,
         severity: "warning",
+        riskLevel: amountRisk(t.amountChangeRate),
+        suggestedAction: SUGGESTED_ACTION.REVIEW_AMOUNT_RULES,
+        rates,
       });
     } else if (1 - t.amountChangeRate >= HIGH_SUCCESS_RATE) {
       recs.push({
@@ -123,6 +179,9 @@ export function buildTemplateRecommendations(
           `${t.receiptType} amounts were already correct ${pct(1 - t.amountChangeRate)} of the ` +
           `time (${t.total} receipts). No template change appears necessary.`,
         severity: "info",
+        riskLevel: "low",
+        suggestedAction: SUGGESTED_ACTION.NO_TEMPLATE_NEEDED,
+        rates,
       });
     }
   }

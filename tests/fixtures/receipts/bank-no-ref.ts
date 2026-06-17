@@ -20,4 +20,9 @@ export const bankNoRefFixture: ReceiptFixture = {
     invoiceLikely: false,
     mustNotEqualAmount: [300.0, 1234],
   },
+  expectTemplate: {
+    matches: true,
+    templateId: "generic-bank-atm",
+    appliesAmount: false,
+  },
 };

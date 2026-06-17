@@ -24,4 +24,10 @@ export const cashReceiptFixture: ReceiptFixture = {
     invoiceLikely: false,
     mustNotEqualAmount: [2.0, 7.75, 10.0],
   },
+  expectTemplate: {
+    matches: true,
+    templateId: "generic-cash-receipt",
+    // Parser already confident (not weak), so application fills nothing.
+    appliesAmount: false,
+  },
 };

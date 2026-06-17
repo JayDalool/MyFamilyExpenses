@@ -64,20 +64,40 @@ function labelMatches(sourceLabel: string, labels: string[]): boolean {
   return labels.some((label) => s.includes(norm(label)));
 }
 
-function matchTemplate(input: SimulationInput): MerchantTemplate | null {
+function templateMatches(template: MerchantTemplate, input: SimulationInput): boolean {
   const haystacks = [input.merchantGuess ?? "", input.rawText ?? ""].filter(Boolean);
-  for (const template of MERCHANT_TEMPLATES) {
-    const typeOk =
-      template.receiptType === "any" || template.receiptType === input.receiptType;
-    if (!typeOk) continue;
-    if (!haystacks.some((h) => template.merchantPattern.test(h))) continue;
-    const negative = (template.negativePatterns ?? []).some((p) =>
-      haystacks.some((h) => h.toLowerCase().includes(p.toLowerCase())),
-    );
-    if (negative) continue;
-    return template;
+  const typeOk =
+    template.receiptType === "any" || template.receiptType === input.receiptType;
+  if (!typeOk) return false;
+  if (!haystacks.some((h) => template.merchantPattern.test(h))) return false;
+  const negative = (template.negativePatterns ?? []).some((p) =>
+    haystacks.some((h) => h.toLowerCase().includes(p.toLowerCase())),
+  );
+  return !negative;
+}
+
+/**
+ * Choose the single best matching template from a registry. Pure and exported so
+ * priority/false-positive behavior is unit-testable. When several templates match,
+ * the highest `priority` wins (ties broken by the order they appear in `templates`)
+ * — so a future merchant-specific template can override a generic fallback.
+ */
+export function selectTemplate(
+  templates: readonly MerchantTemplate[],
+  input: SimulationInput,
+): MerchantTemplate | null {
+  let best: MerchantTemplate | null = null;
+  for (const template of templates) {
+    if (!templateMatches(template, input)) continue;
+    if (best === null || (template.priority ?? 0) > (best.priority ?? 0)) {
+      best = template;
+    }
   }
-  return null;
+  return best;
+}
+
+function matchTemplate(input: SimulationInput): MerchantTemplate | null {
+  return selectTemplate(MERCHANT_TEMPLATES, input);
 }
 
 // Pick the best amount candidate that a template would prefer: highest-ranked

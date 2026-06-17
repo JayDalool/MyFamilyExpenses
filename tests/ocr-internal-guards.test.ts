@@ -23,6 +23,7 @@ const FORBIDDEN_IN_LIVE_PATH: Array<[RegExp, string]> = [
   [/from\s+["']@\/lib\/ocr\/templates["']/, "the templates barrel (re-exports drafts)"],
   [/learning-insights/, "learning-insights"],
   [/correction-feedback/, "correction-feedback"],
+  [/benchmark/, "the test-only benchmark helper"],
 ];
 
 test("ocr-parsing imports nothing from the templates/learning workflow", () => {
@@ -30,6 +31,7 @@ test("ocr-parsing imports nothing from the templates/learning workflow", () => {
   assert.doesNotMatch(source, /ocr\/templates/, "ocr-parsing must not import any template module");
   assert.doesNotMatch(source, /learning-insights/);
   assert.doesNotMatch(source, /correction-feedback/);
+  assert.doesNotMatch(source, /benchmark/);
 });
 
 test("ocr.service, simulation, and application do not import drafts/recommendations/feedback/barrel", () => {

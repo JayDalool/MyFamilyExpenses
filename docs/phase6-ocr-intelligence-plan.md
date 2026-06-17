@@ -3,9 +3,11 @@
 Status: **Stage A + A.2 implemented (library only). Phase B (extraction
 attempts) and Phase C (correction feedback) implemented and persisted. Phase D.1
 (internal learning insights), Phase D.2 (internal template review/draft workflow),
-Phase D.3A (static template simulation / dry-run), and Phase D.3B (guarded static
-template application) implemented — no migration for D.1/D.2/D.3A/D.3B.** Phase D.4
-(more approved merchant templates) and Phase E are designed but not built.
+Phase D.3A (static template simulation / dry-run), Phase D.3B (guarded static
+template application), and Phase D.4 (approved static template library +
+regression benchmarks) implemented — no migration for D.1–D.4.** Phase D.5
+(merchant-specific templates + confidence tuning) and Phase E are designed but not
+built.
 
 ## What we are (and are not) building
 
@@ -79,12 +81,40 @@ result, but only under strict guards (`lib/ocr/templates/application.ts`):
   metadata on the envelope (dropped from user responses) and the
   `ReceiptExtractionAttempt` records the post-application values the user saw.
 
-### Phase D.4 — More approved merchant templates (later)
-Add further reviewed static merchant/receipt templates (beyond the generic cash
-receipt), each justified by anonymized regression fixtures
-(`tests/fixtures/receipts/*`) and the Phase C correction corpus, landing via code
-review. DB feedback continues to *inform* which templates to author — it never
-becomes a live rule automatically.
+### Phase D.4 — Approved Static Template Library + Regression Benchmarks (implemented)
+A fixture-driven benchmark (`tests/helpers/ocr-template-benchmark.ts`) runs the
+real parser → static-template simulation → guarded application (apply gate forced
+open, no env change) over anonymized fixtures (`tests/fixtures/receipts/*`) and
+asserts a safety/expectation matrix: final amount ∉ forbidden values, a strong
+parser amount is never changed, expected template match/apply, and blank stays
+blank. The registry adds **`GENERIC_BANK_ATM_TEMPLATE`** (type/keyword gated;
+prefers the withdrawal amount, avoids balance/available-balance/cash-back/fee,
+keeps the reference optional) and a `priority` field (higher wins; generic = 0).
+
+**How a static template becomes approved:**
+1. Learning insights (Phase D.1) flag a merchant/receipt-type with a high
+   correction rate.
+2. An **anonymized** fixture is added reproducing the pattern (no real card/account/
+   personal data).
+3. A static template is written by hand in `merchant-templates.ts` (code review).
+4. The benchmark proves it matches/improves **without** picking subtotal/tax/change/
+   tip/balance/cash-back, forcing an invoice, or overriding a confident parser amount.
+5. Only then may it take effect — and only in `apply` mode (off in production by
+   default; production needs the second guard).
+
+> **TODO (Phase D.5):** Broad `GENERIC_RETAIL_TOTAL` / `RESTAURANT` / `GAS`
+> templates were evaluated and **deliberately NOT added**. The benchmark shows the
+> parser already picks the correct Total (and avoids subtotal/tax/change/tip/
+> balance/cash-back) on all retail/restaurant/gas fixtures, so a catch-all template
+> would add no lift and would only activate on ambiguous (weak-parser) receipts —
+> exactly where a blind "take the Total candidate" is most likely wrong. Revisit
+> only with merchant-specific evidence and fixtures.
+
+### Phase D.5 — Merchant-specific templates + confidence tuning (later)
+Add genuinely merchant-specific templates (named vendors) and confidence
+calibration, justified by anonymized samples and the Phase C corpus, each landing
+via code review and the benchmark. DB feedback continues to *inform* which
+templates to author — it never becomes a live rule automatically.
 
 ### Phase E — User-Facing Smart Receipt Experience (later)
 Users see improved autofill, better confidence warnings, a simpler correction UI,
@@ -226,6 +256,15 @@ inert and read-only:
    result byte-identical (same object by reference). `parserResult` stays the raw
    pre-application result; the `ReceiptExtractionAttempt` records the post-application
    values the user saw, so Phase C feedback compares against the assisted prediction.
+7. **Approved template library + benchmarks (D.4)** — `selectTemplate` chooses the
+   highest-`priority` matching static template; `GENERIC_BANK_ATM_TEMPLATE` joins
+   the registry (type/keyword gated, balance/cash-back-avoiding). A pure
+   `tests/helpers/ocr-template-benchmark.ts` runs parser→simulation→application over
+   the anonymized fixtures with the apply gate forced open and asserts a safety
+   matrix; on every current fixture the parser is already confident, so application
+   FILLS nothing (proven, not assumed). Broad retail/restaurant/gas catch-all
+   templates were evaluated and rejected (no lift, concentrated risk) — see the D.5
+   TODO above.
 
 **Why human-reviewed templates are safer:** correction data is noisy and
 adversarial-adjacent (a few odd receipts, or a user who edits for reasons
@@ -234,12 +273,12 @@ A wrong amount is worse than a blank one, so a person vets every template before
 it can affect what is auto-filled. The corpus *prioritizes* that human work; it
 does not replace it.
 
-## Phase D.4 + beyond (later)
+## Phase D.5 + beyond (later)
 
-- **D.4.** Add more reviewed static merchant/receipt templates beyond the generic
-  cash receipt, each justified by anonymized regression fixtures
-  (`tests/fixtures/receipts/*`) and the Phase C corpus, landing via code review.
-  DB feedback remains advisory only.
+- **D.5.** Add genuinely merchant-specific static templates (named vendors) and
+  confidence tuning, each justified by anonymized regression fixtures
+  (`tests/fixtures/receipts/*`) and the Phase C corpus, landing via code review and
+  the benchmark. DB feedback remains advisory only.
 - **E.** User-facing smart receipt experience (better autofill, confidence
   warnings, simpler correction UI, merchant memory). The regression dataset from
   anonymized receipts seeds this (Stage A already seeds it with

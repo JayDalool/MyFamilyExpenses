@@ -48,5 +48,11 @@ export type MerchantTemplate = {
   /** Substrings that, if matched, indicate this template should NOT apply. */
   negativePatterns?: string[];
   confidenceBoosts?: ConfidenceBoost[];
+  /**
+   * Selection priority when multiple templates match: HIGHER wins (ties broken by
+   * registry order). Generic templates use 0; future merchant-specific templates
+   * use a higher number so they take precedence over the generic fallbacks.
+   */
+  priority?: number;
   notes?: string;
 };

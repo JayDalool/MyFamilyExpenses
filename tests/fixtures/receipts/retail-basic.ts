@@ -20,4 +20,7 @@ export const retailBasicFixture: ReceiptFixture = {
     // The card digits must never become the amount.
     mustNotEqualAmount: [5678],
   },
+  // No static template should match a plain retail receipt (no broad retail
+  // template exists — the parser already handles it).
+  expectTemplate: { matches: false },
 };

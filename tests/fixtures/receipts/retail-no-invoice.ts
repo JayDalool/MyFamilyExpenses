@@ -19,4 +19,5 @@ export const retailNoInvoiceFixture: ReceiptFixture = {
     invoiceLikely: false,
     mustNotEqualAmount: [5678],
   },
+  expectTemplate: { matches: false },
 };

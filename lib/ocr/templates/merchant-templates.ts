@@ -48,4 +48,52 @@ export const GENERIC_CASH_RECEIPT_TEMPLATE: MerchantTemplate = {
     "than blank, so only well-known total labels are preferred.",
 };
 
-export const MERCHANT_TEMPLATES: MerchantTemplate[] = [GENERIC_CASH_RECEIPT_TEMPLATE];
+// Generic bank/ATM withdrawal: the expense amount is the withdrawn sum, never a
+// balance/available balance/cash-back/fee. References are frequently absent, so the
+// invoice stays optional with a generated label. Type-gated to bank_withdrawal and
+// keyword-gated (atm/withdrawal), so it does not false-match retail/restaurant
+// receipts. Proven by tests/fixtures/receipts/bank-atm + bank-no-ref. Note: this
+// reinforces the parser's existing behavior; application only ever FILLS a weak
+// amount and never overrides the parser's confident withdrawal pick.
+export const GENERIC_BANK_ATM_TEMPLATE: MerchantTemplate = {
+  id: "generic-bank-atm",
+  merchantPattern: /\b(atm|withdrawal|withdraw|cash advance)\b/i,
+  receiptType: "bank_withdrawal",
+  amountRules: {
+    preferLabels: ["withdrawal", "withdraw", "amount dispensed", "amount", "total"],
+    avoidLabels: [
+      "balance",
+      "available balance",
+      "opening balance",
+      "ledger balance",
+      "cash back",
+      "cashback",
+      "fee",
+      "surcharge",
+    ],
+  },
+  dateRules: {
+    preferFormats: ["yyyy-mm-dd", "dd/mm/yyyy", "mm/dd/yyyy"],
+  },
+  invoiceRules: {
+    optional: true,
+    generateLabel: true,
+    labelAliases: ["sequence no", "reference no", "ref no", "trace no"],
+  },
+  negativePatterns: ["deposit", "tax invoice"],
+  confidenceBoosts: [],
+  notes:
+    "Bank/ATM withdrawal. Amount is the withdrawn sum — never a balance, available " +
+    "balance, cash back, or fee. Reference often absent; keep it optional with a " +
+    "generated label. Never overrides a confident parser amount.",
+};
+
+// Registry of REVIEWED STATIC templates. Generic, conservative, and type/keyword
+// gated. Broad "any retail/restaurant/gas total" templates are intentionally NOT
+// here — the parser already prefers Total and avoids subtotal/tax/change/tip, so a
+// catch-all template would add no lift and concentrate risk (see the Phase D.4
+// TODO in docs/phase6-ocr-intelligence-plan.md).
+export const MERCHANT_TEMPLATES: MerchantTemplate[] = [
+  GENERIC_CASH_RECEIPT_TEMPLATE,
+  GENERIC_BANK_ATM_TEMPLATE,
+];

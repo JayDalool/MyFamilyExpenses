@@ -17,4 +17,18 @@ export type ReceiptFixture = {
     /** Values that must never be selected as the amount (change, balance, card digits). */
     mustNotEqualAmount?: number[];
   };
+  /**
+   * Optional Phase D.4 template-behavior expectations. Absent → the benchmark only
+   * checks parser/safety, leaving existing fixtures untouched.
+   */
+  expectTemplate?: {
+    /** Whether a static template should match this receipt. */
+    matches: boolean;
+    /** The expected matched template id (when `matches`). */
+    templateId?: string | null;
+    /** Whether guarded application (apply gate open) would fill the amount. */
+    appliesAmount?: boolean;
+    /** Whether guarded application would fill the date. */
+    appliesDate?: boolean;
+  };
 };

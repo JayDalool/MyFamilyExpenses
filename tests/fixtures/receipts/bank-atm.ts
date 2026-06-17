@@ -20,4 +20,9 @@ export const bankAtmFixture: ReceiptFixture = {
     // The available balance and masked-card digits must never become the amount.
     mustNotEqualAmount: [540.0, 1234],
   },
+  expectTemplate: {
+    matches: true,
+    templateId: "generic-bank-atm",
+    appliesAmount: false,
+  },
 };

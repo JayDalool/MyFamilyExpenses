@@ -32,8 +32,12 @@ test("ocr-parsing imports nothing from the templates/learning workflow", () => {
   assert.doesNotMatch(source, /correction-feedback/);
 });
 
-test("ocr.service and simulation do not import drafts/recommendations/feedback/barrel", () => {
-  for (const file of ["lib/ocr/ocr.service.ts", "lib/ocr/templates/simulation.ts"]) {
+test("ocr.service, simulation, and application do not import drafts/recommendations/feedback/barrel", () => {
+  for (const file of [
+    "lib/ocr/ocr.service.ts",
+    "lib/ocr/templates/simulation.ts",
+    "lib/ocr/templates/application.ts",
+  ]) {
     const source = read(file);
     for (const [pattern, label] of FORBIDDEN_IN_LIVE_PATH) {
       assert.doesNotMatch(source, pattern, `${file} must not import ${label}`);

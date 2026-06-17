@@ -16,6 +16,7 @@ import { TesseractOcrEngine } from "@/lib/ocr/tesseract-ocr-engine";
 // (NEVER the templates barrel) so database-derived drafts/recommendations are not
 // pulled into the live extraction module graph.
 import { resolveTemplateMode, simulateTemplates } from "@/lib/ocr/templates/simulation";
+import { applyTemplate, resolveApplicationGate } from "@/lib/ocr/templates/application";
 import type {
   EngineResult,
   OcrEngine,
@@ -23,6 +24,7 @@ import type {
   OcrExtractionMeta,
   OcrInput,
   OcrResult,
+  TemplateApplicationMeta,
   TemplateSimulationResult,
 } from "@/lib/ocr/types";
 
@@ -258,11 +260,15 @@ export async function runExtraction(input: OcrInput): Promise<OcrExtractionEnvel
     overallConfidence: primaryRun.engineResult.meanScore,
   });
 
-  // D.3A: dry-run template simulation. Diagnostic ONLY — it never mutates `result`
-  // (there is deliberately no value-application path in this phase) and is dropped
-  // from every response and never persisted. Best-effort: a failure must not break
-  // extraction, so it falls back to null and logs nothing that could leak text.
+  // D.3A simulation (dry-run) + D.3B guarded application. Both are best-effort and
+  // must never break extraction. Simulation is diagnostic. Application changes the
+  // user-facing `response` ONLY when apply mode + gate + safety all pass; otherwise
+  // `response` is the parser result by reference (unchanged behavior). `parserResult`
+  // always remains the raw pre-application result for provenance.
   let simulation: TemplateSimulationResult | null = null;
+  let application: TemplateApplicationMeta | null = null;
+  let response: OcrResult = result;
+
   if (resolveTemplateMode() !== "off") {
     try {
       simulation = simulateTemplates({
@@ -281,13 +287,30 @@ export async function runExtraction(input: OcrInput): Promise<OcrExtractionEnvel
     } catch {
       simulation = null;
     }
+
+    try {
+      const { result: appliedResult, ...applicationMeta } = applyTemplate({
+        parser: result,
+        simulation,
+        candidates: result.candidates,
+        gate: resolveApplicationGate(),
+      });
+      application = applicationMeta;
+      if (applicationMeta.applied) {
+        response = appliedResult;
+      }
+    } catch {
+      application = null;
+      response = result;
+    }
   }
 
   return {
     engineResult: primaryRun.engineResult,
     parserResult: result,
-    response: result,
+    response,
     simulation,
+    application,
   };
 }
 

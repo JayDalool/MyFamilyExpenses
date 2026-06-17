@@ -34,6 +34,15 @@ export {
   type TemplateMode,
   type SimulationInput,
 } from "./simulation";
+export {
+  applyTemplate,
+  resolveApplicationGate,
+  APPLY_MIN_AMOUNT_CONFIDENCE,
+  WEAK_PARSER_AMOUNT_MAX,
+  APPLY_MIN_DATE_CONFIDENCE,
+  type ApplicationGate,
+  type TemplateApplicationResult,
+} from "./application";
 
 /**
  * Read-only lookup of a template for a merchant string. This is INERT — it is NOT

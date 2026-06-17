@@ -13,6 +13,7 @@ import {
   generateTemplateDraft,
   validateTemplateDraft,
   resolveTemplateMode,
+  resolveApplicationGate,
   MERCHANT_TEMPLATES,
   type RiskLevel,
   type RecommendationSeverity,
@@ -85,6 +86,7 @@ export default async function OcrLearningPage() {
 
   const insights = await getHouseholdLearningInsights(auth.householdId);
   const templateMode = resolveTemplateMode();
+  const applicationGate = resolveApplicationGate();
   const recommendations = buildTemplateRecommendations(insights);
   const topMerchants = topByCorrectionCount(insights.merchants, 10);
   const topReceiptTypes = topByCorrectionCount(insights.receiptTypes, 10);
@@ -118,12 +120,22 @@ export default async function OcrLearningPage() {
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-lg font-semibold text-slate-900">Template simulation status</h2>
             <Badge variant={templateMode === "off" ? "neutral" : "brand"}>mode: {templateMode}</Badge>
+            <Badge variant={applicationGate.apply ? "warning" : "neutral"}>
+              apply: {applicationGate.apply ? "enabled" : "blocked"}
+            </Badge>
+            <Badge variant="neutral">{MERCHANT_TEMPLATES.length} static template(s)</Badge>
           </div>
           <p className="mt-1 text-sm text-slate-500">
-            Code-reviewed static templates run server-side in dry-run only. Even in{" "}
-            <code>apply</code> mode, D.3A applies nothing to live results — value application is
-            deferred to D.3B with regression tests.
+            Code-reviewed static templates run server-side. In <code>apply</code> mode (with the
+            production second-guard <code>OCR_TEMPLATE_APPLY_IN_PRODUCTION=true</code>) a template
+            may only FILL a missing/weak amount or date from a high-confidence preferred total — it
+            never overrides a confident parser value. Generated DB drafts are never applied.
           </p>
+          {applicationGate.blockedReason ? (
+            <p className="mt-2 text-xs font-medium text-amber-600">
+              Apply is requested but blocked: {applicationGate.blockedReason}
+            </p>
+          ) : null}
           <div className="mt-3 divide-y divide-slate-200">
             {MERCHANT_TEMPLATES.map((t) => (
               <div className="py-2 text-sm" key={t.id}>

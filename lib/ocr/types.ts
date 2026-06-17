@@ -136,12 +136,27 @@ export type TemplateSimulationResult = {
   matchedTemplateId: string | null;
   templateName: string | null;
   suggestedAmount: number | null;
+  // Absolute confidence (0–1) of the suggested amount candidate, or null. D.3B
+  // application gates on this so a low-confidence template amount is never applied.
+  suggestedAmountConfidence: number | null;
   suggestedDate: string | null;
   suggestedInvoice: string | null;
   // template-suggested confidence minus the parser's amount confidence (0 if none).
   confidenceDelta: number;
   warnings: string[];
   decision: SimulationDecision;
+  reasons: string[];
+};
+
+// Slim, internal-only metadata describing a D.3B template application. The applied
+// values themselves live in the envelope `response`; this records WHAT changed and
+// WHY. Carries no raw OCR text, blocks, or reference strings; dropped from every
+// user response and not persisted as-is.
+export type TemplateApplicationMeta = {
+  applied: boolean;
+  appliedTemplateId: string | null;
+  appliedFields: { amount?: boolean; date?: boolean; invoice?: boolean };
+  warnings: string[];
   reasons: string[];
 };
 
@@ -158,4 +173,7 @@ export type OcrExtractionEnvelope = {
   // (null on failure or when OCR_TEMPLATE_MODE=off). Dropped from every response
   // and never written to the DB.
   simulation?: TemplateSimulationResult | null;
+  // Guarded template application metadata (D.3B). Internal-only; the applied values
+  // are reflected in `response`. null when off/simulate or nothing applied.
+  application?: TemplateApplicationMeta | null;
 };

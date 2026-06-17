@@ -3,9 +3,9 @@
 Status: **Stage A + A.2 implemented (library only). Phase B (extraction
 attempts) and Phase C (correction feedback) implemented and persisted. Phase D.1
 (internal learning insights), Phase D.2 (internal template review/draft workflow),
-and Phase D.3A (static template simulation / dry-run) implemented — no migration
-for D.1/D.2/D.3A.** Phase D.3B (actually influencing parser output) and Phase E
-are designed but not built.
+Phase D.3A (static template simulation / dry-run), and Phase D.3B (guarded static
+template application) implemented — no migration for D.1/D.2/D.3A/D.3B.** Phase D.4
+(more approved merchant templates) and Phase E are designed but not built.
 
 ## What we are (and are not) building
 
@@ -59,13 +59,32 @@ the dry-run runs; it defaults to `off` in production and `simulate` elsewhere, a
 at all in D.3A.** Templates are code-reviewed only; generated drafts are never
 used here.
 
-### Phase D.3B — Approved Static Templates influence output (later)
-After human review, approved static templates may actually **influence** parser
-output, wired in **only** with tests and the regression fixtures
-(`tests/fixtures/receipts/*`). A template must never override a high-confidence
-parser total (`unsafe`) and must improve confidence without making wrong
-financial values more likely — **a wrong amount is worse than a blank one.** This
-is where an `apply` path would be introduced, guarded by the simulation decisions.
+### Phase D.3B — Guarded Static Template Application (implemented)
+Code-reviewed static templates may now **influence** the user-facing extraction
+result, but only under strict guards (`lib/ocr/templates/application.ts`):
+
+- **Off by default.** Default behavior is unchanged unless `OCR_TEMPLATE_MODE=apply`.
+- **Production needs a second guard.** In production, apply takes effect only with
+  `OCR_TEMPLATE_APPLY_IN_PRODUCTION=true` as well; otherwise it is blocked (and the
+  block reason is surfaced on `/ocr-learning`). Simulation may still run.
+- **Fill, never override.** Amount is only filled when the parser amount is
+  missing/weak (< 0.6) AND a preferred total-like label candidate is high-confidence
+  (≥ 0.7). A `would_conflict`/`unsafe` decision (confident parser total) always
+  keeps the parser amount. Date is only filled when the parser date is missing and a
+  candidate is high-confidence. Invoice/reference is never forced.
+- **Only reviewed static templates.** Generated DB drafts/recommendations and
+  correction feedback remain advisory only — never imported by the live parser/
+  application path (asserted by `tests/ocr-internal-guards.test.ts`).
+- **Visible, not hidden.** Applied changes are recorded in internal `application`
+  metadata on the envelope (dropped from user responses) and the
+  `ReceiptExtractionAttempt` records the post-application values the user saw.
+
+### Phase D.4 — More approved merchant templates (later)
+Add further reviewed static merchant/receipt templates (beyond the generic cash
+receipt), each justified by anonymized regression fixtures
+(`tests/fixtures/receipts/*`) and the Phase C correction corpus, landing via code
+review. DB feedback continues to *inform* which templates to author — it never
+becomes a live rule automatically.
 
 ### Phase E — User-Facing Smart Receipt Experience (later)
 Users see improved autofill, better confidence warnings, a simpler correction UI,
@@ -195,9 +214,18 @@ inert and read-only:
    `unsafe`) with safe reasons (template id, candidate source labels, amounts —
    never raw text or reference strings). It is wired into `runExtraction` as an
    internal envelope field (dropped from every response, never persisted), gated
-   by `OCR_TEMPLATE_MODE` (default `off` in prod, `simulate` elsewhere; `apply`
-   has no effect in D.3A). A small read-only "Template simulation status" card on
-   `/ocr-learning` shows the current mode and the static templates.
+   by `OCR_TEMPLATE_MODE` (default `off` in prod, `simulate` elsewhere). A small
+   read-only "Template simulation status" card on `/ocr-learning` shows the current
+   mode, the apply gate status, and the static templates.
+6. **Guarded application (D.3B)** — `applyTemplate` turns a simulation into an
+   actual change to the user-facing `response`, gated by `resolveApplicationGate`
+   (`apply` mode + production second-guard `OCR_TEMPLATE_APPLY_IN_PRODUCTION=true`).
+   It only FILLS a missing/weak amount from a high-confidence preferred total
+   (never overrides `would_conflict`/`unsafe`), fills a missing date from a
+   high-confidence candidate, and never forces an invoice. Off/simulate leave the
+   result byte-identical (same object by reference). `parserResult` stays the raw
+   pre-application result; the `ReceiptExtractionAttempt` records the post-application
+   values the user saw, so Phase C feedback compares against the assisted prediction.
 
 **Why human-reviewed templates are safer:** correction data is noisy and
 adversarial-adjacent (a few odd receipts, or a user who edits for reasons
@@ -206,14 +234,12 @@ A wrong amount is worse than a blank one, so a person vets every template before
 it can affect what is auto-filled. The corpus *prioritizes* that human work; it
 does not replace it.
 
-## Phase D.3B + beyond (later)
+## Phase D.4 + beyond (later)
 
-- **D.3B.** Let reviewed static templates actually influence parser output,
-  authored from the D.2 drafts and gated by the D.3A simulation decisions (never
-  override an `unsafe`/high-confidence total). This is where an `apply` path is
-  introduced. Each template lands via code review and the regression fixtures
-  (`tests/fixtures/receipts/*`), and must not make wrong financial values more
-  likely.
+- **D.4.** Add more reviewed static merchant/receipt templates beyond the generic
+  cash receipt, each justified by anonymized regression fixtures
+  (`tests/fixtures/receipts/*`) and the Phase C corpus, landing via code review.
+  DB feedback remains advisory only.
 - **E.** User-facing smart receipt experience (better autofill, confidence
   warnings, simpler correction UI, merchant memory). The regression dataset from
   anonymized receipts seeds this (Stage A already seeds it with

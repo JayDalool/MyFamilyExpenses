@@ -61,6 +61,11 @@ export async function createExtractionAttempt(
 ): Promise<string | null> {
   const { userId, householdId, fileSha256, fileBytes, envelope } = args;
   const { engineResult, parserResult } = envelope;
+  // What the user actually saw: the post-application response when D.3B applied a
+  // template, otherwise identical to parserResult. Recording this makes Phase C
+  // correction feedback compare the user's final values against the template-
+  // assisted prediction. Falls back to parserResult for hand-built envelopes.
+  const seen = envelope.response ?? parserResult;
   const meta = parserResult.meta;
 
   const dimensions = getImageDimensions(fileBytes);
@@ -85,10 +90,10 @@ export async function createExtractionAttempt(
         blocks: asJson(redactBlocks(engineResult.blocks)),
         candidates: asJson(parserResult.candidates),
         selectedExtraction: asJson({
-          invoiceNumber: parserResult.invoiceNumber,
-          invoiceDate: parserResult.invoiceDate,
-          amount: parserResult.amount,
-          merchant: parserResult.merchant,
+          invoiceNumber: seen.invoiceNumber,
+          invoiceDate: seen.invoiceDate,
+          amount: seen.amount,
+          merchant: seen.merchant,
         }),
         warnings: asJson(parserResult.warnings),
         receiptType: parserResult.receiptType,
@@ -96,7 +101,7 @@ export async function createExtractionAttempt(
           ? redactSensitiveText(parserResult.merchant)
           : null,
         imageQuality: asJson(imageQuality),
-        confidence: asJson(parserResult.confidence),
+        confidence: asJson(seen.confidence),
         durationMs: Math.max(0, Math.round(engineResult.durationMs ?? 0)),
         expiresAt: new Date(Date.now() + TTL_MS),
       },

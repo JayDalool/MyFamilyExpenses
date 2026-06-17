@@ -515,7 +515,7 @@ test("runExtraction returns the full internal envelope", async () => {
     // Three seams: raw recognition, parsed fields, and the UI projection.
     assert.deepEqual(
       Object.keys(envelope).sort(),
-      ["engineResult", "parserResult", "response", "simulation"],
+      ["application", "engineResult", "parserResult", "response", "simulation"],
     );
 
     // engineResult carries provider-neutral recognition with a normalized score.
@@ -748,7 +748,7 @@ test("runExtraction with the paddle engine returns the full envelope", async () 
 
         assert.deepEqual(
           Object.keys(envelope).sort(),
-          ["engineResult", "parserResult", "response", "simulation"],
+          ["application", "engineResult", "parserResult", "response", "simulation"],
         );
         assert.equal(envelope.engineResult.provider, "paddle");
         assert.ok(

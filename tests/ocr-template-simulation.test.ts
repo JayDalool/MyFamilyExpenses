@@ -185,9 +185,10 @@ test("resolveTemplateMode defaults and clamps safely", () => {
     assert.equal(resolveTemplateMode(), "simulate");
     env.NODE_ENV = "production";
     assert.equal(resolveTemplateMode(), "off");
-    // apply is never honoured in production.
+    // D.3B: the literal mode is returned (no prod clamp here); the application gate
+    // — not resolveTemplateMode — is what blocks apply in production.
     env.OCR_TEMPLATE_MODE = "apply";
-    assert.equal(resolveTemplateMode(), "off");
+    assert.equal(resolveTemplateMode(), "apply");
     env.NODE_ENV = "development";
     assert.equal(resolveTemplateMode(), "apply");
     env.OCR_TEMPLATE_MODE = "off";
@@ -200,9 +201,9 @@ test("resolveTemplateMode defaults and clamps safely", () => {
   }
 });
 
-// ── Apply mode is a no-op in D.3A (no value-application path) ─────────────────
+// ── Apply mode leaves output unchanged when no static template matches ────────
 
-test("OCR_TEMPLATE_MODE=apply does not change extraction output (no apply path yet)", async () => {
+test("apply mode does not change extraction output when no template matches", async () => {
   const saved = {
     mode: process.env.OCR_TEMPLATE_MODE,
     provider: process.env.OCR_PROVIDER,
@@ -215,13 +216,13 @@ test("OCR_TEMPLATE_MODE=apply does not change extraction output (no apply path y
 
     const applied = await runExtraction({ fileName: "r.png" });
 
-    // The response is the parser result object ITSELF (by reference): there is no
-    // value-application path that builds a template-modified response. If D.3B ever
-    // adds one, it would construct a new object and break this — by design.
+    // The mock receipt does not match the cash-receipt template, so nothing is
+    // applied: the response is the parser result object ITSELF (by reference).
     assert.strictEqual(applied.response, applied.parserResult);
-    // Simulation still runs in apply mode (it is attached separately, diagnostic
-    // only), so the field is present but never folded into the response.
+    // Simulation + application metadata are attached (diagnostic), but application
+    // did not change anything.
     assert.notEqual(applied.simulation, undefined);
+    assert.equal(applied.application?.applied, false);
   } finally {
     if (saved.mode === undefined) delete process.env.OCR_TEMPLATE_MODE;
     else process.env.OCR_TEMPLATE_MODE = saved.mode;

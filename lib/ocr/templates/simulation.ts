@@ -24,15 +24,15 @@ export type TemplateMode = "off" | "simulate" | "apply";
 
 /**
  * Resolve the template mode from env. Defaults: never "apply" by default; "off"
- * in production, "simulate" elsewhere. "apply" is clamped to "off" in production.
- * NOTE (D.3A): mode only controls whether the dry-run simulation RUNS. No code
- * path applies template values to extraction in this phase — value application is
- * deferred to D.3B and must land with regression tests.
+ * in production, "simulate" elsewhere. The literal mode is returned (apply is NOT
+ * clamped here) — whether application actually takes effect is decided separately
+ * by `resolveApplicationGate` (which enforces the production second-guard). The
+ * mode only controls whether the dry-run simulation RUNS; simulation in apply mode
+ * is still purely diagnostic.
  */
 export function resolveTemplateMode(): TemplateMode {
   const raw = (process.env.OCR_TEMPLATE_MODE ?? "").toLowerCase();
   if (raw === "off" || raw === "simulate" || raw === "apply") {
-    if (raw === "apply" && process.env.NODE_ENV === "production") return "off";
     return raw;
   }
   return process.env.NODE_ENV === "production" ? "off" : "simulate";
@@ -102,6 +102,7 @@ const emptyResult = (
   matchedTemplateId: null,
   templateName: null,
   suggestedAmount: null,
+  suggestedAmountConfidence: null,
   suggestedDate: null,
   suggestedInvoice: null,
   confidenceDelta: 0,
@@ -166,6 +167,7 @@ export function simulateTemplates(input: SimulationInput): TemplateSimulationRes
     matchedTemplateId: template.id,
     templateName: template.id,
     suggestedAmount,
+    suggestedAmountConfidence: picked ? round4(picked.confidence ?? 0) : null,
     suggestedDate: null, // D.3A defers date handling to the parser
     suggestedInvoice: null, // never fabricated
     confidenceDelta,

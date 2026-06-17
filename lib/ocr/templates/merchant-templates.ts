@@ -16,7 +16,10 @@ export const GENERIC_CASH_RECEIPT_TEMPLATE: MerchantTemplate = {
   merchantPattern: /\bcash\s*(receipt|sale|memo)\b/i,
   receiptType: "retail",
   amountRules: {
-    preferLabels: ["total", "amount due", "amount paid", "cash"],
+    // "cash" (tendered) is deliberately NOT preferred: it is the money handed over,
+    // not the total, and D.3B can auto-fill amount — wrong amount is worse than
+    // blank. Only unambiguous total-like labels are preferred.
+    preferLabels: ["total", "amount due", "amount paid"],
     avoidLabels: [
       "subtotal",
       "tax",
@@ -25,6 +28,8 @@ export const GENERIC_CASH_RECEIPT_TEMPLATE: MerchantTemplate = {
       "balance",
       "available balance",
       "tip",
+      "cash back",
+      "cashback",
     ],
   },
   dateRules: {

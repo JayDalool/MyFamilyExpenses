@@ -12,6 +12,10 @@ import { isLowQualityImage } from "@/lib/ocr/image-quality";
 import { MockOcrEngine } from "@/lib/ocr/mock-ocr-engine";
 import { PaddleOcrEngine } from "@/lib/ocr/paddle-ocr-engine";
 import { TesseractOcrEngine } from "@/lib/ocr/tesseract-ocr-engine";
+// D.3A: dry-run static-template simulation. Imported from the specific submodule
+// (NEVER the templates barrel) so database-derived drafts/recommendations are not
+// pulled into the live extraction module graph.
+import { resolveTemplateMode, simulateTemplates } from "@/lib/ocr/templates/simulation";
 import type {
   EngineResult,
   OcrEngine,
@@ -19,6 +23,7 @@ import type {
   OcrExtractionMeta,
   OcrInput,
   OcrResult,
+  TemplateSimulationResult,
 } from "@/lib/ocr/types";
 
 const KNOWN_OCR_PROVIDERS = ["tesseract", "mock", "paddle"] as const;
@@ -253,10 +258,36 @@ export async function runExtraction(input: OcrInput): Promise<OcrExtractionEnvel
     overallConfidence: primaryRun.engineResult.meanScore,
   });
 
+  // D.3A: dry-run template simulation. Diagnostic ONLY — it never mutates `result`
+  // (there is deliberately no value-application path in this phase) and is dropped
+  // from every response and never persisted. Best-effort: a failure must not break
+  // extraction, so it falls back to null and logs nothing that could leak text.
+  let simulation: TemplateSimulationResult | null = null;
+  if (resolveTemplateMode() !== "off") {
+    try {
+      simulation = simulateTemplates({
+        merchantGuess: result.merchant || null,
+        receiptType: result.receiptType,
+        rawText: primaryRun.engineResult.rawText,
+        candidates: result.candidates,
+        parser: {
+          invoiceNumber: result.invoiceNumber,
+          invoiceDate: result.invoiceDate,
+          amount: result.amount,
+          confidence: result.confidence,
+        },
+        meta: { provider: meta.primaryProvider, strategy: meta.strategy },
+      });
+    } catch {
+      simulation = null;
+    }
+  }
+
   return {
     engineResult: primaryRun.engineResult,
     parserResult: result,
     response: result,
+    simulation,
   };
 }
 

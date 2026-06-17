@@ -1,8 +1,11 @@
 import type { MerchantTemplate } from "./types";
 
-// The registry of human-authored merchant/receipt templates. Tonight it holds a
-// single, deliberately conservative example. Risky merchant-specific rules are
-// NOT added here without real correction-feedback evidence and human review.
+// The registry of REVIEWED STATIC templates — the only templates the simulation
+// engine (and, later in D.3B, the parser) may use. These are hand-authored and
+// changed only through code review. Database-derived suggestions live separately
+// in drafts.ts and recommendations.ts and are NEVER imported here or by the live
+// parser. Risky merchant-specific rules are not added without fixtures that prove
+// them.
 
 // Generic cash receipt: these almost never carry a real invoice/reference number,
 // so we keep the reference optional and rely on a generated label. The amount
@@ -13,8 +16,16 @@ export const GENERIC_CASH_RECEIPT_TEMPLATE: MerchantTemplate = {
   merchantPattern: /\bcash\s*(receipt|sale|memo)\b/i,
   receiptType: "retail",
   amountRules: {
-    preferLabels: ["total", "amount", "amount paid", "cash"],
-    avoidLabels: ["subtotal", "change", "change due", "tax", "tip", "balance"],
+    preferLabels: ["total", "amount due", "amount paid", "cash"],
+    avoidLabels: [
+      "subtotal",
+      "tax",
+      "change",
+      "change due",
+      "balance",
+      "available balance",
+      "tip",
+    ],
   },
   dateRules: {
     preferFormats: ["yyyy-mm-dd", "dd/mm/yyyy", "mm/dd/yyyy"],

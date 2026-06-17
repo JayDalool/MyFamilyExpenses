@@ -2,9 +2,10 @@
 
 Status: **Stage A + A.2 implemented (library only). Phase B (extraction
 attempts) and Phase C (correction feedback) implemented and persisted. Phase D.1
-(internal learning insights) and Phase D.2 (internal template review/draft
-workflow) implemented — no migration for D.1/D.2.** Phase D.3 and Phase E are
-designed but not built.
+(internal learning insights), Phase D.2 (internal template review/draft workflow),
+and Phase D.3A (static template simulation / dry-run) implemented — no migration
+for D.1/D.2/D.3A.** Phase D.3B (actually influencing parser output) and Phase E
+are designed but not built.
 
 ## What we are (and are not) building
 
@@ -46,11 +47,25 @@ read-only `TemplateDraft`. **Drafts are suggestions only** — no DB write, no
 parser integration, validated to contain no raw OCR text, blocks, card/account
 data, or receipt reference strings. No migration.
 
-### Phase D.3 — Approved Static Templates (later)
-After human review, approved templates become code-reviewed **static** templates
-wired into the parser **only** with tests and regression fixtures
-(`tests/fixtures/receipts/*`). They must improve confidence without making wrong
-financial values more likely — **a wrong amount is worse than a blank one.**
+### Phase D.3A — Static Template Simulation (implemented)
+Code-reviewed **static** templates (never DB-derived drafts) are run against the
+parser result in **dry-run**: `simulateTemplates` reports what a template *would*
+do (`no_match` / `same_as_parser` / `would_improve` / `would_conflict` /
+`unsafe`) but changes nothing. It is wired into `runExtraction` as an internal,
+best-effort, diagnostic field on the envelope — dropped from every response and
+never persisted. An `OCR_TEMPLATE_MODE` flag (`off|simulate|apply`) gates whether
+the dry-run runs; it defaults to `off` in production and `simulate` elsewhere, and
+**`apply` is clamped to `off` in production and has no value-application code path
+at all in D.3A.** Templates are code-reviewed only; generated drafts are never
+used here.
+
+### Phase D.3B — Approved Static Templates influence output (later)
+After human review, approved static templates may actually **influence** parser
+output, wired in **only** with tests and the regression fixtures
+(`tests/fixtures/receipts/*`). A template must never override a high-confidence
+parser total (`unsafe`) and must improve confidence without making wrong
+financial values more likely — **a wrong amount is worse than a blank one.** This
+is where an `apply` path would be introduced, guarded by the simulation decisions.
 
 ### Phase E — User-Facing Smart Receipt Experience (later)
 Users see improved autofill, better confidence warnings, a simpler correction UI,
@@ -174,6 +189,15 @@ inert and read-only:
    rows), and `validateTemplateDraft` rejects card/account-like values, long digit
    runs, and any `rawText`/`blocks` field while warning on risky preferred labels.
    Drafts are displayed read-only, written nowhere, and connected to nothing.
+5. **Static template simulation (D.3A)** — `simulateTemplates` runs the
+   code-reviewed static registry against a parser result in dry-run, returning a
+   decision (`no_match`/`same_as_parser`/`would_improve`/`would_conflict`/
+   `unsafe`) with safe reasons (template id, candidate source labels, amounts —
+   never raw text or reference strings). It is wired into `runExtraction` as an
+   internal envelope field (dropped from every response, never persisted), gated
+   by `OCR_TEMPLATE_MODE` (default `off` in prod, `simulate` elsewhere; `apply`
+   has no effect in D.3A). A small read-only "Template simulation status" card on
+   `/ocr-learning` shows the current mode and the static templates.
 
 **Why human-reviewed templates are safer:** correction data is noisy and
 adversarial-adjacent (a few odd receipts, or a user who edits for reasons
@@ -182,11 +206,12 @@ A wrong amount is worse than a blank one, so a person vets every template before
 it can affect what is auto-filled. The corpus *prioritizes* that human work; it
 does not replace it.
 
-## Phase D.3 + beyond (later)
+## Phase D.3B + beyond (later)
 
-- **D.3.** Wire reviewed vendor/receipt templates (Starbucks, Walmart, gas,
-  restaurant, bank/ATM) into the parser, authored from the D.2 drafts. Each
-  template lands via code review and the regression fixtures
+- **D.3B.** Let reviewed static templates actually influence parser output,
+  authored from the D.2 drafts and gated by the D.3A simulation decisions (never
+  override an `unsafe`/high-confidence total). This is where an `apply` path is
+  introduced. Each template lands via code review and the regression fixtures
   (`tests/fixtures/receipts/*`), and must not make wrong financial values more
   likely.
 - **E.** User-facing smart receipt experience (better autofill, confidence

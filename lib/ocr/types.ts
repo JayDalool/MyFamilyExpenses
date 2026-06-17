@@ -120,12 +120,42 @@ export interface OcrEngine {
   recognize(input: OcrInput): Promise<EngineResult>;
 }
 
+// ── Static template simulation (Phase D.3A) ──────────────────────────────────
+// Diagnostic-only result of running code-reviewed static templates against a
+// parser result in DRY-RUN. It NEVER changes extraction values and is never
+// persisted or returned to end users. The result type lives here (core types) so
+// the envelope can reference it without a cycle through the templates module.
+export type SimulationDecision =
+  | "no_match"
+  | "same_as_parser"
+  | "would_improve"
+  | "would_conflict"
+  | "unsafe";
+
+export type TemplateSimulationResult = {
+  matchedTemplateId: string | null;
+  templateName: string | null;
+  suggestedAmount: number | null;
+  suggestedDate: string | null;
+  suggestedInvoice: string | null;
+  // template-suggested confidence minus the parser's amount confidence (0 if none).
+  confidenceDelta: number;
+  warnings: string[];
+  decision: SimulationDecision;
+  reasons: string[];
+};
+
 // ── Internal extraction envelope ─────────────────────────────────────────────
 // Produced by the orchestrator. Bundles the raw engine recognition, the parser's
 // structured result, and the response shown to the UI. Internal only — it is not
-// persisted yet (a trusted ReceiptExtractionAttempt is planned for a later step).
+// returned to the client directly (the route forwards `response` only) and is not
+// persisted as-is.
 export type OcrExtractionEnvelope = {
   engineResult: EngineResult;
   parserResult: OcrResult;
   response: OcrResult;
+  // Dry-run template simulation (D.3A). Diagnostic, internal-only, best-effort
+  // (null on failure or when OCR_TEMPLATE_MODE=off). Dropped from every response
+  // and never written to the DB.
+  simulation?: TemplateSimulationResult | null;
 };

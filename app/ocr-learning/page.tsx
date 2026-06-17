@@ -12,6 +12,8 @@ import {
   buildTemplateRecommendations,
   generateTemplateDraft,
   validateTemplateDraft,
+  resolveTemplateMode,
+  MERCHANT_TEMPLATES,
   type RiskLevel,
   type RecommendationSeverity,
 } from "@/lib/ocr/templates";
@@ -82,6 +84,7 @@ export default async function OcrLearningPage() {
   }
 
   const insights = await getHouseholdLearningInsights(auth.householdId);
+  const templateMode = resolveTemplateMode();
   const recommendations = buildTemplateRecommendations(insights);
   const topMerchants = topByCorrectionCount(insights.merchants, 10);
   const topReceiptTypes = topByCorrectionCount(insights.receiptTypes, 10);
@@ -110,6 +113,31 @@ export default async function OcrLearningPage() {
           suggestions and drafts below require human review before they could ever change scanning.
           No raw receipt text, card/account numbers, or reference numbers are shown here.
         </Alert>
+
+        <Card>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-lg font-semibold text-slate-900">Template simulation status</h2>
+            <Badge variant={templateMode === "off" ? "neutral" : "brand"}>mode: {templateMode}</Badge>
+          </div>
+          <p className="mt-1 text-sm text-slate-500">
+            Code-reviewed static templates run server-side in dry-run only. Even in{" "}
+            <code>apply</code> mode, D.3A applies nothing to live results — value application is
+            deferred to D.3B with regression tests.
+          </p>
+          <div className="mt-3 divide-y divide-slate-200">
+            {MERCHANT_TEMPLATES.map((t) => (
+              <div className="py-2 text-sm" key={t.id}>
+                <p className="font-medium text-slate-800">
+                  {t.id} <span className="text-xs text-slate-400">· {t.receiptType}</span>
+                </p>
+                <p className="text-xs text-slate-500">
+                  prefer: {(t.amountRules.preferLabels ?? []).join(", ") || "—"} · avoid:{" "}
+                  {(t.amountRules.avoidLabels ?? []).join(", ") || "—"}
+                </p>
+              </div>
+            ))}
+          </div>
+        </Card>
 
         {insights.totalRecords === 0 ? (
           <Card>

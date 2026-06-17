@@ -25,6 +25,15 @@ export {
   type TemplateDraftEvidence,
   type DraftValidation,
 } from "./drafts";
+export {
+  simulateTemplates,
+  resolveTemplateMode,
+  shouldRunTemplateSimulation,
+  STRONG_AMOUNT_CONFIDENCE,
+  MODERATE_AMOUNT_CONFIDENCE,
+  type TemplateMode,
+  type SimulationInput,
+} from "./simulation";
 
 /**
  * Read-only lookup of a template for a merchant string. This is INERT — it is NOT

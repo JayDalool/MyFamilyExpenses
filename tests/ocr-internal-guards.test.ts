@@ -13,21 +13,37 @@ test("OCR learning is not linked from the primary navigation", () => {
   assert.doesNotMatch(shell, /href="\/ocr-learning"/);
 });
 
-// The live OCR parser/service must never import the learning/template workflow.
-// This import-absence IS the guarantee that feedback data cannot change parsing
-// automatically.
-test("live parser modules do not import the template/learning workflow", () => {
-  for (const file of ["lib/ocr/ocr-parsing.ts", "lib/ocr/ocr.service.ts"]) {
+// The live OCR path may use ONLY code-reviewed static templates + the dry-run
+// simulation. It must never import database-derived drafts/recommendations, the
+// learning/feedback modules, or the templates barrel (which re-exports drafts).
+// This import-absence IS the guarantee that DB feedback cannot change parsing.
+const FORBIDDEN_IN_LIVE_PATH: Array<[RegExp, string]> = [
+  [/templates\/drafts/, "templates/drafts"],
+  [/templates\/recommendations/, "templates/recommendations"],
+  [/from\s+["']@\/lib\/ocr\/templates["']/, "the templates barrel (re-exports drafts)"],
+  [/learning-insights/, "learning-insights"],
+  [/correction-feedback/, "correction-feedback"],
+];
+
+test("ocr-parsing imports nothing from the templates/learning workflow", () => {
+  const source = read("lib/ocr/ocr-parsing.ts");
+  assert.doesNotMatch(source, /ocr\/templates/, "ocr-parsing must not import any template module");
+  assert.doesNotMatch(source, /learning-insights/);
+  assert.doesNotMatch(source, /correction-feedback/);
+});
+
+test("ocr.service and simulation do not import drafts/recommendations/feedback/barrel", () => {
+  for (const file of ["lib/ocr/ocr.service.ts", "lib/ocr/templates/simulation.ts"]) {
     const source = read(file);
-    assert.doesNotMatch(source, /ocr\/templates/, `${file} must not import templates`);
-    assert.doesNotMatch(source, /learning-insights/, `${file} must not import learning-insights`);
-    assert.doesNotMatch(source, /correction-feedback/, `${file} must not import correction-feedback`);
+    for (const [pattern, label] of FORBIDDEN_IN_LIVE_PATH) {
+      assert.doesNotMatch(source, pattern, `${file} must not import ${label}`);
+    }
   }
 });
 
-// The template/draft workflow must not import the live parser/engine either, so it
-// cannot reach into or mutate parsing.
-test("template draft workflow does not import the live parser or engines", () => {
+// The template/draft/recommendation workflow must not import the live parser or
+// engines, so it cannot reach into or mutate parsing.
+test("template draft/recommendation workflow does not import the live parser or engines", () => {
   for (const file of [
     "lib/ocr/templates/drafts.ts",
     "lib/ocr/templates/recommendations.ts",

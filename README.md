@@ -201,6 +201,15 @@ tests/
 - `POST /api/expenses`
 - `GET /api/reports/summary`
 
+## Testing
+
+Unit tests need no database; the DB-backed integration tests
+(`tests/*.integration.test.ts`) require a safe, disposable test Postgres. Set one
+up once with `cp .env.test.example .env.test` and `npm run test:db:setup`, then run
+`npm test` (full suite), `npm run test:db` (integration only), or `npm run test:ocr`
+(OCR verification slice). See [docs/testing.md](./docs/testing.md) for the full
+workflow and the test-database safety guard.
+
 ## Docker
 
 To run the full stack with Docker Compose:

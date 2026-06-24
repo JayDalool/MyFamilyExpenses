@@ -5,9 +5,10 @@ attempts) and Phase C (correction feedback) implemented and persisted. Phase D.1
 (internal learning insights), Phase D.2 (internal template review/draft workflow),
 Phase D.3A (static template simulation / dry-run), Phase D.3B (guarded static
 template application), and Phase D.4 (approved static template library +
-regression benchmarks) implemented — no migration for D.1–D.4.** Phase D.5
-(merchant-specific templates + confidence tuning) and Phase E are designed but not
-built.
+regression benchmarks) implemented — no migration for D.1–D.4. Phase D.6
+(verification + disposable test-database workflow) implemented — no migration.**
+Phase D.5 (merchant-specific templates + confidence tuning) and Phase E are
+designed but not built.
 
 ## What we are (and are not) building
 
@@ -109,6 +110,16 @@ keeps the reference optional) and a `priority` field (higher wins; generic = 0).
 > would add no lift and would only activate on ambiguous (weak-parser) receipts —
 > exactly where a blind "take the Total candidate" is most likely wrong. Revisit
 > only with merchant-specific evidence and fixtures.
+
+### Phase D.6 — OCR intelligence verification + test database (implemented)
+Verification-only phase: no new OCR templates, no production apply mode, no
+deploy. Adds a safe, disposable local Postgres test-database workflow
+(`.env.test`, `npm run test:db:setup`/`test:db`/`test:db:teardown`, the
+`tests/helpers/test-database.ts` safety guard) so the DB-backed integration tests
+actually run, and confirms the OCR-intelligence invariants against a real
+database: OWNER/ADMIN-only `/ocr-learning` access, household scoping, no raw OCR
+text/blocks leaking into durable rows, and DB drafts never becoming live parser
+rules. See [docs/testing.md](./testing.md). No migration.
 
 ### Phase D.5 — Merchant-specific templates + confidence tuning (later)
 Add genuinely merchant-specific templates (named vendors) and confidence

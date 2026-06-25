@@ -1,7 +1,26 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseInvoiceFieldsFromText } from "../lib/ocr/ocr-parsing";
+import { buildWarnings, parseInvoiceFieldsFromText } from "../lib/ocr/ocr-parsing";
 import type { OcrBlock } from "../lib/ocr/types";
+
+// Minimal result shape for exercising buildWarnings' missing-field messaging.
+function warningsFor(
+  confidence: { invoiceDate: number; amount: number },
+  hasText = true,
+) {
+  return buildWarnings(
+    {
+      confidence: {
+        invoiceNumber: 0,
+        invoiceDate: confidence.invoiceDate,
+        amount: confidence.amount,
+      },
+      receiptType: "retail",
+      multipleReceipts: false,
+    },
+    hasText,
+  );
+}
 
 // Two real receipts side by side: each cluster has its own header/date/total.
 function twoReceiptBlocks(): OcrBlock[] {
@@ -235,6 +254,63 @@ test("clear cash receipt: confident total/date, no hallucinated invoice", () => 
   assert.equal(result.multipleReceipts, false);
   assert.ok(!result.warnings.some((w) => /more than one receipt/i.test(w)));
   assert.ok(!result.warnings.some((w) => /could not read/i.test(w)));
+});
+
+test("missing date only warns about the date, not the total", () => {
+  // The CASH RECEIPT regression: amount confidently detected, date missing.
+  const warnings = warningsFor({ invoiceDate: 0, amount: 0.92 });
+  assert.ok(
+    warnings.some((w) => /identify the date\b/i.test(w) && !/total/i.test(w)),
+    `expected a date-only warning, got: ${JSON.stringify(warnings)}`,
+  );
+  assert.ok(
+    !warnings.some((w) => /date or total/i.test(w)),
+    "must not use the combined date-or-total wording when only the date is missing",
+  );
+  assert.ok(
+    !warnings.some((w) => /\btotal\b/i.test(w)),
+    "must not mention the total when it was confidently detected",
+  );
+});
+
+test("missing amount only warns about the total, not the date", () => {
+  const warnings = warningsFor({ invoiceDate: 0.88, amount: 0 });
+  assert.ok(
+    warnings.some((w) => /identify the total\b/i.test(w)),
+    `expected an amount-only warning, got: ${JSON.stringify(warnings)}`,
+  );
+  assert.ok(
+    !warnings.some((w) => /date or total/i.test(w)),
+    "must not use the combined wording when only the total is missing",
+  );
+  assert.ok(
+    !warnings.some((w) => /identify the date\b/i.test(w)),
+    "must not mention the date when it was confidently detected",
+  );
+});
+
+test("both fields missing keeps the combined date-or-total warning", () => {
+  const warnings = warningsFor({ invoiceDate: 0, amount: 0 });
+  assert.ok(
+    warnings.some((w) => /date or total/i.test(w)),
+    `expected the combined warning, got: ${JSON.stringify(warnings)}`,
+  );
+});
+
+test("both fields detected produces no missing-field warning", () => {
+  const warnings = warningsFor({ invoiceDate: 0.9, amount: 0.9 });
+  assert.ok(
+    !warnings.some((w) => /could read some receipt text/i.test(w)),
+    `expected no missing-field warning, got: ${JSON.stringify(warnings)}`,
+  );
+});
+
+test("no missing-field warning when no text was read", () => {
+  const warnings = warningsFor({ invoiceDate: 0, amount: 0 }, false);
+  assert.ok(
+    !warnings.some((w) => /could read some receipt text/i.test(w)),
+    `expected no warning without text, got: ${JSON.stringify(warnings)}`,
+  );
 });
 
 test("withdrawal amount is exposed as a ranked candidate with its label", () => {

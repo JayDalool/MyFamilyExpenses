@@ -1594,6 +1594,10 @@ const MULTI_RECEIPT_WARNING =
   "Looks like more than one receipt was detected. Upload one receipt at a time for best results.";
 const PARSER_REVIEW_WARNING =
   "We could read some receipt text, but could not confidently identify the date or total. Please review and fill in the missing fields manually.";
+const PARSER_REVIEW_DATE_WARNING =
+  "We could read some receipt text, but could not confidently identify the date. Please review and fill in the date manually.";
+const PARSER_REVIEW_AMOUNT_WARNING =
+  "We could read some receipt text, but could not confidently identify the total. Please review and fill in the total manually.";
 
 export function buildWarnings(
   result: Pick<
@@ -1608,11 +1612,19 @@ export function buildWarnings(
     warnings.push(MULTI_RECEIPT_WARNING);
   }
 
-  if (
-    hasText &&
-    (result.confidence.invoiceDate === 0 || result.confidence.amount === 0)
-  ) {
-    warnings.push(PARSER_REVIEW_WARNING);
+  if (hasText) {
+    const dateMissing = result.confidence.invoiceDate === 0;
+    const amountMissing = result.confidence.amount === 0;
+
+    // Only mention the field(s) actually missing — a confidently detected amount
+    // should not be implied as "may be missing" just because the date is absent.
+    if (dateMissing && amountMissing) {
+      warnings.push(PARSER_REVIEW_WARNING);
+    } else if (dateMissing) {
+      warnings.push(PARSER_REVIEW_DATE_WARNING);
+    } else if (amountMissing) {
+      warnings.push(PARSER_REVIEW_AMOUNT_WARNING);
+    }
   }
 
   if (result.receiptType === "bank_deposit") {

@@ -33,21 +33,15 @@ export default async function SignupPage({ searchParams }: { searchParams: Searc
     <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-brand-50 via-white to-slate-100 px-4 py-12">
       <div className="w-full max-w-sm space-y-8">
         <div className="flex flex-col items-center gap-4 text-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-600 shadow-lg">
-            <svg
-              className="h-9 w-9 text-white"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.8}
-                d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z"
-              />
-            </svg>
-          </div>
+          {/* Brand mark: swap public/brand/logo-mark.svg to change everywhere. */}
+          {/* eslint-disable-next-line @next/next/no-img-element -- static brand SVG */}
+          <img
+            alt=""
+            className="h-16 w-16 rounded-2xl shadow-lg"
+            height={64}
+            src="/brand/logo-mark.svg"
+            width={64}
+          />
 
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-slate-900">

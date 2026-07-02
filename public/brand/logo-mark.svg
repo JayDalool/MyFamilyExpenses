@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Placeholder brand mark: receipt glyph on sea-green. Replace this file with
+       your real square logo (keep a square viewBox) and run `npm run brand:icons`
+       to regenerate every PNG/ICO derivative. See public/brand/README.md. -->
+  <rect width="512" height="512" rx="116" fill="#2e8b57"/>
+  <g fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" transform="translate(64 64) scale(16)">
+    <path d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16l3.5-2 3.5 2 3.5-2 3.5 2z"/>
+  </g>
+</svg>

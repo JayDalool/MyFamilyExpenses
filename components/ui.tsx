@@ -27,7 +27,8 @@ export function Button({
   return (
     <button
       className={classes(
-        "inline-flex min-h-10 items-center justify-center rounded-lg border px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50",
+        // 44px touch target on phones, tightening to 40px from the sm breakpoint.
+        "inline-flex min-h-11 items-center justify-center rounded-lg border px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-10",
         buttonVariants[variant],
         className,
       )}
@@ -50,7 +51,7 @@ export function ButtonLink({
   return (
     <Link
       className={classes(
-        "inline-flex min-h-10 items-center justify-center rounded-lg border px-4 py-2 text-sm font-semibold transition",
+        "inline-flex min-h-11 items-center justify-center rounded-lg border px-4 py-2 text-sm font-semibold transition sm:min-h-10",
         buttonVariants[variant],
         className,
       )}
@@ -74,7 +75,9 @@ export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElem
   return (
     <input
       className={classes(
-        "min-h-10 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100",
+        // text-base on phones so iOS Safari doesn't zoom the page on focus
+        // (it zooms any input under 16px); back to text-sm with a pointer.
+        "min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100 sm:min-h-10 sm:text-sm",
         className,
       )}
       {...props}
@@ -86,7 +89,7 @@ export function Select({ className, ...props }: SelectHTMLAttributes<HTMLSelectE
   return (
     <select
       className={classes(
-        "min-h-10 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100",
+        "min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100 sm:min-h-10 sm:text-sm",
         className,
       )}
       {...props}

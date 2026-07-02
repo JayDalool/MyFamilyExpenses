@@ -19,6 +19,7 @@
     "maintenance:password-reset-rate-limits": "tsx prisma/cleanup-password-reset-rate-limits.ts",
     "maintenance:password-reset-tokens": "tsx prisma/cleanup-password-reset-tokens.ts",
     "maintenance:extraction-attempts": "tsx prisma/cleanup-extraction-attempts.ts",
+    "brand:icons": "node scripts/generate-brand-icons.mjs",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:seed": "prisma db seed"

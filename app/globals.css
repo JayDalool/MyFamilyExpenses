@@ -6,10 +6,19 @@
   color-scheme: light;
 }
 
+html {
+  /* iOS Safari: don't inflate text in landscape / standalone mode. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   @apply bg-slate-100 text-slate-900 antialiased;
   margin: 0;
-  min-height: 100vh;
+  min-height: 100vh; /* fallback */
+  min-height: 100dvh; /* mobile Safari: track the real visible viewport */
+  /* Quieter touch: no grey flash on taps (buttons/links keep their own states). */
+  -webkit-tap-highlight-color: transparent;
 }
 
 a {

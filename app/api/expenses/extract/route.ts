@@ -107,6 +107,17 @@ export async function POST(request: Request) {
       fileBytes,
     });
     const extraction = envelope.response;
+    // Safe, privacy-preserving OCR timing/per-engine status for observability.
+    // Carries only provider/status/code/timing — never raw OCR text, blocks, or
+    // receipt content. Spread into audit metadata below.
+    const ocrDiagnostics = envelope.diagnostics
+      ? {
+          ocrTotalDurationMs: envelope.diagnostics.totalDurationMs,
+          ocrSelectedProvider: envelope.diagnostics.selectedProvider,
+          ocrSelectedProviderDurationMs: envelope.diagnostics.selectedProviderDurationMs,
+          ocrEngines: envelope.diagnostics.engines,
+        }
+      : {};
 
     // Always return the extraction (Stage A): even with no confident fields it
     // carries ranked candidates, receipt type, multi-receipt detection, and
@@ -141,6 +152,7 @@ export async function POST(request: Request) {
         receiptType: extraction.receiptType,
         multipleReceipts: extraction.multipleReceipts,
         lowQuality,
+        ...ocrDiagnostics,
         ...(detected ? {} : { errorCode: lowQuality ? "LOW_QUALITY_IMAGE" : "OCR_NO_FIELDS" }),
       },
     });

@@ -134,13 +134,14 @@ export class PaddleOcrEngine implements OcrEngine {
     } catch (error) {
       // Timeout (abort) or network failure → controlled OCR error. Never
       // fabricate data and never fall back to mock.
-      const reason =
-        error instanceof Error && error.name === "AbortError"
-          ? `timed out after ${this.timeoutMs}ms`
-          : "could not be reached";
+      const timedOut = error instanceof Error && error.name === "AbortError";
+      const reason = timedOut
+        ? `timed out after ${this.timeoutMs}ms`
+        : "could not be reached";
       throw new OcrProviderError(
         "OCR_FAILED",
         `The OCR service ${reason}. You can continue and enter the invoice fields manually.`,
+        { timedOut },
       );
     } finally {
       clearTimeout(timeout);

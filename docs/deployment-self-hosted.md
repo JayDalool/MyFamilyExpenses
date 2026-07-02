@@ -107,6 +107,7 @@ If you use Windows + WSL2, use the Linux path inside WSL, not a Windows-mounted 
 | `TEMP_UPLOAD_ROOT` | Draft upload path | `/var/lib/myfamilyexpenses/tmp` |
 | `MAX_UPLOAD_MB` | Max upload size | `15` |
 | `OCR_PROVIDER` | OCR engine selector (`tesseract` \| `paddle` \| `mock` non-prod) | `tesseract` |
+| `OCR_STRATEGY` | Engine strategy (`single` \| `fallback` \| `parallel` \| `ensemble`) | `single` |
 | `OCR_SERVICE_URL` | Internal PaddleOCR sidecar URL (required when `OCR_PROVIDER=paddle`) | `http://ocr:8000` |
 | `OCR_TIMEOUT_MS` | Paddle request timeout; engine clamps to 1000–8000 | `7000` |
 | `RATE_LIMIT_LOGIN_PER_15M` | Login rate limit | `5` |
@@ -123,9 +124,18 @@ If you use Windows + WSL2, use the Linux path inside WSL, not a Windows-mounted 
 
 ### OCR provider note (current vs planned)
 
-- **Production: set `OCR_PROVIDER=tesseract`.** This is the only supported
-  production engine today. Image OCR runs in-process via `tesseract.js`; PDF OCR
-  is not supported yet and PDFs fall back to manual entry.
+- **Production: set `OCR_PROVIDER=tesseract` and `OCR_STRATEGY=single`.** This is
+  the only supported production configuration today: one known-good local engine
+  with a predictable latency profile. Image OCR runs in-process via
+  `tesseract.js`; PDF OCR is not supported yet and PDFs fall back to manual entry.
+- **Do not run `OCR_STRATEGY=ensemble` (or `parallel`) in production while the
+  engines run sequentially.** The orchestrator awaits the primary engine before
+  the secondary/legacy strategies start, so a slow or unreachable Paddle sidecar
+  makes every upload wait out Paddle's full timeout (`OCR_TIMEOUT_MS`, up to 8 s)
+  *before* Tesseract runs — the user pays Paddle's worst case first even when only
+  Tesseract ends up producing a result (`providersUsed=["tesseract"]`). Use
+  `ensemble`/`parallel` for local evaluation only; adopt `fallback` with Paddle
+  once it is validated. See `docs/ocr-multi-engine-strategy.md`.
 - **Local / test / dev only: `OCR_PROVIDER=mock`** for deterministic, synthetic
   output. The `mock` engine is **hard-blocked in production** (selecting it with
   `NODE_ENV=production` is a fatal config error).

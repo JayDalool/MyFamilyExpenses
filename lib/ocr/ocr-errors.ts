@@ -2,11 +2,16 @@ export type OcrErrorCode = "OCR_FAILED" | "PDF_NOT_SUPPORTED";
 
 export class OcrProviderError extends Error {
   readonly code: OcrErrorCode;
+  // True when the failure was a request/engine timeout (abort), as opposed to a
+  // network/protocol/decode error. Lets the orchestrator classify diagnostics as
+  // "timeout" vs "error" without inspecting (and risking leaking) the message.
+  readonly timedOut: boolean;
 
-  constructor(code: OcrErrorCode, message: string) {
+  constructor(code: OcrErrorCode, message: string, options?: { timedOut?: boolean }) {
     super(message);
     this.name = "OcrProviderError";
     this.code = code;
+    this.timedOut = options?.timedOut ?? false;
   }
 }
 

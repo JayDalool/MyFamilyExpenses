@@ -19,7 +19,9 @@ import { resolveTemplateMode, simulateTemplates } from "@/lib/ocr/templates/simu
 import { applyTemplate, resolveApplicationGate } from "@/lib/ocr/templates/application";
 import type {
   EngineResult,
+  OcrDiagnostics,
   OcrEngine,
+  OcrEngineDiagnostic,
   OcrExtractionEnvelope,
   OcrExtractionMeta,
   OcrInput,
@@ -95,16 +97,6 @@ function engineFor(name: KnownOcrProvider): OcrEngine {
   }
 }
 
-// Best-effort construction for a fallback engine — returns null instead of
-// throwing if that engine is unavailable (e.g. paddle without OCR_SERVICE_URL).
-function tryEngineFor(name: KnownOcrProvider): OcrEngine | null {
-  try {
-    return engineFor(name);
-  } catch {
-    return null;
-  }
-}
-
 // The other reliable engine to pair with the primary. mock has no fallback.
 function secondaryProviderName(primary: KnownOcrProvider): KnownOcrProvider | null {
   if (primary === "paddle") return "tesseract";
@@ -113,6 +105,38 @@ function secondaryProviderName(primary: KnownOcrProvider): KnownOcrProvider | nu
 }
 
 type EngineRun = { engineResult: EngineResult; parserResult: OcrResult };
+
+// Test-only seam (never used by routes): supply engine instances instead of
+// constructing the real ones. Providers absent from the map fall through to the
+// real `engineFor`, so a partial map only overrides the engines it names.
+export type RunExtractionOptions = {
+  engines?: Partial<Record<KnownOcrProvider, OcrEngine>>;
+};
+
+function makeEngineResolver(options?: RunExtractionOptions) {
+  return (name: KnownOcrProvider): OcrEngine => options?.engines?.[name] ?? engineFor(name);
+}
+
+// Classify a failed engine attempt into a SAFE diagnostic status + reason. This
+// deliberately never reads the error message (which may echo receipt content) —
+// only the error type, its stable code, and the timeout flag.
+function classifyEngineFailure(error: unknown): {
+  status: Exclude<OcrEngineStatusValue, "success" | "skipped">;
+  errorCode: string;
+  safeReason: string;
+} {
+  if (isOcrProviderError(error)) {
+    return error.timedOut
+      ? { status: "timeout", errorCode: error.code, safeReason: "timeout" }
+      : { status: "error", errorCode: error.code, safeReason: "provider_error" };
+  }
+  if (isOcrConfigError(error)) {
+    return { status: "error", errorCode: "OCR_CONFIG", safeReason: "config_error" };
+  }
+  return { status: "error", errorCode: "UNKNOWN", safeReason: "unexpected_error" };
+}
+
+type OcrEngineStatusValue = OcrEngineDiagnostic["status"];
 
 async function runEngineAndParse(
   engine: OcrEngine,
@@ -164,20 +188,51 @@ export function fallbackReasonFor(
  * The merged result is returned with provenance `meta`. Backward-compatible:
  * `single` strategy (default) behaves exactly like the prior single-engine path.
  */
-export async function runExtraction(input: OcrInput): Promise<OcrExtractionEnvelope> {
+export async function runExtraction(
+  input: OcrInput,
+  options?: RunExtractionOptions,
+): Promise<OcrExtractionEnvelope> {
+  const orchestrationStart = Date.now();
   const strategy = resolveOcrStrategy();
   const primaryName = resolveOcrProviderName();
 
+  const resolve = makeEngineResolver(options);
+  const tryResolve = (name: KnownOcrProvider): OcrEngine | null => {
+    try {
+      return resolve(name);
+    } catch {
+      return null;
+    }
+  };
+
+  // Safe, per-engine diagnostics (Phase 1). Never carries raw OCR text/blocks.
+  const engineDiagnostics: OcrEngineDiagnostic[] = [];
+  const successDuration = (run: EngineRun, start: number) =>
+    Math.max(0, Math.round(run.engineResult.durationMs ?? Date.now() - start));
+
   let primary: EngineRun | null = null;
   let primaryError: unknown = null;
-  try {
-    primary = await runEngineAndParse(engineFor(primaryName), input);
-  } catch (error) {
-    // Config errors are never recoverable. In single mode, surface any error.
-    if (strategy === "single" || isOcrConfigError(error)) {
-      throw error;
+  {
+    const start = Date.now();
+    try {
+      primary = await runEngineAndParse(resolve(primaryName), input);
+      engineDiagnostics.push({
+        provider: primaryName,
+        status: "success",
+        durationMs: successDuration(primary, start),
+      });
+    } catch (error) {
+      engineDiagnostics.push({
+        provider: primaryName,
+        durationMs: Math.max(0, Math.round(Date.now() - start)),
+        ...classifyEngineFailure(error),
+      });
+      // Config errors are never recoverable. In single mode, surface any error.
+      if (strategy === "single" || isOcrConfigError(error)) {
+        throw error;
+      }
+      primaryError = error;
     }
-    primaryError = error;
   }
 
   let secondary: EngineRun | null = null;
@@ -196,14 +251,42 @@ export async function runExtraction(input: OcrInput): Promise<OcrExtractionEnvel
             input.fileBytes,
           );
 
-    if (secondaryName && reason) {
-      const secondaryEngine = tryEngineFor(secondaryName);
-      if (secondaryEngine) {
+    if (secondaryName && !reason) {
+      // Primary was strong enough (fallback strategy): the secondary is
+      // intentionally not run. Record it as skipped for observability.
+      engineDiagnostics.push({
+        provider: secondaryName,
+        status: "skipped",
+        durationMs: 0,
+        safeReason: "not_needed",
+      });
+    } else if (secondaryName && reason) {
+      const secondaryEngine = tryResolve(secondaryName);
+      if (!secondaryEngine) {
+        // e.g. paddle selected as secondary without OCR_SERVICE_URL.
+        engineDiagnostics.push({
+          provider: secondaryName,
+          status: "skipped",
+          durationMs: 0,
+          safeReason: "engine_unavailable",
+        });
+      } else {
+        const start = Date.now();
         try {
           secondary = await runEngineAndParse(secondaryEngine, input);
           fallbackReason = reason;
-        } catch {
+          engineDiagnostics.push({
+            provider: secondaryName,
+            status: "success",
+            durationMs: successDuration(secondary, start),
+          });
+        } catch (error) {
           // Fallback is best-effort: a secondary failure must not break the flow.
+          engineDiagnostics.push({
+            provider: secondaryName,
+            durationMs: Math.max(0, Math.round(Date.now() - start)),
+            ...classifyEngineFailure(error),
+          });
           secondary = null;
         }
       }
@@ -305,10 +388,21 @@ export async function runExtraction(input: OcrInput): Promise<OcrExtractionEnvel
     }
   }
 
+  const diagnostics: OcrDiagnostics = {
+    engines: engineDiagnostics,
+    selectedProvider: primaryRun.engineResult.provider,
+    selectedProviderDurationMs: Math.max(
+      0,
+      Math.round(primaryRun.engineResult.durationMs ?? 0),
+    ),
+    totalDurationMs: Math.max(0, Math.round(Date.now() - orchestrationStart)),
+  };
+
   return {
     engineResult: primaryRun.engineResult,
     parserResult: result,
     response,
+    diagnostics,
     simulation,
     application,
   };

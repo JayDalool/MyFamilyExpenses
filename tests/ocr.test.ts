@@ -512,10 +512,11 @@ test("runExtraction returns the full internal envelope", async () => {
   await withEnv({ OCR_PROVIDER: "mock", NODE_ENV: "test" }, async () => {
     const envelope = await runExtraction({ fileName: "receipt.png" });
 
-    // Three seams: raw recognition, parsed fields, and the UI projection.
+    // Three seams: raw recognition, parsed fields, and the UI projection, plus
+    // additive internal-only diagnostics.
     assert.deepEqual(
       Object.keys(envelope).sort(),
-      ["application", "engineResult", "parserResult", "response", "simulation"],
+      ["application", "diagnostics", "engineResult", "parserResult", "response", "simulation"],
     );
 
     // engineResult carries provider-neutral recognition with a normalized score.
@@ -748,7 +749,7 @@ test("runExtraction with the paddle engine returns the full envelope", async () 
 
         assert.deepEqual(
           Object.keys(envelope).sort(),
-          ["application", "engineResult", "parserResult", "response", "simulation"],
+          ["application", "diagnostics", "engineResult", "parserResult", "response", "simulation"],
         );
         assert.equal(envelope.engineResult.provider, "paddle");
         assert.ok(

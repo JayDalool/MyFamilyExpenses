@@ -35,6 +35,50 @@ external AI — everything runs in-process.
   each engine's text, all merged with the same voting/agreement boosts. This is
   the "many readers, then vote" mode.
 
+### Recommended production configuration
+
+**Until Paddle is validated in production, use:**
+
+```dotenv
+OCR_PROVIDER=tesseract
+OCR_STRATEGY=single
+```
+
+This is the only configuration that runs one known-good local engine with a
+predictable latency profile and no dependency on the Paddle sidecar.
+
+**Do not use `ensemble` (or `parallel`) as the production default while the
+engines run sequentially.** In the current orchestrator the primary engine is
+awaited *before* the secondary/legacy strategies run, so a slow or unreachable
+Paddle sidecar makes the whole request wait on Paddle's full timeout window
+(`OCR_TIMEOUT_MS`, up to 8 s) **before** Tesseract even starts — the user pays
+Paddle's worst case plus Tesseract's time on every upload. An observed failure
+mode is a request that stored `providersUsed=["tesseract"]`: Paddle produced no
+usable result, but the request still absorbed Paddle's latency first. Ensemble
+also doubles CPU per receipt for a benefit that only materializes on genuinely
+ambiguous receipts.
+
+`ensemble`/`parallel` remain useful for **local evaluation** of a candidate
+Paddle deployment, and `fallback` (`OCR_PROVIDER=paddle` + `OCR_STRATEGY=fallback`)
+is the intended path once Paddle's reliability and latency are proven — it runs
+the second engine only when the primary result is weak. Neither should be the
+production default until then.
+
+### OCR diagnostics (observability)
+
+Every extraction now carries safe, internal-only diagnostics (attached to the
+extraction envelope; **never** returned to the client). For each engine attempt
+they record `provider`, `status` (`success` \| `timeout` \| `error` \| `skipped`),
+`durationMs`, and — for non-success — a stable `errorCode` and a fixed
+`safeReason`. Envelope-level fields track `selectedProvider`,
+`selectedProviderDurationMs` (the engine whose result was used) and
+`totalDurationMs` (the whole orchestration), so a slow/failed engine is visible
+distinctly from the result actually used. These diagnostics carry **no raw OCR
+text, blocks, receipt content, provider message strings, or other sensitive
+data**, and a safe subset is emitted to the audit log on `/extract`. This is how a
+"Paddle timed out, Tesseract answered" request becomes observable instead of
+silently slow.
+
 ### Engines vs parsers vs merger
 
 - **Engine** = OCR recognition (Paddle, Tesseract). Produces text + optional block

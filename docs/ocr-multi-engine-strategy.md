@@ -179,11 +179,14 @@ Each extraction response carries `meta` (optional, backward-compatible):
   `invoiceNumber` hitting a required `z.string()`) is gone.
 - **No-invoice receipts are saveable.** Bank/ATM and cash slips often have no
   invoice/reference number. The DB still requires a non-empty `invoiceNumber`, so
-  when one is genuinely absent the save route generates a **receipt label** from
-  merchant + date (e.g. `McDonalds-2018-01-01`, `Receipt-2024-06-11`). This label
-  is a storage value only — it is **never shown to the user as an OCR-detected
-  invoice number**, and the amount is **never** generated (wrong amount is worse
-  than blank).
+  when one is genuinely absent (and none was typed) the save route mints a
+  household-scoped **internal reference** (`AUTO-000001`, `AUTO-000002`, …) inside
+  the create transaction, under a per-household Postgres advisory lock so
+  concurrent saves never collide (Phase 2; see
+  [ocr-reliability-roadmap.md](./ocr-reliability-roadmap.md)). It is a storage
+  value only — **never shown as an OCR-detected/vendor invoice number** — and the
+  amount is **never** generated (a wrong amount is worse than a blank one). A
+  user-typed or confidently OCR-detected number is always used verbatim.
 - **Merchant extraction** pulls a vendor name from the top of the receipt (skipping
   address/phone/total/date lines) for use as the label fallback and for display.
 

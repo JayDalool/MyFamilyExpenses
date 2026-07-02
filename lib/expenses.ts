@@ -286,3 +286,56 @@ export async function softDeleteExpenseForUser(
     where: { id: expenseId, householdId: auth.householdId },
   });
 }
+
+// ── Generated internal invoice numbers ───────────────────────────────────────
+// When a receipt genuinely has no invoice/ticket/reference number (and the user
+// did not type one), we assign a household-scoped internal reference so the row
+// stays saveable. These are INTERNAL references — never presented as a
+// vendor-provided invoice number.
+
+export const INTERNAL_INVOICE_PREFIX = "AUTO-";
+const INTERNAL_INVOICE_PAD = 6;
+
+/** Format an internal reference, e.g. formatInternalInvoiceNumber(1) → "AUTO-000001". */
+export function formatInternalInvoiceNumber(sequence: number): string {
+  return `${INTERNAL_INVOICE_PREFIX}${String(sequence).padStart(INTERNAL_INVOICE_PAD, "0")}`;
+}
+
+/** True for a value this module generated (e.g. "AUTO-000001"), not a real invoice. */
+export function isInternalInvoiceNumber(value: string): boolean {
+  return new RegExp(`^${INTERNAL_INVOICE_PREFIX}\\d{${INTERNAL_INVOICE_PAD},}$`).test(
+    value.trim(),
+  );
+}
+
+/**
+ * Compute the next household-scoped internal invoice number ("AUTO-000001",
+ * "AUTO-000002", …).
+ *
+ * Race-safety WITHOUT a schema change: this takes a Postgres transaction-level
+ * advisory lock keyed by the household id, so two expenses saved at the same
+ * moment for the same household cannot mint the same number (the lock releases
+ * automatically when the surrounding transaction commits/rolls back). It MUST be
+ * called inside an interactive `prisma.$transaction` — the same transaction that
+ * then creates the expense. Zero-padding keeps lexical order equal to numeric
+ * order for the max-scan (holds through AUTO-999999 per household).
+ */
+export async function nextInternalInvoiceNumber(
+  tx: Prisma.TransactionClient,
+  householdId: string,
+): Promise<string> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${householdId}, 0))`;
+
+  const last = await tx.expense.findFirst({
+    where: { householdId, invoiceNumber: { startsWith: INTERNAL_INVOICE_PREFIX } },
+    orderBy: { invoiceNumber: "desc" },
+    select: { invoiceNumber: true },
+  });
+
+  const lastSequence = last
+    ? Number.parseInt(last.invoiceNumber.slice(INTERNAL_INVOICE_PREFIX.length), 10)
+    : 0;
+  const next = (Number.isFinite(lastSequence) && lastSequence > 0 ? lastSequence : 0) + 1;
+
+  return formatInternalInvoiceNumber(next);
+}

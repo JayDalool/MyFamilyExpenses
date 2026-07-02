@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getCurrentHousehold } from "@/lib/auth/session";
 import {
+  formatInternalInvoiceNumber,
   listExpensesPageForUser,
+  nextInternalInvoiceNumber,
   normalizeExpenseHistoryFilters,
   resolvePaidByUserId,
 } from "@/lib/expenses";
@@ -18,7 +20,6 @@ import {
   finalExpenseSchema,
   friendlyExpenseError,
 } from "@/lib/validation/expense";
-import { generateReceiptLabel } from "@/lib/ocr/receipt-label";
 import {
   computeFileSha256,
   consumeExtractionAttempt,
@@ -188,16 +189,19 @@ export async function POST(request: Request) {
       input.data.amount ??
       (ocrData.confidence.amount > 0 ? ocrData.amount : undefined);
 
-    // No invoice/reference on the receipt (bank/ATM, cash slip)? Generate a safe
-    // storage label from merchant + date so the save isn't blocked. This is NOT
-    // presented to the user as an OCR-detected invoice number, and we never
-    // generate the amount (wrong amount is worse than blank).
-    const invoiceForSave =
-      resolvedInvoice ?? generateReceiptLabel(ocrData.merchant, resolvedDate);
+    // No invoice/reference on the receipt (bank/ATM, cash slip) and none typed?
+    // We mint a household-scoped INTERNAL reference ("AUTO-000001") at save time
+    // inside the create transaction (below). It is never presented as an
+    // OCR-detected/vendor invoice number, and we never generate the amount (a
+    // wrong amount is worse than a blank one).
+    const willGenerateInvoice = !resolvedInvoice;
 
     const finalized = finalExpenseSchema.safeParse({
       categoryId: input.data.categoryId,
-      invoiceNumber: invoiceForSave,
+      // When we will generate the internal number, this placeholder only exists to
+      // validate the OTHER fields — it is never persisted (the real number is
+      // minted in the transaction).
+      invoiceNumber: resolvedInvoice ?? formatInternalInvoiceNumber(1),
       invoiceDate: resolvedDate,
       amount: resolvedAmount,
     });
@@ -215,22 +219,32 @@ export async function POST(request: Request) {
       );
     }
 
-    const expense = await prisma.expense.create({
-      data: {
-        userId: auth.user.id,
-        paidByUserId,
-        householdId: auth.householdId,
-        categoryId: finalized.data.categoryId,
-        invoiceNumber: finalized.data.invoiceNumber,
-        invoiceDate: new Date(`${finalized.data.invoiceDate}T00:00:00.000Z`),
-        amount: finalized.data.amount,
-        filePath: storedFile.relativePath,
-      },
-      include: {
-        category: true,
-        user: true,
-        paidByUser: { select: { id: true, name: true } },
-      },
+    // Create inside a transaction so the internal invoice number (when generated)
+    // is minted under a per-household advisory lock — concurrent saves can never
+    // collide. A user-typed or confidently OCR-detected invoice number is used
+    // verbatim and never overwritten.
+    const expense = await prisma.$transaction(async (tx) => {
+      const invoiceNumber = willGenerateInvoice
+        ? await nextInternalInvoiceNumber(tx, auth.householdId)
+        : finalized.data.invoiceNumber;
+
+      return tx.expense.create({
+        data: {
+          userId: auth.user.id,
+          paidByUserId,
+          householdId: auth.householdId,
+          categoryId: finalized.data.categoryId,
+          invoiceNumber,
+          invoiceDate: new Date(`${finalized.data.invoiceDate}T00:00:00.000Z`),
+          amount: finalized.data.amount,
+          filePath: storedFile.relativePath,
+        },
+        include: {
+          category: true,
+          user: true,
+          paidByUser: { select: { id: true, name: true } },
+        },
+      });
     });
 
     // Best-effort, single-use link to the trusted extraction attempt. Done AFTER
@@ -260,7 +274,7 @@ export async function POST(request: Request) {
         userId: auth.user.id,
         householdId: auth.householdId,
         final: {
-          invoiceNumber: finalized.data.invoiceNumber,
+          invoiceNumber: expense.invoiceNumber,
           invoiceDate: finalized.data.invoiceDate,
           amount: finalized.data.amount,
           categoryId: expense.categoryId,

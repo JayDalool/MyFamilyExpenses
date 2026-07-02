@@ -9,7 +9,7 @@ import type {
 
 // Bump when parser logic changes so persisted attempts can be attributed to the
 // rule version that produced them (used by ReceiptExtractionAttempt).
-export const PARSER_VERSION = "stage-a3";
+export const PARSER_VERSION = "phase2-amount-guards";
 
 type AmountToken = {
   value: number;
@@ -102,7 +102,7 @@ const CANADIAN_RECEIPT_PATTERN =
   /\b(?:gst|hst|pst|qst|interac|debit|visa|mastercard|amex|cad|canada)\b/i;
 
 const CARD_PAYMENT_PATTERN =
-  /\b(?:debit|visa|mastercard|interac|amex)\b/i;
+  /\b(?:credit(?:\s+card)?|debit|visa|mastercard|interac|amex)\b/i;
 
 type AmountRule = {
   pattern: RegExp;
@@ -126,6 +126,9 @@ const STRONG_AMOUNT_RULES: AmountRule[] = [
   { pattern: /\bbalance\s+due\b/i, score: 1.15, confidence: 0.92, label: "Balance Due" },
   { pattern: /\btotal\s+due\b/i, score: 1.12, confidence: 0.91, label: "Total Due" },
   { pattern: /\binvoice\s+total\b/i, score: 1.08, confidence: 0.9, label: "Invoice Total" },
+  // Final payable label used by some POS receipts. Guarded so "Sale No/#/ID"
+  // (an invoice/reference label) is NOT treated as an amount label.
+  { pattern: /\bsale\b(?!\s*(?:#|no|number|num|id))/i, score: 0.95, confidence: 0.85, label: "Sale" },
   { pattern: /\bamount\b/i, score: 0.74, confidence: 0.72, label: "Amount" },
   { pattern: /(?:^|\b)total(?:\b|$)/i, score: 0.98, confidence: 0.84, label: "Total" },
   // Bank deposit slips: lower confidence — a deposit is often not an expense and
@@ -136,14 +139,28 @@ const STRONG_AMOUNT_RULES: AmountRule[] = [
   { pattern: /\bvisa\b/i, score: 0.66, confidence: 0.73, label: "Visa" },
   { pattern: /\bmastercard\b/i, score: 0.66, confidence: 0.73, label: "Mastercard" },
   { pattern: /\bamex\b/i, score: 0.64, confidence: 0.72, label: "Amex" },
+  // Card-tender lines confirm a total but are only supporting evidence — kept at
+  // the same low weight as the other card brands, never a strong final total.
+  { pattern: /\bcredit(?:\s+card)?\b/i, score: 0.66, confidence: 0.73, label: "Credit Card" },
 ];
+
+// Labels that PROVE a line is the final payable total. Used to suppress the
+// tendered/balance/account penalties on genuine total lines (e.g. "Balance Due"),
+// while still penalizing look-alikes like "Amount tendered".
+const STRONG_FINAL_TOTAL_PATTERN =
+  /\b(?:grand\s+total|net\s+total|amount\s+paid|total\s+paid|payment\s+total|amount\s+due|balance\s+due|total\s+due|invoice\s+total)\b/i;
 
 const NEGATIVE_AMOUNT_PATTERNS = {
   subtotal: /\bsub[\s-]?total\b/i,
   tax: /\b(?:tax|gst|pst|hst|qst|vat|iva)\b/i,
   taxTotal: /\b(?:tax\s+total|total\s+tax)\b/i,
+  // Fees/surcharges are never the payable total. Critically this also catches the
+  // misleading "Fee total $0.00" line (which otherwise matches the generic Total
+  // label) so a $0.00 fee line can never be chosen as the expense amount.
+  fee: /\b(?:fee|fees|surcharge)\b/i,
   tip: /\btip\b/i,
   change: /\bchange\b/i,
+  cashback: /\bcash\s*back\b/i,
   tendered: /\b(?:cash|tender(?:ed)?|paid\s+out)\b/i,
   discount: /\b(?:discount|savings?)\b/i,
   rounding: /\bround(?:ing)?\b/i,
@@ -195,6 +212,14 @@ const INVOICE_LABEL_RULES: InvoiceLabelRule[] = [
     confidence: 0.92,
     strength: "strong",
     label: "Transaction No",
+  },
+  {
+    pattern:
+      /\bticket\s*(?:#|no\.?|number|num|id)?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9/.-]{2,31})\b/i,
+    score: 1.1,
+    confidence: 0.9,
+    strength: "strong",
+    label: "Ticket No",
   },
   {
     pattern:
@@ -262,6 +287,7 @@ const SPLIT_INVOICE_LABEL_RULES: InvoiceLabelRule[] = [
   { pattern: /\binvoice\s*(?:#|no\.?|number|num|id)?\b/i, score: 1.04, confidence: 0.88, strength: "strong", label: "Invoice No" },
   { pattern: /\binv\s*(?:#|no\.?|number|num|id)?\b/i, score: 1, confidence: 0.85, strength: "strong", label: "Invoice No" },
   { pattern: /\b(?:transaction|trans|txn|trn)(?!\s+date)\s*(?:#|no\.?|number|num|id)?\b/i, score: 1.02, confidence: 0.87, strength: "strong", label: "Transaction No" },
+  { pattern: /\bticket\s*(?:#|no\.?|number|num|id)?\b/i, score: 1.0, confidence: 0.86, strength: "strong", label: "Ticket No" },
   { pattern: /\border\s*(?:#|no\.?|number|num|id)?\b/i, score: 0.94, confidence: 0.84, strength: "strong", label: "Order No" },
   { pattern: /\bref(?:erence)?\s*(?:#|no\.?|number|num|id)?\b/i, score: 0.86, confidence: 0.8, strength: "strong", contextGuard: "payment", label: "Reference No" },
   { pattern: /\b(?:check|cheque)\s*(?:#|no\.?|number|num|id)?\b/i, score: 0.82, confidence: 0.78, strength: "strong", label: "Cheque No" },
@@ -1220,6 +1246,14 @@ function buildAmountCandidates(
         notes.push("tax");
       }
 
+      // "Fee total" / "Total fee" / "Service fee" / surcharge — never the payable
+      // total, even though "fee total" matches the generic Total label above.
+      if (NEGATIVE_AMOUNT_PATTERNS.fee.test(contextLine)) {
+        score -= 0.9;
+        confidence = clampConfidence(confidence - 0.2);
+        notes.push("fee");
+      }
+
       if (NEGATIVE_AMOUNT_PATTERNS.tip.test(contextLine)) {
         score -= 0.4;
         notes.push("tip");
@@ -1230,7 +1264,19 @@ function buildAmountCandidates(
         notes.push("change");
       }
 
-      if (NEGATIVE_AMOUNT_PATTERNS.tendered.test(contextLine) && !positiveRule) {
+      if (NEGATIVE_AMOUNT_PATTERNS.cashback.test(contextLine)) {
+        score -= 0.85;
+        confidence = clampConfidence(confidence - 0.2);
+        notes.push("cash back");
+      }
+
+      // Cash/amount tendered is not the payable total. Penalize unless the line is
+      // a proven strong final total (so "Amount tendered" is caught even though it
+      // matches the generic "Amount" label).
+      if (
+        NEGATIVE_AMOUNT_PATTERNS.tendered.test(contextLine) &&
+        !STRONG_FINAL_TOTAL_PATTERN.test(contextLine)
+      ) {
         score -= 0.3;
         notes.push("cash tendered");
       }
@@ -1251,15 +1297,21 @@ function buildAmountCandidates(
       }
 
       // Bank/ATM noise that must never be chosen as the expense amount. "Balance
-      // due" stays positive because it sets positiveRule, so these only fire on
-      // bare balances / account numbers.
-      if (NEGATIVE_AMOUNT_PATTERNS.balance.test(contextLine) && !positiveRule) {
+      // Due" is exempt (it is a proven final total), so these only fire on bare
+      // balances ("Available Balance") / account numbers.
+      if (
+        NEGATIVE_AMOUNT_PATTERNS.balance.test(contextLine) &&
+        !STRONG_FINAL_TOTAL_PATTERN.test(contextLine)
+      ) {
         score -= 0.95;
         confidence = clampConfidence(confidence - 0.2);
         notes.push("balance");
       }
 
-      if (NEGATIVE_AMOUNT_PATTERNS.account.test(contextLine) && !positiveRule) {
+      if (
+        NEGATIVE_AMOUNT_PATTERNS.account.test(contextLine) &&
+        !STRONG_FINAL_TOTAL_PATTERN.test(contextLine)
+      ) {
         score -= 0.95;
         confidence = clampConfidence(confidence - 0.2);
         notes.push("account number");
@@ -1559,9 +1611,17 @@ function pickBestAmount(
     return null;
   }
 
+  // Never auto-pick a $0.00 total when any plausible non-zero amount exists on the
+  // receipt — a misleading "Fee total $0.00" line must never win over the real
+  // "Total $144.48". An explicit zero total is only acceptable on a genuine
+  // zero-balance slip that has no non-zero candidate at all.
+  const hasNonZeroCandidate = candidates.some((candidate) => candidate.value !== 0);
+
   for (const candidate of candidates) {
-    if (candidate.value === 0 && !EXPLICIT_TOTAL_LABELS.has(candidate.sourceLabel)) {
-      continue;
+    if (candidate.value === 0) {
+      if (hasNonZeroCandidate || !EXPLICIT_TOTAL_LABELS.has(candidate.sourceLabel)) {
+        continue;
+      }
     }
     return candidate;
   }

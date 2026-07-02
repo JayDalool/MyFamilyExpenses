@@ -74,6 +74,7 @@ type OcrFieldRowProps = {
   onChange: (v: string) => void;
   type: "text" | "date" | "number";
   placeholder?: string;
+  hint?: string;
 };
 
 function OcrFieldRow({
@@ -85,6 +86,7 @@ function OcrFieldRow({
   onChange,
   type,
   placeholder,
+  hint,
 }: OcrFieldRowProps) {
   const isHigh = confidence >= 0.7;
   const isMedium = confidence >= 0.4 && confidence < 0.7;
@@ -169,6 +171,8 @@ function OcrFieldRow({
           </button>
         )}
       </div>
+
+      {hint && <p className="mt-1.5 text-xs text-slate-500">{hint}</p>}
     </div>
   );
 }
@@ -1024,6 +1028,7 @@ export function ExpenseWizard({
                 placeholder="e.g. INV-2026-001"
                 type="text"
                 value={invoiceNumber}
+                hint="Optional. If left blank, we assign an internal reference (e.g. AUTO-000001) — this is our own reference, not a vendor invoice number."
               />
               <OcrFieldRow
                 confidence={extracted?.confidence.invoiceDate ?? 0}

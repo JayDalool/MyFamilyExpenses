@@ -4,6 +4,7 @@ import { bankNoRefFixture } from "./bank-no-ref";
 import { cashBackFixture } from "./cash-back";
 import { cashReceiptFixture } from "./cash-receipt";
 import { debitSlipFixture } from "./debit-slip";
+import { feeTotalZeroFixture } from "./fee-total-zero";
 import { gasReceiptFixture } from "./gas-receipt";
 import { restaurantTipFixture } from "./restaurant-tip";
 import { retailBasicFixture } from "./retail-basic";
@@ -24,4 +25,5 @@ export const RECEIPT_FIXTURES = [
   cashBackFixture,
   debitSlipFixture,
   retailTaxChangeFixture,
+  feeTotalZeroFixture,
 ] as const;

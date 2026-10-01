@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { Prisma, type HouseholdInvite, type HouseholdRole } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import type { AuthContext } from "@/lib/auth/session";
-import { canInviteMembers, canInviteRole } from "@/lib/auth/permissions";
+import { canInviteMembers, canInviteRole, canRevokeInviteRole } from "@/lib/auth/permissions";
 import { buildInternalUrl } from "@/lib/auth/app-url";
 import { writeAuditLog } from "@/lib/audit";
 import {
@@ -439,10 +439,7 @@ export async function revokeHouseholdInvite(auth: AuthContext, inviteId: string)
   });
 
   if (!invite) return null;
-  if (
-    auth.householdRole !== "OWNER" &&
-    !canInviteRole(auth.householdRole, invite.role, auth.householdKind)
-  ) {
+  if (auth.householdRole !== "OWNER" && !canRevokeInviteRole(auth.householdRole, invite.role)) {
     throw new InviteAcceptanceError("inviter_not_authorized", auth.householdId);
   }
 

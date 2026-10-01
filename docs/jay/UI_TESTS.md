@@ -1,3 +1,4 @@
+- [ ] STEP-3 · Company invite and role lists offer no Viewer
 - [ ] STEP-3 · Create a company on /household, lands back on /household
 - [ ] STEP-3 · Company shows Admin / Accountant / Employee labels, family shows Member
 - [ ] STEP-3 · Employee dashboard hides Member snapshot and the Reports button

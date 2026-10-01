@@ -5,10 +5,10 @@ import type { AuthContext } from "../lib/auth/session";
 import {
   canCreateExpense,
   canInviteRole,
+  canRevokeInviteRole,
   canManageExpense,
   canViewReports,
   expenseReadScope,
-  isCompanyEmployee,
   isRoleAllowedForKind,
   isScopedToOwnExpenses,
 } from "../lib/auth/permissions";
@@ -36,7 +36,7 @@ test("accountant can read everything but cannot create, edit, or delete", () => 
 
 test("company employee is limited to their own expenses and cannot see reports", () => {
   const employee = auth("MEMBER", "COMPANY", "emp-1");
-  assert.equal(isCompanyEmployee(employee), true);
+  assert.equal(isScopedToOwnExpenses(employee), true);
   assert.equal(canViewReports(employee), false);
   assert.deepEqual(expenseReadScope(employee), {
     OR: [{ userId: "emp-1" }, { paidByUserId: "emp-1" }],
@@ -46,7 +46,7 @@ test("company employee is limited to their own expenses and cannot see reports",
 
 test("family members keep seeing every expense and report", () => {
   const member = auth("MEMBER", "FAMILY");
-  assert.equal(isCompanyEmployee(member), false);
+  assert.equal(isScopedToOwnExpenses(member), false);
   assert.equal(canViewReports(member), true);
   assert.deepEqual(expenseReadScope(member), {});
 });
@@ -104,4 +104,13 @@ test("nobody can invite a viewer into a company", () => {
   assert.equal(canInviteRole("ADMIN", "VIEWER", "COMPANY"), false);
   assert.equal(canInviteRole("OWNER", "VIEWER", "FAMILY"), true);
   assert.equal(canInviteRole("ADMIN", "VIEWER", "FAMILY"), true);
+});
+
+test("an admin can still revoke a VIEWER invite left over in a company", () => {
+  // The role can no longer be invited there, but cleanup must not be blocked.
+  assert.equal(canInviteRole("ADMIN", "VIEWER", "COMPANY"), false);
+  assert.equal(canRevokeInviteRole("ADMIN", "VIEWER"), true);
+  assert.equal(canRevokeInviteRole("OWNER", "VIEWER"), true);
+  assert.equal(canRevokeInviteRole("MEMBER", "VIEWER"), false);
+  assert.equal(canRevokeInviteRole("ADMIN", "OWNER"), false);
 });

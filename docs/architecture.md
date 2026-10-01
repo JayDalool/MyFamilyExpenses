@@ -241,7 +241,7 @@ FAMILY household:
 | Delete expense           |   Yes |           Yes | Optional |         No |     No |
 | Manage categories        |   Yes |           Yes |       No |         No |     No |
 | Invite members           |   Yes |           Yes |       No |         No |     No |
-| Remove members           |   Yes |           Yes |       No |         No |     No |
+| Remove members           |   Yes |            No |       No |         No |     No |
 | Change member role       |   Yes |            No |       No |         No |     No |
 | Change billing           |   Yes | No by default |       No |         No |     No |
 | Delete/archive household |   Yes |            No |       No |         No |     No |
@@ -259,7 +259,7 @@ COMPANY household (`MEMBER` is shown as "Employee"; `VIEWER` is not assignable):
 | Delete expense           |   Yes |           Yes | Optional |         No |
 | Manage categories        |   Yes |           Yes |       No |         No |
 | Invite members           |   Yes |           Yes |       No |         No |
-| Remove members           |   Yes |           Yes |       No |         No |
+| Remove members           |   Yes |            No |       No |         No |
 | Change member role       |   Yes |            No |       No |         No |
 | Change billing           |   Yes | No by default |       No |         No |
 | Delete/archive household |   Yes |            No |       No |         No |

@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
-import { getCurrentHousehold, getCurrentUser, setActiveHouseholdCookie } from "@/lib/auth/session";
-import { isReadOnlyRole } from "@/lib/auth/permissions";
+import { getCurrentUser, setActiveHouseholdCookie } from "@/lib/auth/session";
 import { buildDefaultCategories } from "@/lib/categories/default-categories";
 import { MAX_OWNED_COMPANIES, hasReachedCompanyLimit } from "@/lib/households";
 import { writeAuditLog } from "@/lib/audit";
@@ -19,16 +18,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: { message: "Authentication required." } }, { status: 401 });
   }
 
-  // A read-only role in the active household (accountant or viewer) does not
-  // get to create workspaces.
-  const auth = await getCurrentHousehold();
-  if (auth && isReadOnlyRole(auth.householdRole)) {
-    return NextResponse.json(
-      { error: { message: "Your role cannot create a company." } },
-      { status: 403 },
-    );
-  }
-
+  // Creating your own workspace is not a privileged action: the per-user cap is
+  // what stops abuse. A role check here would have to read the caller's active
+  // household, which says nothing about a new, unrelated one.
   if (await hasReachedCompanyLimit(user.id)) {
     return NextResponse.json(
       {

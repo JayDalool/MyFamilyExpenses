@@ -4,7 +4,7 @@ import { HouseholdManagement } from "@/components/household-management";
 import { Badge } from "@/components/ui";
 import { requireHouseholdMember } from "@/lib/auth/session";
 import { roleLabel } from "@/lib/auth/role-labels";
-import { canInviteMembers, canInviteRole, canManageMembers } from "@/lib/auth/permissions";
+import { canInviteMembers, canManageMembers, canRevokeInviteRole } from "@/lib/auth/permissions";
 import { prisma } from "@/lib/db/prisma";
 
 export const dynamic = "force-dynamic";
@@ -63,7 +63,7 @@ export default async function HouseholdPage() {
               ...invite,
               canRevoke:
                 auth.householdRole === "OWNER" ||
-                canInviteRole(auth.householdRole, invite.role, auth.householdKind),
+                canRevokeInviteRole(auth.householdRole, invite.role),
               expiresAt: invite.expiresAt.toISOString(),
             }))}
           members={members.map((membership) => ({

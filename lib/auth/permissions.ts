@@ -10,12 +10,6 @@ export function canCreateExpense(auth: AuthContext) {
   return !isReadOnlyRole(auth.householdRole);
 }
 
-// In a COMPANY household an employee (MEMBER) sees only their own expenses.
-// In a FAMILY household every member sees every expense.
-export function isCompanyEmployee(auth: Pick<AuthContext, "householdKind" | "householdRole">) {
-  return auth.householdKind === "COMPANY" && auth.householdRole === "MEMBER";
-}
-
 // A COMPANY has four roles: Owner, Admin, Accountant and Employee (MEMBER).
 // VIEWER is a FAMILY-only role. It is not offered or accepted in a COMPANY
 // because "Viewer" reads as *less* access than Employee while VIEWER is not
@@ -73,18 +67,31 @@ export function canViewOcrLearning(auth: AuthContext) {
   return auth.householdRole === "OWNER" || auth.householdRole === "ADMIN";
 }
 
+// Who outranks whom, ignoring the household kind. Owners hand out anything but
+// OWNER; admins hand out the non-privileged roles.
+function outranksForRole(granterRole: HouseholdRole, grantedRole: HouseholdRole) {
+  if (grantedRole === "OWNER") return false;
+  if (granterRole === "OWNER") return true;
+  return (
+    granterRole === "ADMIN" &&
+    (grantedRole === "MEMBER" || grantedRole === "VIEWER" || grantedRole === "ACCOUNTANT")
+  );
+}
+
 export function canInviteRole(
   inviterRole: HouseholdRole,
   invitedRole: HouseholdRole,
   kind: HouseholdKind,
 ) {
-  if (invitedRole === "OWNER") return false;
   if (!isRoleAllowedForKind(invitedRole, kind)) return false;
-  if (inviterRole === "OWNER") return true;
-  return (
-    inviterRole === "ADMIN" &&
-    (invitedRole === "MEMBER" || invitedRole === "VIEWER" || invitedRole === "ACCOUNTANT")
-  );
+  return outranksForRole(inviterRole, invitedRole);
+}
+
+// Revoking is cleanup, not granting, so it ignores the household kind. An admin
+// must still be able to revoke a VIEWER invite left over from before the
+// household became a company, even though they can no longer create one.
+export function canRevokeInviteRole(revokerRole: HouseholdRole, invitedRole: HouseholdRole) {
+  return outranksForRole(revokerRole, invitedRole);
 }
 
 export function canManageMembers(auth: AuthContext) {

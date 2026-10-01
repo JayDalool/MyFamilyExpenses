@@ -1,0 +1,6 @@
+- [ ] STEP-3 · Create a company on /household, lands back on /household
+- [ ] STEP-3 · Company shows Admin / Accountant / Employee labels, family shows Member
+- [ ] STEP-3 · Employee dashboard hides Member snapshot and the Reports button
+- [ ] STEP-3 · Employee opening /reports is sent back to /dashboard
+- [ ] STEP-3 · Accountant sees every receipt and can export, cannot add or edit
+- [ ] STEP-3 · Company form and role labels at phone width

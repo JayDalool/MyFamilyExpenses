@@ -1,7 +1,11 @@
 import type { Prisma } from "@prisma/client";
 import type { AuthContext } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
-import { canAssignExpenseToOthers } from "@/lib/auth/permissions";
+import {
+  canAssignExpenseToOthers,
+  expenseReadScope,
+  isReadOnlyRole,
+} from "@/lib/auth/permissions";
 import {
   expenseHistoryFiltersSchema,
   type ExpenseHistoryFilters,
@@ -126,6 +130,7 @@ export function buildExpenseWhereInput(
   const where: Prisma.ExpenseWhereInput = {
     householdId: auth.householdId,
     deletedAt: null,
+    ...expenseReadScope(auth),
   };
 
   if (filters.invoiceNumber) {
@@ -214,6 +219,7 @@ export async function getExpenseForUser(
       id: expenseId,
       householdId: auth.householdId,
       deletedAt: null,
+      ...expenseReadScope(auth),
     },
     include: expenseRelationInclude,
   });
@@ -240,7 +246,7 @@ export async function updateExpenseForUser(
   data: Prisma.ExpenseUncheckedUpdateManyInput,
   db: ExpenseStore = prisma,
 ) {
-  if (auth.householdRole === "VIEWER") {
+  if (isReadOnlyRole(auth.householdRole)) {
     return null;
   }
 
@@ -264,7 +270,7 @@ export async function softDeleteExpenseForUser(
   deletedByUserId: string,
   db: ExpenseStore = prisma,
 ) {
-  if (auth.householdRole === "VIEWER") {
+  if (isReadOnlyRole(auth.householdRole)) {
     return null;
   }
 

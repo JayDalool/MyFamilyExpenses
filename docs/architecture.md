@@ -208,30 +208,64 @@ A user must not see another household’s data unless they are a member.
 
 ### 5.2 Household Membership
 
-Recommended roles:
+Roles (see `docs/adr/0001-organizations-as-households.md`):
 
 ```text
 OWNER
 ADMIN
-MEMBER
-VIEWER
+MEMBER      shown as "Employee" in a COMPANY household
+ACCOUNTANT  read and export only
+VIEWER      FAMILY only — not offered or accepted in a COMPANY
 ```
 
-Role permissions:
+A household has a `kind`: `FAMILY` (default) or `COMPANY`. The rules differ by kind,
+so the permission table below is split.
 
-| Action                   | OWNER |         ADMIN |   MEMBER | VIEWER |
-| ------------------------ | ----: | ------------: | -------: | -----: |
-| View dashboard           |   Yes |           Yes |      Yes |    Yes |
-| View reports             |   Yes |           Yes |      Yes |    Yes |
-| Add expense              |   Yes |           Yes |      Yes |     No |
-| Edit own expense         |   Yes |           Yes |      Yes |     No |
-| Edit any expense         |   Yes |           Yes | Optional |     No |
-| Delete expense           |   Yes |           Yes | Optional |     No |
-| Manage categories        |   Yes |           Yes |       No |     No |
-| Invite members           |   Yes |           Yes |       No |     No |
-| Remove members           |   Yes |           Yes |       No |     No |
-| Change billing           |   Yes | No by default |       No |     No |
-| Delete/archive household |   Yes |            No |       No |     No |
+In a `COMPANY`, a `MEMBER` sees only expenses they entered or paid and has no
+household reports, totals or exports. An `ACCOUNTANT` sees every expense and report
+but cannot create, edit or delete. `VIEWER` is rejected for a company by
+`isRoleAllowedForKind` (`lib/auth/permissions.ts`) in the invite, invite-acceptance
+and role-change paths, and the role dropdowns do not offer it. A `VIEWER` row that
+predates the rule is still read-scoped to its own expenses by `isScopedToOwnExpenses`.
+
+FAMILY household:
+
+| Action                   | OWNER |         ADMIN |   MEMBER | ACCOUNTANT | VIEWER |
+| ------------------------ | ----: | ------------: | -------: | ---------: | -----: |
+| View dashboard           |   Yes |           Yes |      Yes |        Yes |    Yes |
+| See every expense        |   Yes |           Yes |      Yes |        Yes |    Yes |
+| View reports / export    |   Yes |           Yes |      Yes |        Yes |    Yes |
+| Add expense              |   Yes |           Yes |      Yes |         No |     No |
+| Edit own expense         |   Yes |           Yes |      Yes |         No |     No |
+| Edit any expense         |   Yes |           Yes | Optional |         No |     No |
+| Delete expense           |   Yes |           Yes | Optional |         No |     No |
+| Manage categories        |   Yes |           Yes |       No |         No |     No |
+| Invite members           |   Yes |           Yes |       No |         No |     No |
+| Remove members           |   Yes |            No |       No |         No |     No |
+| Change member role       |   Yes |            No |       No |         No |     No |
+| Change billing           |   Yes | No by default |       No |         No |     No |
+| Delete/archive household |   Yes |            No |       No |         No |     No |
+
+COMPANY household (`MEMBER` is shown as "Employee"; `VIEWER` is not assignable):
+
+| Action                   | OWNER |         ADMIN |   MEMBER | ACCOUNTANT |
+| ------------------------ | ----: | ------------: | -------: | ---------: |
+| View dashboard           |   Yes |           Yes |      Yes |        Yes |
+| See every expense        |   Yes |           Yes |   **No** |        Yes |
+| View reports / export    |   Yes |           Yes |   **No** |        Yes |
+| Add expense              |   Yes |           Yes |      Yes |         No |
+| Edit own expense         |   Yes |           Yes |      Yes |         No |
+| Edit any expense         |   Yes |           Yes | Optional |         No |
+| Delete expense           |   Yes |           Yes | Optional |         No |
+| Manage categories        |   Yes |           Yes |       No |         No |
+| Invite members           |   Yes |           Yes |       No |         No |
+| Remove members           |   Yes |            No |       No |         No |
+| Change member role       |   Yes |            No |       No |         No |
+| Change billing           |   Yes | No by default |       No |         No |
+| Delete/archive household |   Yes |            No |       No |         No |
+
+One user may own at most `MAX_OWNED_COMPANIES` (5) companies
+(`app/api/households/company/route.ts`); a read-only role cannot create one at all.
 
 ---
 

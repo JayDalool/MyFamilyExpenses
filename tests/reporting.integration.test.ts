@@ -111,13 +111,14 @@ async function createFixture() {
   });
 
   const households = [
-    { id: householdA.id, name: householdA.name, role: "OWNER" as const },
-    { id: householdB.id, name: householdB.name, role: "MEMBER" as const },
+    { id: householdA.id, name: householdA.name, kind: "FAMILY" as const, role: "OWNER" as const },
+    { id: householdB.id, name: householdB.name, kind: "FAMILY" as const, role: "MEMBER" as const },
   ];
   const authA: AuthContext = {
     user: { id: userA.id, name: userA.name, email: userA.email, role: userA.role },
     householdId: householdA.id,
     householdName: householdA.name,
+    householdKind: "FAMILY",
     householdRole: "OWNER",
     households,
   };

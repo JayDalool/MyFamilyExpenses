@@ -1,7 +1,7 @@
 import { Prisma, type HouseholdRole } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import type { AuthContext } from "@/lib/auth/session";
-import { canManageMembers } from "@/lib/auth/permissions";
+import { canManageMembers, isRoleAllowedForKind } from "@/lib/auth/permissions";
 import { writeAuditLog } from "@/lib/audit";
 
 export class HouseholdMemberError extends Error {
@@ -30,6 +30,14 @@ export async function changeHouseholdMemberRole(
 ) {
   if (!canManageMembers(auth)) {
     throw new HouseholdMemberError("Owner access required.", "forbidden");
+  }
+
+  // VIEWER is a FAMILY-only role; a company uses Admin, Accountant and Employee.
+  if (!isRoleAllowedForKind(role, auth.householdKind)) {
+    throw new HouseholdMemberError(
+      "That role is not available in a company workspace.",
+      "forbidden",
+    );
   }
 
   const result = await prisma.$transaction(async (tx) => {

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { canViewReports } from "@/lib/auth/permissions";
 import { getCurrentHousehold } from "@/lib/auth/session";
 import { getDashboardSummary, getReportData, parseReportFilters } from "@/lib/reporting";
 
@@ -11,6 +12,13 @@ export async function GET(request: Request) {
     return NextResponse.json(
       { error: { message: "Authentication required." } },
       { status: 401 },
+    );
+  }
+
+  if (!canViewReports(auth)) {
+    return NextResponse.json(
+      { error: { message: "You do not have access to household reports." } },
+      { status: 403 },
     );
   }
 

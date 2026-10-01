@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { HouseholdRole } from "@prisma/client";
+import type { HouseholdKind, HouseholdRole } from "@prisma/client";
 import type { AuthContext } from "../lib/auth/session";
 import {
   canCreateExpense,
@@ -12,13 +12,18 @@ import {
   canViewOcrLearning,
 } from "../lib/auth/permissions";
 
-function auth(role: HouseholdRole, userId = "user-a"): AuthContext {
+function auth(
+  role: HouseholdRole,
+  userId = "user-a",
+  kind: HouseholdKind = "FAMILY",
+): AuthContext {
   return {
     user: { id: userId, name: "Role User", email: "role@example.com", role: "USER" },
     householdId: "household-a",
     householdName: "Role Household",
+    householdKind: kind,
     householdRole: role,
-    households: [{ id: "household-a", name: "Role Household", role }],
+    households: [{ id: "household-a", name: "Role Household", kind, role }],
   };
 }
 
@@ -60,11 +65,11 @@ test("household role permission matrix is enforced", () => {
   assert.equal(canViewOcrLearning(member), false);
   assert.equal(canViewOcrLearning(viewer), false);
 
-  assert.equal(canInviteRole("OWNER", "ADMIN"), true);
-  assert.equal(canInviteRole("OWNER", "OWNER"), false);
-  assert.equal(canInviteRole("ADMIN", "MEMBER"), true);
-  assert.equal(canInviteRole("ADMIN", "VIEWER"), true);
-  assert.equal(canInviteRole("ADMIN", "ADMIN"), false);
-  assert.equal(canInviteRole("MEMBER", "VIEWER"), false);
-  assert.equal(canInviteRole("VIEWER", "VIEWER"), false);
+  assert.equal(canInviteRole("OWNER", "ADMIN", "FAMILY"), true);
+  assert.equal(canInviteRole("OWNER", "OWNER", "FAMILY"), false);
+  assert.equal(canInviteRole("ADMIN", "MEMBER", "FAMILY"), true);
+  assert.equal(canInviteRole("ADMIN", "VIEWER", "FAMILY"), true);
+  assert.equal(canInviteRole("ADMIN", "ADMIN", "FAMILY"), false);
+  assert.equal(canInviteRole("MEMBER", "VIEWER", "FAMILY"), false);
+  assert.equal(canInviteRole("VIEWER", "VIEWER", "FAMILY"), false);
 });

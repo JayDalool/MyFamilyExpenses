@@ -62,8 +62,11 @@ function makeAuth(
     user,
     householdId: fixture.household.id,
     householdName: fixture.household.name,
+    householdKind: "FAMILY",
     householdRole,
-    households: [{ id: fixture.household.id, name: fixture.household.name, role: householdRole }],
+    households: [
+      { id: fixture.household.id, name: fixture.household.name, kind: "FAMILY", role: householdRole },
+    ],
   };
 }
 

@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db/prisma";
-import type { HouseholdRole } from "@prisma/client";
+import type { HouseholdKind, HouseholdRole } from "@prisma/client";
 import { getValidatedSessionSecret } from "@/lib/auth/session-secret";
 import { shouldUseSecureCookies } from "@/lib/auth/cookies";
 
@@ -19,6 +19,7 @@ export type AuthContext = {
   user: CurrentUser;
   householdId: string;
   householdName: string;
+  householdKind: HouseholdKind;
   householdRole: HouseholdRole;
   households: HouseholdOption[];
 };
@@ -26,6 +27,7 @@ export type AuthContext = {
 export type HouseholdOption = {
   id: string;
   name: string;
+  kind: HouseholdKind;
   role: HouseholdRole;
 };
 
@@ -143,7 +145,7 @@ export async function getCurrentHousehold(): Promise<AuthContext | null> {
   const requestedHouseholdId = cookieStore.get(ACTIVE_HOUSEHOLD_COOKIE_NAME)?.value;
   const memberships = await prisma.membership.findMany({
     where: { userId: user.id, removedAt: null },
-    include: { household: { select: { id: true, name: true } } },
+    include: { household: { select: { id: true, name: true, kind: true } } },
     orderBy: { createdAt: "asc" },
   });
   const membership =
@@ -154,10 +156,12 @@ export async function getCurrentHousehold(): Promise<AuthContext | null> {
     user,
     householdId: membership.householdId,
     householdName: membership.household.name,
+    householdKind: membership.household.kind,
     householdRole: membership.role,
     households: memberships.map((item) => ({
       id: item.householdId,
       name: item.household.name,
+      kind: item.household.kind,
       role: item.role,
     })),
   };

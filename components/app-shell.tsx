@@ -5,6 +5,7 @@ import type { AuthContext } from "@/lib/auth/session";
 import { LogoutButton } from "@/components/logout-button";
 import { HouseholdSwitcher } from "@/components/household-switcher";
 import { NavLink } from "@/components/nav-link";
+import { canViewReports } from "@/lib/auth/permissions";
 
 type AppShellProps = {
   auth: AuthContext;
@@ -29,6 +30,7 @@ function TabIcon({ d }: { d: string }) {
 }
 
 export function AppShell({ auth, children }: AppShellProps) {
+  const showReports = canViewReports(auth);
   return (
     <div className="min-h-screen bg-slate-100">
       {/* pt-[env(...)] keeps the header clear of the iPhone notch in standalone
@@ -64,14 +66,16 @@ export function AppShell({ auth, children }: AppShellProps) {
             >
               Expenses
             </NavLink>
-            <NavLink
-              activeClassName={DESKTOP_ACTIVE}
-              className={DESKTOP_LINK}
-              href="/reports"
-              inactiveClassName={DESKTOP_INACTIVE}
-            >
-              Reports
-            </NavLink>
+            {showReports ? (
+              <NavLink
+                activeClassName={DESKTOP_ACTIVE}
+                className={DESKTOP_LINK}
+                href="/reports"
+                inactiveClassName={DESKTOP_INACTIVE}
+              >
+                Reports
+              </NavLink>
+            ) : null}
             <NavLink
               activeClassName={DESKTOP_ACTIVE}
               className={DESKTOP_LINK}
@@ -140,15 +144,17 @@ export function AppShell({ auth, children }: AppShellProps) {
             <span className="text-xs font-medium">Expenses</span>
           </NavLink>
 
-          <NavLink
-            activeClassName={TAB_ACTIVE}
-            className={TAB_LINK}
-            href="/reports"
-            inactiveClassName={TAB_INACTIVE}
-          >
-            <TabIcon d="M9 17v-6m6 6V7m4 14H5a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2z" />
-            <span className="text-xs font-medium">Reports</span>
-          </NavLink>
+          {showReports ? (
+            <NavLink
+              activeClassName={TAB_ACTIVE}
+              className={TAB_LINK}
+              href="/reports"
+              inactiveClassName={TAB_INACTIVE}
+            >
+              <TabIcon d="M9 17v-6m6 6V7m4 14H5a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2z" />
+              <span className="text-xs font-medium">Reports</span>
+            </NavLink>
+          ) : null}
 
           <NavLink
             activeClassName={TAB_ACTIVE}

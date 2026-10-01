@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { AppShell } from "@/components/app-shell";
 import { Alert, Button, ButtonLink, Card, Input, Pagination, Select, Table } from "@/components/ui";
+import { redirect } from "next/navigation";
+import { canViewReports } from "@/lib/auth/permissions";
 import { requireHouseholdMember } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import {
@@ -49,6 +51,7 @@ function buildExportHref(filters: ReportFilters, format: "pdf" | "csv" | "xlsx")
 
 export default async function ReportsPage({ searchParams }: ReportsPageProps) {
   const auth = await requireHouseholdMember();
+  if (!canViewReports(auth)) redirect("/dashboard");
   const parsedFilters = parseReportFilters((await searchParams) ?? {});
   const filters = parsedFilters.filters;
   const [report, categories, memberships] = await Promise.all([

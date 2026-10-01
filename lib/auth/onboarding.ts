@@ -17,7 +17,7 @@ interface OnboardUserInput {
   oauthAccount?: OAuthAccountInput;
   initialMembership?: {
     householdId: string;
-    role: "ADMIN" | "MEMBER" | "VIEWER";
+    role: "ADMIN" | "MEMBER" | "ACCOUNTANT" | "VIEWER";
   };
 }
 

@@ -1,9 +1,15 @@
 import Link from "next/link";
 import { AppShell } from "@/components/app-shell";
 import { ButtonLink, Card } from "@/components/ui";
-import { canCreateExpense } from "@/lib/auth/permissions";
+import { canCreateExpense, canViewReports, expenseReadScope } from "@/lib/auth/permissions";
 import { requireHouseholdMember } from "@/lib/auth/session";
-import { getDashboardAnalytics, getDashboardSummary } from "@/lib/reporting";
+import { prisma } from "@/lib/db/prisma";
+import { listExpensesForUser } from "@/lib/expenses";
+import {
+  getDashboardAnalytics,
+  getDashboardSummary,
+  getReportDateRange,
+} from "@/lib/reporting";
 import { formatCurrency } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -59,13 +65,45 @@ function MemberSnapshot({
 export default async function DashboardPage() {
   const auth = await requireHouseholdMember();
   const { user, householdId } = auth;
-  const [summary, analytics] = await Promise.all([
-    getDashboardSummary(householdId),
-    getDashboardAnalytics(householdId),
-  ]);
+  const showHouseholdTotals = canViewReports(auth);
 
-  const recentExpenses = summary.recentExpenses.slice(0, 5);
-  const { total: monthTotal, count: monthCount } = analytics.thisMonth;
+  // Company employees only see their own expenses, so household-wide totals
+  // and the member breakdown are replaced by figures scoped to them.
+  const { recentExpenses, monthTotal, monthCount, memberRows } = showHouseholdTotals
+    ? await (async () => {
+        const [summary, analytics] = await Promise.all([
+          getDashboardSummary(householdId),
+          getDashboardAnalytics(householdId),
+        ]);
+        return {
+          recentExpenses: summary.recentExpenses.slice(0, 5),
+          monthTotal: analytics.thisMonth.total,
+          monthCount: analytics.thisMonth.count,
+          memberRows: analytics.memberBreakdownThisMonth,
+        };
+      })()
+    : await (async () => {
+        const range = getReportDateRange({ period: "month" });
+        const [recent, month] = await Promise.all([
+          listExpensesForUser(auth, { pageSize: 5 }),
+          prisma.expense.aggregate({
+            where: {
+              householdId,
+              deletedAt: null,
+              invoiceDate: { gte: range.from, lte: range.to },
+              ...expenseReadScope(auth),
+            },
+            _sum: { amount: true },
+            _count: { _all: true },
+          }),
+        ]);
+        return {
+          recentExpenses: recent,
+          monthTotal: Number(month._sum.amount ?? 0),
+          monthCount: month._count._all,
+          memberRows: null,
+        };
+      })();
   const averageExpense = monthCount > 0 ? monthTotal / monthCount : 0;
   const canAdd = canCreateExpense(auth);
 
@@ -145,16 +183,20 @@ export default async function DashboardPage() {
             )}
           </Card>
 
-          <Card className="p-6">
-            <h2 className="text-lg font-semibold text-slate-900">Member snapshot</h2>
-            <p className="text-xs text-slate-500">Spending this month, by member (paid by).</p>
-            <MemberSnapshot rows={analytics.memberBreakdownThisMonth} />
-          </Card>
+          {memberRows ? (
+            <Card className="p-6">
+              <h2 className="text-lg font-semibold text-slate-900">Member snapshot</h2>
+              <p className="text-xs text-slate-500">Spending this month, by member (paid by).</p>
+              <MemberSnapshot rows={memberRows} />
+            </Card>
+          ) : null}
         </section>
 
         {/* Quiet secondary links — hidden on mobile where the bottom nav already covers them */}
         <div className="hidden flex-wrap gap-3 sm:flex">
-          <ButtonLink href="/reports" variant="secondary">Reports</ButtonLink>
+          {showHouseholdTotals ? (
+            <ButtonLink href="/reports" variant="secondary">Reports</ButtonLink>
+          ) : null}
           <ButtonLink href="/categories" variant="secondary">Categories</ButtonLink>
           <ButtonLink href="/household" variant="secondary">Household</ButtonLink>
         </div>

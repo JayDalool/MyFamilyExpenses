@@ -1,3 +1,4 @@
+- [ ] STEP-3 · After merge run prisma migrate deploy on the app container · docs/deployment-self-hosted.md
 - [ ] STEP-2 · Create Backblaze bucket, key, restic password, offsite.env · docs/backups.md
 - [ ] STEP-2 · Plug in and mount USB disk at /mnt/mfe-backup · docs/backups.md
 - [ ] STEP-2 · Run backup-offsite.sh once, add 04:00 cron line · docs/backups.md

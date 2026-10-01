@@ -55,6 +55,10 @@ web_modules/
 # TypeScript cache
 *.tsbuildinfo
 
+# Next.js generated type reference. `next dev` and `next build` write
+# different contents, so a committed copy only churns.
+next-env.d.ts
+
 # Optional npm cache directory
 .npm
 
@@ -89,6 +93,9 @@ web_modules/
 out
 playwright-report/
 test-results/
+
+# Local Compose overrides (host-specific ports etc.)
+docker-compose.override.yml
 
 # Local uploads
 uploads/*

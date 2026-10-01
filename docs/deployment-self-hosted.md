@@ -158,10 +158,17 @@ deploy. To run it:
 docker compose -f docker-compose.yml -f docker-compose.ocr.yml up -d
 ```
 
-Including `docker-compose.ocr.yml` does two things: it starts the internal `ocr`
-service and sets `OCR_PROVIDER=paddle`, `OCR_SERVICE_URL=http://ocr:8000`, and
-`OCR_TIMEOUT_MS` on the `app` container. With the base `docker-compose.yml`
-alone, none of this exists and the app stays on Tesseract.
+Including `docker-compose.ocr.yml` starts the internal `ocr` service and sets
+`OCR_SERVICE_URL=http://ocr:8000` and `OCR_TIMEOUT_MS` on the `app` container.
+With the base `docker-compose.yml` alone, none of this exists.
+
+It does **not** switch the app to Paddle. Paddle measured slower and less
+accurate than Tesseract on this hardware, so the override defaults to
+`OCR_PROVIDER=tesseract` / `OCR_STRATEGY=single` and both are read from the
+environment (`${OCR_PROVIDER:-tesseract}`). To benchmark Paddle, set
+`OCR_PROVIDER=paddle` (and optionally `OCR_STRATEGY=ensemble`) in the
+environment file while the override is included. Measure before making it the
+default again.
 
 Hard requirements (enforced by the override / service):
 
@@ -177,6 +184,24 @@ Hard requirements (enforced by the override / service):
   one worker per container and scale with replicas; CPU/memory limits are set in
   the override. See `services/paddle-ocr/README.md` for model preloading and
   tuning.
+
+### Local Compose overrides
+
+`docker-compose.yml` is the clean default deploy and is committed as such: the
+app publishes `127.0.0.1:3000:3000` and Postgres is not published at all. Do not
+edit it for one host.
+
+Host-specific changes go in `docker-compose.override.yml`, which Compose loads
+automatically and which is gitignored. Start from the committed template:
+
+```bash
+cp docker-compose.override.example.yml docker-compose.override.yml
+```
+
+The template covers the two cases that come up here: moving the app to a free
+host port (`ports: !override` replaces the base list instead of appending to
+it, so port 3000 is not published as well), and a loopback-only Postgres
+mapping for psql or Prisma access. Keep both on `127.0.0.1`.
 
 ### Important deployment note
 

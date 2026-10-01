@@ -1,1 +1,2 @@
-- [ ] STEP-1 · Approve merge of phase5 into main · https://github.com/JayDalool/MyFamilyExpenses/pulls
+- [ ] STEP-2 · Add uploads backup cron line, then offsite copy · docs/backups.md
+- [ ] STEP-2 · Run DB restore drill into throwaway database · docs/backups.md

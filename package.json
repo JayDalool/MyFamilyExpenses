@@ -1,0 +1,57 @@
+{
+  "name": "myfamilyexpenses",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build --webpack",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "node --env-file-if-exists=.env.test --import tsx --test --test-concurrency=1 tests/**/*.test.ts",
+    "test:db:setup": "node --env-file=.env.test --import tsx prisma/setup-test-db.ts",
+    "test:db:teardown": "node --env-file=.env.test --import tsx prisma/teardown-test-db.ts",
+    "test:db": "node --env-file=.env.test --import tsx --test --test-concurrency=1 tests/*.integration.test.ts",
+    "test:ocr": "node --env-file-if-exists=.env.test --import tsx --test --test-concurrency=1 tests/ocr-learning.integration.test.ts tests/ocr-internal-guards.test.ts tests/ocr-diagnostics.test.ts tests/ocr-amount-guards.test.ts tests/ocr-receipt-fixtures.test.ts tests/phase2-invoice-fallback.integration.test.ts tests/permissions.test.ts",
+    "test:repeat-password-reset": "node --env-file-if-exists=.env.test --import tsx --test --test-concurrency=1 tests/phase3_5.integration.test.ts tests/password-reset.routes.integration.test.ts tests/password-reset-email.test.ts",
+    "test:e2e": "playwright test",
+    "maintenance:invite-rate-limits": "tsx prisma/cleanup-invite-rate-limits.ts",
+    "maintenance:password-reset-rate-limits": "tsx prisma/cleanup-password-reset-rate-limits.ts",
+    "maintenance:password-reset-tokens": "tsx prisma/cleanup-password-reset-tokens.ts",
+    "maintenance:extraction-attempts": "tsx prisma/cleanup-extraction-attempts.ts",
+    "brand:icons": "node scripts/generate-brand-icons.mjs",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:seed": "prisma db seed"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "bcryptjs": "^3.0.3",
+    "next": "^16.2.4",
+    "nodemailer": "^7.0.10",
+    "pdfkit": "^0.19.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "tesseract.js": "^7.0.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "@types/node": "^25.6.0",
+    "@types/nodemailer": "^8.0.0",
+    "@types/pdfkit": "^0.17.6",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "autoprefixer": "^10.5.0",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^16.2.4",
+    "postcss": "^8.5.10",
+    "prisma": "^6.19.3",
+    "tailwindcss": "^3.4.19",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  }
+}

@@ -1,50 +1,273 @@
 # MyFamilyExpenses
 
-A family expense tracker web application where multiple family members can log in, scan invoices, categorize expenses, and browse or report expenses by date range.
+MyFamilyExpenses is a self-hosted family expense tracker built with Next.js, TypeScript, Prisma, PostgreSQL, Tailwind CSS, and local file storage.
 
-## Core idea
+This MVP includes:
 
-Each family member can:
-- have their own user account
-- scan/upload invoice images
-- choose an expense category before scanning
-- let AI extract invoice number, invoice date, vendor, and total amount
-- browse past invoices by invoice number or date
-- view expense totals within selected date ranges
+- session-based login and logout
+- public signup with email verification
+- optional Google and Microsoft OAuth sign-in
+- admin-managed categories
+- invoice upload to local `/uploads`
+- expense saving with a pluggable local OCR provider
+- filtered expense history
+- expense detail pages with secure invoice preview/download
+- dashboard totals for today and this month
+- recent expense list
+- Docker support for PostgreSQL and the Next.js app
 
-## Planned categories
-- Groceries
-- Restaurant
-- Travel
-- Education
-- Utilities
-- Medical
-- Shopping
-- Transportation
-- Entertainment
-- Other
+## Tech stack
 
-## High-level features
-- Family user management
-- Expense category management
-- Invoice upload and scan
-- OCR/data extraction
-- Expense records
-- Invoice search
-- Date range reporting
-- Dashboard summaries
-- Role-based access
-
-## Planned stack
-- Frontend: Next.js
-- Backend: Next.js API routes or NestJS
+- Frontend and backend: Next.js App Router
+- Language: TypeScript
 - Database: PostgreSQL
 - ORM: Prisma
-- Auth: NextAuth or Clerk
-- Storage: Local for dev, S3-compatible later
-- OCR/AI extraction: pluggable service layer
+- Styling: Tailwind CSS
+- Authentication: custom session-based auth
+- Storage: local filesystem
+- OCR: local Tesseract.js provider behind a clean interface
 
-## Development approach
-- Claude Code: implementation
-- Codex: review, testing, validation
-- GitHub Actions: source of truth for CI
+## Exact local setup
+
+### 1. Create the environment file
+
+PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Bash:
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env` and set:
+
+```env
+SESSION_SECRET="use-a-long-random-string-here"
+APP_BASE_URL="http://localhost:3000"
+OCR_PROVIDER="tesseract"
+TESSERACT_CACHE_DIR=".cache/tesseract"
+OCR_DEBUG="false"
+SMTP_ENABLED="false"
+SEED_USER_PASSWORD="CHANGE_ME_seed_password"
+```
+
+The shared seed password is intentionally supplied through your local `.env` file so it is not committed to the repository.
+If you want public password signup outside local development, also configure the SMTP variables from [.env.example](./.env.example) so verification emails can be delivered.
+
+### 2. Install dependencies
+
+```bash
+npm install
+```
+
+This repo keeps `ignore-scripts=true` in `.npmrc` so `npm install` works cleanly on Windows with `tesseract.js`. Prisma generation still happens when you run the migration command below.
+
+### 3. Database setup
+
+Option A, easiest for local use with Docker:
+
+```bash
+docker compose up -d db
+```
+
+Set matching values in `.env` first:
+
+```env
+POSTGRES_DB=mfe_db
+POSTGRES_USER=mfe_user
+POSTGRES_PASSWORD=CHANGE_ME_strong_password
+DATABASE_URL=postgresql://mfe_user:CHANGE_ME_strong_password@localhost:5432/mfe_db
+```
+
+Option B, use your own PostgreSQL service:
+
+1. Create a database named `mfe_db` or another database name of your choice
+2. Update `DATABASE_URL` in `.env`
+
+Example SQL:
+
+```sql
+CREATE DATABASE mfe_db;
+```
+
+### 4. Run the database migration
+
+```bash
+npx prisma migrate dev
+```
+
+This creates the schema and generates the Prisma client.
+
+### 5. Seed the users and categories
+
+```bash
+npm run prisma:seed
+```
+
+The seed is idempotent and ensures these users always exist:
+
+- `jay16ca@gmail.com` with `ADMIN` role
+- `osamadaloul@hotmail.com` with `USER` role
+
+Re-running the seed keeps categories in sync and resets both seed-user passwords to the value in `SEED_USER_PASSWORD`.
+
+### Safe reseed for real local use
+
+If you need to restore the seeded users safely:
+
+1. Keep `SEED_USER_PASSWORD="CHANGE_ME_seed_password"` in your local `.env`
+2. Run `npm run prisma:seed`
+3. Log in again with one of the seeded accounts below
+
+The seed is idempotent. It only upserts the two known users and default categories, so it is safe to re-run without deleting existing expenses.
+
+### 6. Start the app
+
+```bash
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000).
+
+### 7. Public signup and OAuth setup
+
+- Password signup now sends a verification link before the real account is activated.
+- In local development, if `SMTP_ENABLED=false`, the signup response shows a local preview link instead of sending email.
+- For real public signup, set `SMTP_ENABLED=true` and fill in `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, and `SMTP_FROM`.
+- Google and Microsoft sign-in stay hidden unless their `*_OAUTH_ENABLED` flag is `true` and the required client ID, client secret, and redirect URI are configured.
+
+## First login instructions
+
+Use either seeded email:
+
+- `jay16ca@gmail.com`
+- `osamadaloul@hotmail.com`
+
+Use the password from your local `.env`:
+
+- `CHANGE_ME_seed_password`
+
+For the first admin login, use:
+
+- email: `jay16ca@gmail.com`
+- password: `CHANGE_ME_seed_password`
+
+For the first standard-user login, use:
+
+- email: `osamadaloul@hotmail.com`
+- password: `CHANGE_ME_seed_password`
+
+## Project structure
+
+```text
+app/
+  api/
+  auth/
+  dashboard/
+  expenses/
+  categories/
+components/
+lib/
+  auth/
+  db/
+  ocr/
+  validation/
+prisma/
+public/
+uploads/
+docs/
+tests/
+```
+
+## API routes
+
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `POST /api/auth/signup`
+- `GET /api/auth/signup/verify`
+- `GET /api/auth/oauth/google/start`
+- `GET /api/auth/oauth/google/callback`
+- `GET /api/auth/oauth/microsoft/start`
+- `GET /api/auth/oauth/microsoft/callback`
+- `GET /api/categories`
+- `POST /api/categories`
+- `GET /api/expenses`
+- `GET /api/expenses/:id`
+- `GET /api/expenses/:id/file`
+- `POST /api/expenses`
+- `GET /api/reports/summary`
+
+## Testing
+
+Unit tests need no database; the DB-backed integration tests
+(`tests/*.integration.test.ts`) require a safe, disposable test Postgres. Set one
+up once with `cp .env.test.example .env.test` and `npm run test:db:setup`, then run
+`npm test` (full suite), `npm run test:db` (integration only), or `npm run test:ocr`
+(OCR verification slice). See [docs/testing.md](./docs/testing.md) for the full
+workflow and the test-database safety guard.
+
+## Docker
+
+To run the full stack with Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+The app will be available at [http://localhost:3000](http://localhost:3000).
+
+## Existing database migration
+
+If you are upgrading an existing database that already has users, categories, and expenses:
+
+1. Stop the running app container or service.
+2. Apply migration 1 only:
+
+```bash
+npx prisma db execute --file prisma/migrations/20260501000001_add_household_tables_nullable/migration.sql --schema prisma/schema.prisma
+npx prisma migrate resolve --applied 20260501000001_add_household_tables_nullable
+```
+
+3. Run the backfill:
+
+```bash
+npx tsx prisma/backfill.ts
+```
+
+4. Verify the backfill reports:
+- zero expenses with `NULL household_id`
+- zero categories with `NULL household_id`
+- zero cross-household category references
+- zero expenses missing a matching membership
+
+5. Apply migration 2 and start the app again:
+
+```bash
+npx prisma migrate deploy
+docker compose up -d app
+```
+
+Use [CHECKLIST.md](./CHECKLIST.md) as the full server rollout checklist.
+
+## OCR setup notes
+
+- Image OCR now runs locally with `tesseract.js`.
+- The parser is tuned first for Canadian receipt patterns, including GST/HST/PST/QST, Interac, and common Canadian POS date/receipt-number layouts, while still keeping US-style receipts supported.
+- On the first OCR run on a machine, Tesseract.js may download the English language file once and cache it in `TESSERACT_CACHE_DIR`.
+- If you want a fully local language setup, place `eng.traineddata.gz` in a local folder and set `TESSERACT_LANG_PATH` to that folder path.
+- In development only, set `OCR_DEBUG=true` to log and store raw OCR text under `OCR_DEBUG_DIR` for parser tuning.
+- PDF OCR is not supported in this MVP yet. PDF uploads still work, but users must enter the invoice number, invoice date, and amount manually.
+- The OCR provider seam is still preserved, so a stronger local OCR engine or PDF OCR provider can replace Tesseract later without changing the route contract.
+- **PaddleOCR (experimental, opt-in).** An internal PaddleOCR sidecar can be used instead of Tesseract for image OCR. Production default stays `OCR_PROVIDER=tesseract`. To try Paddle: start the OCR service, then set `OCR_PROVIDER=paddle` and `OCR_SERVICE_URL=http://ocr:8000` (the engine is [lib/ocr/paddle-ocr-engine.ts](./lib/ocr/paddle-ocr-engine.ts); the service lives in [services/paddle-ocr](./services/paddle-ocr/README.md)). The service is internal-only (no public port), receives file bytes (never paths), has no DB access or app secrets, and returns an app-owned DTO with scores normalized 0–1. Paddle does not add OCR persistence yet. See [docs/deployment-self-hosted.md](./docs/deployment-self-hosted.md) for the Compose wiring.
+
+## Notes
+
+- Uploaded files are stored in the local `uploads` directory.
+- The OCR engine is selected by `OCR_PROVIDER` in `.env`. Allowed values are `tesseract` (default), `mock` (local/test/dev only — blocked in production), and `paddle` (experimental; requires `OCR_SERVICE_URL`). Unknown values fail closed (e.g. `paddleocr` is not accepted — the canonical name is `paddle`).
+- The OCR seam splits recognition from parsing: the engine boundary and types live in [lib/ocr/types.ts](./lib/ocr/types.ts), engines in [lib/ocr/tesseract-ocr-engine.ts](./lib/ocr/tesseract-ocr-engine.ts), [lib/ocr/mock-ocr-engine.ts](./lib/ocr/mock-ocr-engine.ts), and [lib/ocr/paddle-ocr-engine.ts](./lib/ocr/paddle-ocr-engine.ts) (scores normalized to 0–1 via [lib/ocr/normalize.ts](./lib/ocr/normalize.ts)), and the Node-owned parser in [lib/ocr/ocr-parsing.ts](./lib/ocr/ocr-parsing.ts). The orchestrator and provider selection live in [lib/ocr/ocr.service.ts](./lib/ocr/ocr.service.ts).
+- Architecture and deployment docs are available in the [docs](./docs) folder.
+- Use `npm run prisma:seed` any time you want to safely restore the seeded users and category list on a local machine.

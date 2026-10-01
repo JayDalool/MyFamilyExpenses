@@ -106,25 +106,102 @@ If you use Windows + WSL2, use the Linux path inside WSL, not a Windows-mounted 
 | `INVOICE_STORAGE_ROOT` | Final invoice storage path | `/var/lib/myfamilyexpenses/invoices` |
 | `TEMP_UPLOAD_ROOT` | Draft upload path | `/var/lib/myfamilyexpenses/tmp` |
 | `MAX_UPLOAD_MB` | Max upload size | `15` |
-| `OCR_PROVIDER` | OCR backend selector | `paddleocr` |
-| `OCR_SERVICE_URL` | Internal OCR worker URL | `http://ocr-worker:8000` |
-| `OCR_TIMEOUT_MS` | OCR request timeout | `45000` |
+| `OCR_PROVIDER` | OCR engine selector (`tesseract` \| `paddle` \| `mock` non-prod) | `tesseract` |
+| `OCR_STRATEGY` | Engine strategy (`single` \| `fallback` \| `parallel` \| `ensemble`) | `single` |
+| `OCR_SERVICE_URL` | Internal PaddleOCR sidecar URL (required when `OCR_PROVIDER=paddle`) | `http://ocr:8000` |
+| `OCR_TIMEOUT_MS` | Paddle request timeout; engine clamps to 1000–8000 | `7000` |
 | `RATE_LIMIT_LOGIN_PER_15M` | Login rate limit | `5` |
 | `RATE_LIMIT_UPLOADS_PER_HOUR` | Upload rate limit | `30` |
-| `SMTP_ENABLED` | Enable self-service password reset | `false` |
+| `SMTP_ENABLED` | Enable signup verification + self-service password reset emails | `false` |
 | `SMTP_HOST` | SMTP host | `smtp.example.com` |
 | `SMTP_PORT` | SMTP port | `587` |
+| `SMTP_SECURE` | Use TLS on connect (set true for port 465) | `false` |
 | `SMTP_USER` | SMTP username | `mailer@example.com` |
 | `SMTP_PASSWORD` | SMTP password | secret |
 | `SMTP_FROM` | Sender address | `noreply@example.com` |
+| `DEV_SHOW_VERIFICATION_LINKS` | Return signup verification and password reset URLs in API responses (development only, ignored in production) | `false` |
 | `LOG_LEVEL` | App log verbosity | `info` |
+
+### OCR provider note (current vs planned)
+
+- **Production: set `OCR_PROVIDER=tesseract` and `OCR_STRATEGY=single`.** This is
+  the only supported production configuration today: one known-good local engine
+  with a predictable latency profile. Image OCR runs in-process via
+  `tesseract.js`; PDF OCR is not supported yet and PDFs fall back to manual entry.
+- **Do not run `OCR_STRATEGY=ensemble` (or `parallel`) in production while the
+  engines run sequentially.** The orchestrator awaits the primary engine before
+  the secondary/legacy strategies start, so a slow or unreachable Paddle sidecar
+  makes every upload wait out Paddle's full timeout (`OCR_TIMEOUT_MS`, up to 8 s)
+  *before* Tesseract runs — the user pays Paddle's worst case first even when only
+  Tesseract ends up producing a result (`providersUsed=["tesseract"]`). Use
+  `ensemble`/`parallel` for local evaluation only; adopt `fallback` with Paddle
+  once it is validated. See `docs/ocr-multi-engine-strategy.md`.
+- **Local / test / dev only: `OCR_PROVIDER=mock`** for deterministic, synthetic
+  output. The `mock` engine is **hard-blocked in production** (selecting it with
+  `NODE_ENV=production` is a fatal config error).
+- Unknown `OCR_PROVIDER` values **fail closed** with a config error — there is no
+  silent fallback to mock. The canonical Paddle name is **`paddle`**;
+  `paddleocr` is **not** accepted and fails closed.
+- **PaddleOCR is scaffolded and experimental — not the production default.** An
+  internal sidecar (`services/paddle-ocr`) and the Next engine
+  (`lib/ocr/paddle-ocr-engine.ts`) exist and are wired through Docker Compose,
+  but the model has not been load-tested here. Keep `OCR_PROVIDER=tesseract` in
+  production until you have validated Paddle yourself. It does **not** add OCR
+  persistence yet.
+
+#### Enabling the PaddleOCR sidecar (opt-in)
+
+The OCR service is in a separate Compose override so it never starts in a normal
+deploy. To run it:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.ocr.yml up -d
+```
+
+Including `docker-compose.ocr.yml` does two things: it starts the internal `ocr`
+service and sets `OCR_PROVIDER=paddle`, `OCR_SERVICE_URL=http://ocr:8000`, and
+`OCR_TIMEOUT_MS` on the `app` container. With the base `docker-compose.yml`
+alone, none of this exists and the app stays on Tesseract.
+
+Hard requirements (enforced by the override / service):
+
+- **No public port** — the `ocr` service is reachable only on the internal
+  Docker network via the name `ocr`. Never add a host `ports:` mapping for it.
+- **No uploads volume mounted into Paddle** — bytes are passed per request.
+- **No DB access and no app secrets** are given to the OCR service.
+- The Next engine enforces a **5–8 s total timeout** (`OCR_TIMEOUT_MS`, clamped
+  to 1000–8000 ms). On timeout / network error / 5xx / malformed response it
+  returns a controlled OCR error so the user can enter fields manually — it does
+  **not** fabricate data and does **not** silently fall back to mock.
+- Resources: PaddleOCR is CPU-bound (~1–4 s/image) and needs ~1–2 GB RAM. Run
+  one worker per container and scale with replicas; CPU/memory limits are set in
+  the override. See `services/paddle-ocr/README.md` for model preloading and
+  tuning.
 
 ### Important deployment note
 
 If `SMTP_ENABLED=false`:
 
-- hide the public forgot-password flow
-- keep admin reset available
+- the public signup verification flow fails closed in production (signup
+  returns 503 because the operator cannot send the verification email)
+- the public forgot-password flow ALWAYS returns the same generic 202 body
+  (`"If an account exists for that email, a password reset link has been
+  sent."`) — even when SMTP is unavailable. This is intentional: returning a
+  503 only when SMTP is broken AND the email is recognised would leak account
+  existence to an attacker probing the endpoint. The operator-visible failure
+  is recorded via `console.error` and an `auth.password_reset.email_unavailable`
+  audit-log entry. Configure SMTP in production so reset emails are actually
+  delivered.
+- keep admin reset available via direct DB operations
+
+If `SMTP_ENABLED=true`:
+
+- password reset tokens are valid for 30 minutes and are single-use
+- raw reset tokens are never stored in the database or written to logs
+- reset URLs are never logged in production; only the SHA-256 hash of the
+  token appears in audit logs
+- successful password resets invalidate every active session for that user,
+  so the user is forced to sign in again with the new password
 
 ## 6. Docker Compose blueprint
 
@@ -461,3 +538,28 @@ the migration path stays straightforward.
 - PostgreSQL SQL dump and pg_dump guidance: [postgresql.org/docs/17/backup-dump.html](https://www.postgresql.org/docs/17/backup-dump.html) and [postgresql.org/docs/current/app-pgdump.html](https://www.postgresql.org/docs/current/app-pgdump.html)
 - OWASP session management: [cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)
 - OWASP file upload: [cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html](https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html)
+
+## Invite rate-limit maintenance
+
+Required before production: schedule `npm run maintenance:invite-rate-limits`
+to run daily. It removes database-backed invite limiter rows older than the
+safe retention window. Do not deploy Phase 3 without this recurring cleanup
+being scheduled and monitored.
+
+## Password reset maintenance
+
+Required before production: schedule both of the following daily.
+
+- `npm run maintenance:password-reset-rate-limits` — drops rows in
+  `password_reset_rate_limit_attempts` past their 7-day retention. The table
+  is append-only during operation; cleanup keeps it bounded and the
+  windowed-count queries fast.
+- `npm run maintenance:password-reset-tokens` — drops rows in
+  `password_reset_tokens` whose `expires_at` or `used_at` is past the 7-day
+  retention window. Used tokens stay around briefly for forensic correlation
+  (each row's `requested_ip_hash` / `requested_user_agent_hash` confirms which
+  session burned the link), then are dropped. Never affects active tokens.
+
+Both helpers are no-ops when there is nothing to delete; they are safe to run
+on a quiet system. Do not deploy Phase 3.5 without both jobs scheduled and
+monitored.

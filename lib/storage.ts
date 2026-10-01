@@ -1,0 +1,50 @@
+import crypto from "node:crypto";
+import path from "node:path";
+import { mkdir, unlink, writeFile } from "node:fs/promises";
+
+const MIME_TO_EXTENSION: Record<string, string> = {
+  "application/pdf": ".pdf",
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+  "image/webp": ".webp",
+};
+
+export function getUploadRoot() {
+  const configuredRoot = process.env.UPLOAD_DIR;
+
+  if (configuredRoot && path.isAbsolute(configuredRoot)) {
+    return configuredRoot;
+  }
+
+  return path.join(/* turbopackIgnore: true */ process.cwd(), "uploads");
+}
+
+export async function saveUploadedFile(
+  file: File,
+  fileBytes?: Uint8Array,
+  detectedMimeType?: string | null,
+) {
+  const uploadRoot = getUploadRoot();
+  const extension =
+    MIME_TO_EXTENSION[detectedMimeType ?? file.type] ?? path.extname(file.name) ?? "";
+  const fileName = `${crypto.randomUUID()}${extension}`;
+  const absolutePath = path.join(uploadRoot, fileName);
+  const bytes = fileBytes ?? new Uint8Array(await file.arrayBuffer());
+
+  await mkdir(uploadRoot, { recursive: true });
+  await writeFile(absolutePath, Buffer.from(bytes));
+
+  return {
+    fileName,
+    absolutePath,
+    relativePath: path.posix.join("uploads", fileName),
+  };
+}
+
+export async function deleteUploadedFile(absolutePath: string): Promise<void> {
+  try {
+    await unlink(absolutePath);
+  } catch {
+    // File may already be gone — not an error worth surfacing
+  }
+}

@@ -4,20 +4,21 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { csrfFetch } from "@/lib/auth/csrf-client";
 import { Alert, Badge, Button, Card, Input, Select, Table } from "@/components/ui";
+import { roleLabel } from "@/lib/auth/role-labels";
 
 type Member = {
   id: string;
   userId: string;
   name: string;
   email: string;
-  role: "OWNER" | "ADMIN" | "MEMBER" | "VIEWER";
+  role: "OWNER" | "ADMIN" | "MEMBER" | "VIEWER" | "ACCOUNTANT";
   joinedAt: string;
 };
 
 type Invite = {
   id: string;
   email: string | null;
-  role: "OWNER" | "ADMIN" | "MEMBER" | "VIEWER";
+  role: "OWNER" | "ADMIN" | "MEMBER" | "VIEWER" | "ACCOUNTANT";
   maxUses: number;
   usedCount: number;
   expiresAt: string;
@@ -25,12 +26,14 @@ type Invite = {
 };
 
 export function HouseholdManagement({
+  householdKind,
   currentRole,
   members,
   invites,
   canInvite,
   canManageMembers,
 }: {
+  householdKind: "FAMILY" | "COMPANY";
   currentRole: Member["role"];
   members: Member[];
   invites: Invite[];
@@ -42,7 +45,9 @@ export function HouseholdManagement({
   const [error, setError] = useState<string | null>(null);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const allowedInviteRoles =
-    currentRole === "OWNER" ? ["ADMIN", "MEMBER", "VIEWER"] : ["MEMBER", "VIEWER"];
+    currentRole === "OWNER"
+      ? ["ADMIN", "MEMBER", "ACCOUNTANT", "VIEWER"]
+      : ["MEMBER", "ACCOUNTANT", "VIEWER"];
 
   const mutate = (
     input: RequestInfo,
@@ -138,8 +143,10 @@ export function HouseholdManagement({
                         changeRole(member, event.target.value as Member["role"], event.currentTarget)
                       }
                     >
-                      {["OWNER", "ADMIN", "MEMBER", "VIEWER"].map((role) => (
-                        <option key={role} value={role}>{role}</option>
+                      {["OWNER", "ADMIN", "MEMBER", "ACCOUNTANT", "VIEWER"].map((role) => (
+                        <option key={role} value={role}>
+                          {roleLabel(role as Member["role"], householdKind)}
+                        </option>
                       ))}
                     </Select>
                     <Button
@@ -156,7 +163,9 @@ export function HouseholdManagement({
                     </Button>
                   </>
                 ) : (
-                  <Badge variant={member.role === "OWNER" ? "brand" : "neutral"}>{member.role}</Badge>
+                  <Badge variant={member.role === "OWNER" ? "brand" : "neutral"}>
+                        {roleLabel(member.role, householdKind)}
+                      </Badge>
                 )}
               </div>
             </div>
@@ -189,8 +198,10 @@ export function HouseholdManagement({
                           changeRole(member, event.target.value as Member["role"], event.currentTarget)
                         }
                       >
-                        {["OWNER", "ADMIN", "MEMBER", "VIEWER"].map((role) => (
-                          <option key={role} value={role}>{role}</option>
+                        {["OWNER", "ADMIN", "MEMBER", "ACCOUNTANT", "VIEWER"].map((role) => (
+                          <option key={role} value={role}>
+                            {roleLabel(role as Member["role"], householdKind)}
+                          </option>
                         ))}
                       </Select>
                     ) : (

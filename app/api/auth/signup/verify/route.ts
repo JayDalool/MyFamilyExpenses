@@ -101,7 +101,7 @@ export async function GET(request: Request) {
           ? {
               initialMembership: {
                 householdId: invite.invite.householdId,
-                role: invite.invite.role as "ADMIN" | "MEMBER" | "VIEWER",
+                role: invite.invite.role as "ADMIN" | "MEMBER" | "ACCOUNTANT" | "VIEWER",
               },
             }
           : {}),

@@ -13,11 +13,21 @@ enum UserRole {
   USER
 }
 
+// MEMBER is shown as "Employee" in a COMPANY household. ACCOUNTANT is read and
+// export only: it sees every expense but cannot create, edit, or delete.
 enum HouseholdRole {
   OWNER
   ADMIN
   MEMBER
   VIEWER
+  ACCOUNTANT
+}
+
+// A household is the organization. FAMILY: every member sees every expense.
+// COMPANY: an employee (MEMBER) sees only their own expenses.
+enum HouseholdKind {
+  FAMILY
+  COMPANY
 }
 
 enum CategoryStatus {
@@ -64,10 +74,11 @@ model Session {
 }
 
 model Household {
-  id        String   @id @default(uuid()) @db.Uuid
+  id        String        @id @default(uuid()) @db.Uuid
   name      String
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  kind      HouseholdKind @default(FAMILY)
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   memberships Membership[]
   expenses    Expense[]

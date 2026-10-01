@@ -208,14 +208,19 @@ A user must not see another household’s data unless they are a member.
 
 ### 5.2 Household Membership
 
-Recommended roles:
+Roles (see `docs/adr/0001-organizations-as-households.md`):
 
 ```text
 OWNER
 ADMIN
-MEMBER
+MEMBER      shown as "Employee" in a COMPANY household
 VIEWER
+ACCOUNTANT  read and export only
 ```
+
+A household has a `kind`: `FAMILY` (default) or `COMPANY`. In a `COMPANY`, a `MEMBER`
+sees only expenses they entered or paid and has no household reports. An `ACCOUNTANT`
+sees every expense and report but cannot create, edit, or delete.
 
 Role permissions:
 

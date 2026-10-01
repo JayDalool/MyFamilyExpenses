@@ -1,8 +1,31 @@
-import type { HouseholdRole } from "@prisma/client";
+import type { HouseholdRole, Prisma } from "@prisma/client";
 import type { AuthContext } from "@/lib/auth/session";
 
+// VIEWER and ACCOUNTANT are read-only roles.
+export function isReadOnlyRole(role: HouseholdRole) {
+  return role === "VIEWER" || role === "ACCOUNTANT";
+}
+
 export function canCreateExpense(auth: AuthContext) {
-  return auth.householdRole !== "VIEWER";
+  return !isReadOnlyRole(auth.householdRole);
+}
+
+// In a COMPANY household an employee (MEMBER) sees only their own expenses.
+// In a FAMILY household every member sees every expense.
+export function isCompanyEmployee(auth: Pick<AuthContext, "householdKind" | "householdRole">) {
+  return auth.householdKind === "COMPANY" && auth.householdRole === "MEMBER";
+}
+
+// Prisma filter limiting which expenses this member may read (entered or paid by them).
+export function expenseReadScope(auth: AuthContext): Prisma.ExpenseWhereInput {
+  if (!isCompanyEmployee(auth)) return {};
+  return { OR: [{ userId: auth.user.id }, { paidByUserId: auth.user.id }] };
+}
+
+// Household-wide totals, reports, and exports. Hidden from company employees,
+// who would otherwise see colleagues' spending.
+export function canViewReports(auth: AuthContext) {
+  return !isCompanyEmployee(auth);
 }
 
 // Who may attribute an expense (paid-by) to a member OTHER than themselves.
@@ -35,7 +58,10 @@ export function canViewOcrLearning(auth: AuthContext) {
 export function canInviteRole(inviterRole: HouseholdRole, invitedRole: HouseholdRole) {
   if (invitedRole === "OWNER") return false;
   if (inviterRole === "OWNER") return true;
-  return inviterRole === "ADMIN" && (invitedRole === "MEMBER" || invitedRole === "VIEWER");
+  return (
+    inviterRole === "ADMIN" &&
+    (invitedRole === "MEMBER" || invitedRole === "VIEWER" || invitedRole === "ACCOUNTANT")
+  );
 }
 
 export function canManageMembers(auth: AuthContext) {

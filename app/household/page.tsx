@@ -1,7 +1,9 @@
 import { AppShell } from "@/components/app-shell";
+import { CreateCompanyForm } from "@/components/create-company-form";
 import { HouseholdManagement } from "@/components/household-management";
 import { Badge } from "@/components/ui";
 import { requireHouseholdMember } from "@/lib/auth/session";
+import { roleLabel } from "@/lib/auth/role-labels";
 import { canInviteMembers, canInviteRole, canManageMembers } from "@/lib/auth/permissions";
 import { prisma } from "@/lib/db/prisma";
 
@@ -45,11 +47,13 @@ export default async function HouseholdPage() {
             <p className="text-sm text-slate-500">Household members, roles, and secure invites.</p>
           </div>
           <div className="flex items-center gap-2 text-sm text-slate-600">
-            Your role <Badge variant="brand">{auth.householdRole}</Badge>
+            Your role{" "}
+            <Badge variant="brand">{roleLabel(auth.householdRole, auth.householdKind)}</Badge>
           </div>
         </header>
 
         <HouseholdManagement
+          householdKind={auth.householdKind}
           canInvite={inviteAccess}
           canManageMembers={canManageMembers(auth)}
           currentRole={auth.householdRole}
@@ -71,6 +75,8 @@ export default async function HouseholdPage() {
             joinedAt: membership.createdAt.toISOString(),
           }))}
         />
+
+        <CreateCompanyForm />
       </div>
     </AppShell>
   );

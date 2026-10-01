@@ -11,7 +11,7 @@ import {
   type ReportFilters,
   type ReportPeriod,
 } from "@/lib/reporting";
-import { formatCurrency } from "@/lib/utils";
+import { formatCents } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
 
@@ -69,7 +69,7 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
   ]);
   const from = report?.range.from.toISOString().slice(0, 10);
   const to = report?.range.to.toISOString().slice(0, 10);
-  const maxMonthly = Math.max(...(report?.monthlyTotals.map((row) => row.total) ?? []), 1);
+  const maxMonthly = Math.max(...(report?.monthlyTotals.map((row) => row.totalCents) ?? []), 1);
 
   return (
     <AppShell auth={auth}>
@@ -153,7 +153,7 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
           <Card>
             <p className="text-sm font-medium text-slate-500">Total spending</p>
             <p className="mt-2 text-2xl font-bold text-slate-900">
-              {formatCurrency(report.summary.total?.toString() ?? 0)}
+              {formatCents(report.summary.totalCents ?? 0)}
             </p>
           </Card>
           <Card>
@@ -163,7 +163,7 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
           <Card>
             <p className="text-sm font-medium text-slate-500">Average expense</p>
             <p className="mt-2 text-2xl font-bold text-slate-900">
-              {formatCurrency(report.summary.average?.toString() ?? 0)}
+              {formatCents(report.summary.averageCents ?? 0)}
             </p>
           </Card>
         </section>
@@ -183,7 +183,7 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
                     </p>
                   </div>
                   <p className="font-semibold text-slate-900">
-                    {formatCurrency(category.total?.toString() ?? 0)}
+                    {formatCents(category.totalCents ?? 0)}
                   </p>
                 </div>
               ))}
@@ -204,7 +204,7 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
                     </p>
                   </div>
                   <p className="font-semibold text-slate-900">
-                    {formatCurrency(member.total?.toString() ?? 0)}
+                    {formatCents(member.totalCents ?? 0)}
                   </p>
                 </div>
               ))}
@@ -223,10 +223,10 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
                 <div className="h-2 overflow-hidden rounded-full bg-slate-100">
                   <div
                     className="h-full rounded-full bg-brand-600"
-                    style={{ width: `${Math.max((month.total / maxMonthly) * 100, 2)}%` }}
+                    style={{ width: `${Math.max((month.totalCents / maxMonthly) * 100, 2)}%` }}
                   />
                 </div>
-                <p className="text-sm font-semibold text-slate-900">{formatCurrency(month.total)}</p>
+                <p className="text-sm font-semibold text-slate-900">{formatCents(month.totalCents)}</p>
               </div>
             ))}
           </div>
@@ -266,7 +266,7 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
                   <td className="px-2 py-3 text-slate-600">{expense.paidByUser.name}</td>
                   <td className="px-2 py-3 text-slate-500">{expense.user.name}</td>
                   <td className="whitespace-nowrap px-2 py-3 text-right font-semibold">
-                    {formatCurrency(expense.amount.toString())}
+                    {formatCents(expense.amountCents, expense.currency)}
                   </td>
                   <td className="whitespace-nowrap px-2 py-3">
                     <a className="font-medium text-brand-700" href={`/api/expenses/${expense.id}/file`} target="_blank" rel="noreferrer">Preview</a>

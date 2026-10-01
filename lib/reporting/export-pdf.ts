@@ -38,8 +38,9 @@ type Column<Row> = {
 };
 
 // ── Formatting helpers ───────────────────────────────────────────────────────
-function formatCurrency(value: number): string {
-  const safe = Number.isFinite(value) ? value : 0;
+// Takes CENTS, like everything else that reads amountCents.
+function formatCentsForPdf(cents: number): string {
+  const safe = Number.isFinite(cents) ? cents / 100 : 0;
   return `$${safe.toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -147,9 +148,9 @@ function drawSummaryCards(doc: Doc, report: AccountantReport) {
   const top = doc.y;
 
   const cards: Array<{ label: string; value: string }> = [
-    { label: "TOTAL SPENDING", value: formatCurrency(report.totals.total) },
+    { label: "TOTAL SPENDING", value: formatCentsForPdf(report.totals.totalCents) },
     { label: "NUMBER OF EXPENSES", value: String(report.totals.count) },
-    { label: "AVERAGE EXPENSE", value: formatCurrency(report.totals.average) },
+    { label: "AVERAGE EXPENSE", value: formatCentsForPdf(report.totals.averageCents) },
   ];
 
   cards.forEach((card, index) => {
@@ -301,9 +302,9 @@ function drawBreakdowns(doc: Doc, report: AccountantReport) {
 
   const totalW = 64;
   const countW = 46;
-  const miniColumns = (label: string): Column<{ name: string; total: number; count: number }>[] => [
+  const miniColumns = (label: string): Column<{ name: string; totalCents: number; count: number }>[] => [
     { label, width: colW - totalW - countW, value: (r) => r.name },
-    { label: "Total", width: totalW, align: "right", value: (r) => formatCurrency(r.total) },
+    { label: "Total", width: totalW, align: "right", value: (r) => formatCentsForPdf(r.totalCents) },
     { label: "Count", width: countW, align: "right", value: (r) => String(r.count) },
   ];
 
@@ -338,9 +339,9 @@ function drawBreakdowns(doc: Doc, report: AccountantReport) {
   }
 
   // Stacked fallback — full width, paginated.
-  const fullColumns = (label: string): Column<{ name: string; total: number; count: number }>[] => [
+  const fullColumns = (label: string): Column<{ name: string; totalCents: number; count: number }>[] => [
     { label, width: width - 120 - 80, value: (r) => r.name },
-    { label: "Total", width: 120, align: "right", value: (r) => formatCurrency(r.total) },
+    { label: "Total", width: 120, align: "right", value: (r) => formatCentsForPdf(r.totalCents) },
     { label: "Count", width: 80, align: "right", value: (r) => String(r.count) },
   ];
   drawSectionTitle(doc, "Category breakdown");
@@ -368,7 +369,7 @@ function drawExpenseRegister(doc: Doc, report: AccountantReport) {
     { label: "Category", width: categoryW, value: (r) => r.categoryName },
     { label: "Paid by", width: paidW, value: (r) => r.userName },
     { label: "Entered by", width: enteredW, value: (r) => r.enteredByUserName },
-    { label: "Amount", width: amountW, align: "right", value: (r) => formatCurrency(r.amount) },
+    { label: "Amount", width: amountW, align: "right", value: (r) => formatCentsForPdf(r.amountCents) },
   ];
 
   drawSimpleTable(doc, columns, report.expenses, "No expenses in this period.");
@@ -429,7 +430,7 @@ export function reportToPdf(report: AccountantReport): Promise<Buffer> {
       doc,
       [
         { label: "Month", width: contentWidth(doc) - 120 - 80, value: (r: AccountantReport["monthlyTotals"][number]) => r.month },
-        { label: "Total", width: 120, align: "right", value: (r) => formatCurrency(r.total) },
+        { label: "Total", width: 120, align: "right", value: (r) => formatCentsForPdf(r.totalCents) },
         { label: "Count", width: 80, align: "right", value: (r) => String(r.count) },
       ],
       report.monthlyTotals,

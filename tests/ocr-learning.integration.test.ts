@@ -4,6 +4,7 @@ import { after, test } from "node:test";
 import { PrismaClient } from "@prisma/client";
 import { getHouseholdLearningInsights } from "../lib/ocr/learning-insights";
 import { assertSafeTestDatabase } from "./helpers/test-database";
+import { money } from "./helpers/expense-money";
 
 const testDatabaseUrl = assertSafeTestDatabase();
 const db = new PrismaClient({ datasourceUrl: testDatabaseUrl });
@@ -40,7 +41,7 @@ async function makeFeedback(
       categoryId: member.category.id,
       invoiceNumber: `INV-${crypto.randomUUID().slice(0, 8)}`,
       invoiceDate: new Date("2024-03-14T00:00:00.000Z"),
-      amount: "20.00",
+      ...money(20.00),
       filePath: `uploads/${crypto.randomUUID()}.png`,
     },
   });

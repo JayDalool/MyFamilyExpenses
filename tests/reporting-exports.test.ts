@@ -13,20 +13,26 @@ const report: AccountantReport = {
   },
   generatedAt: new Date("2026-06-09T12:00:00.000Z"),
   filters: { period: "year" },
-  totals: { total: 123.45, count: 1, average: 123.45 },
+  totals: { totalCents: 12345, count: 1, averageCents: 12345 },
   categoryBreakdown: [
-    { categoryId: "category-id", name: "Office supplies", total: 123.45, count: 1 },
+    { categoryId: "category-id", name: "Office supplies", totalCents: 12345, count: 1 },
   ],
   memberBreakdown: [
-    { userId: "user-id", name: "Taylor User", total: 123.45, count: 1 },
+    { userId: "user-id", name: "Taylor User", totalCents: 12345, count: 1 },
   ],
-  monthlyTotals: [{ month: "2026-06", total: 123.45, count: 1 }],
+  monthlyTotals: [{ month: "2026-06", totalCents: 12345, count: 1 }],
   expenses: [
     {
       id: "expense-id",
       invoiceNumber: "INV-001",
       invoiceDate: new Date("2026-06-02T00:00:00.000Z"),
-      amount: 123.45,
+      amountCents: 12345,
+      taxCents: 1605,
+      currency: "CAD",
+      vendor: "Paper Depot",
+      paymentMethod: "CREDIT",
+      notes: null,
+      isBusiness: true,
       categoryId: "category-id",
       categoryName: "Office supplies",
       userId: "user-id",
@@ -55,8 +61,13 @@ test("CSV expense register includes both paid-by and entered-by", () => {
   const csv = reportToCsv(report);
 
   assert.match(csv, /Paid by \(member\),Entered by/);
-  // Paid-by member then entered-by uploader on the expense row.
-  assert.match(csv, /INV-001,2026-06-02,Office supplies,Taylor User,Jordan Uploader,123\.45/);
+  // Paid-by member then entered-by uploader, then the step-4 fields: vendor,
+  // total, tax, currency, payment method, business flag, notes, receipt.
+  assert.match(
+    csv,
+    /INV-001,2026-06-02,Office supplies,Taylor User,Jordan Uploader,Paper Depot,123\.45,16\.05,CAD,CREDIT,Yes,,uploads\/invoice\.pdf/,
+  );
+  assert.match(csv, /Vendor,Amount,Tax,Currency,Payment method,Business,Notes,Receipt reference/);
 });
 
 test("CSV export neutralizes spreadsheet formula injection", () => {
@@ -95,7 +106,7 @@ test("PDF export does not emit a trailing blank page for a short report", async 
 test("PDF export paginates a long expense register without a blank final page", async () => {
   const many: AccountantReport = {
     ...report,
-    totals: { total: 6000, count: 120, average: 50 },
+    totals: { totalCents: 600000, count: 120, averageCents: 5000 },
     expenses: Array.from({ length: 120 }, (_, index) => ({
       ...report.expenses[0]!,
       id: `expense-${index}`,

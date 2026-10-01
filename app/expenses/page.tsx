@@ -7,7 +7,7 @@ import {
 } from "@/lib/expenses";
 import { prisma } from "@/lib/db/prisma";
 import { requireHouseholdMember } from "@/lib/auth/session";
-import { formatCurrency } from "@/lib/utils";
+import { formatCents } from "@/lib/money";
 import { canAssignExpenseToOthers, canCreateExpense } from "@/lib/auth/permissions";
 import { HouseholdSwitcher } from "@/components/household-switcher";
 
@@ -92,6 +92,7 @@ export default async function ExpensesPage({ searchParams }: ExpensesPageProps) 
             members={members}
             currentUserId={auth.user.id}
             canAssignToOthers={canAssignExpenseToOthers(auth)}
+            defaultIsBusiness={auth.householdKind === "COMPANY"}
           />
         </div> : null}
 
@@ -217,7 +218,7 @@ export default async function ExpensesPage({ searchParams }: ExpensesPageProps) 
 
                     <div className="text-left sm:text-right">
                       <p className="text-lg font-semibold text-slate-900">
-                        {formatCurrency(expense.amount.toString())}
+                        {formatCents(expense.amountCents, expense.currency)}
                       </p>
                       <Link
                         className="text-sm font-medium text-brand-700 hover:text-brand-800"

@@ -11,6 +11,7 @@ import { recordCorrectionFeedback } from "../lib/ocr/correction-feedback";
 import { parseInvoiceFieldsFromText } from "../lib/ocr/ocr-parsing";
 import type { OcrExtractionEnvelope } from "../lib/ocr/types";
 import { assertSafeTestDatabase } from "./helpers/test-database";
+import { money } from "./helpers/expense-money";
 
 const testDatabaseUrl = assertSafeTestDatabase();
 const db = new PrismaClient({ datasourceUrl: testDatabaseUrl });
@@ -47,7 +48,7 @@ async function makeExpense(
       categoryId: member.category.id,
       invoiceNumber: final.invoiceNumber,
       invoiceDate: new Date(`${final.invoiceDate}T00:00:00.000Z`),
-      amount: final.amount,
+      ...money(Number(final.amount)),
       filePath: `uploads/${crypto.randomUUID()}.png`,
     },
   });

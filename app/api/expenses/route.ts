@@ -13,6 +13,7 @@ import {
   extractInvoiceData,
   isOcrProviderError,
 } from "@/lib/ocr/ocr.service";
+import { centsToDecimalString, toCents } from "@/lib/money";
 import { saveUploadedFile, deleteUploadedFile } from "@/lib/storage";
 import { detectExpenseUploadMimeType, validateExpenseUploadFile } from "@/lib/uploads";
 import {
@@ -204,6 +205,14 @@ export async function POST(request: Request) {
       invoiceNumber: resolvedInvoice ?? formatInternalInvoiceNumber(1),
       invoiceDate: resolvedDate,
       amount: resolvedAmount,
+      // Step-4 fields come from the form only. OCR does not read vendor or tax
+      // yet (step 6), so there is nothing to prefer the typed value over.
+      tax: input.data.tax,
+      currency: input.data.currency,
+      vendor: input.data.vendor,
+      paymentMethod: input.data.paymentMethod,
+      notes: input.data.notes,
+      isBusiness: input.data.isBusiness,
     });
 
     if (!finalized.success) {
@@ -228,6 +237,8 @@ export async function POST(request: Request) {
         ? await nextInternalInvoiceNumber(tx, auth.householdId)
         : finalized.data.invoiceNumber;
 
+      const amountCents = toCents(finalized.data.amount);
+
       return tx.expense.create({
         data: {
           userId: auth.user.id,
@@ -236,7 +247,16 @@ export async function POST(request: Request) {
           categoryId: finalized.data.categoryId,
           invoiceNumber,
           invoiceDate: new Date(`${finalized.data.invoiceDate}T00:00:00.000Z`),
-          amount: finalized.data.amount,
+          amountCents,
+          // Deprecated column, dual-written so a rollback to the pre-cents code
+          // can still read rows created after this release. Nothing reads it.
+          amount: centsToDecimalString(amountCents),
+          taxCents: finalized.data.tax === undefined ? null : toCents(finalized.data.tax),
+          currency: finalized.data.currency ?? "CAD",
+          vendor: finalized.data.vendor ?? null,
+          paymentMethod: finalized.data.paymentMethod ?? null,
+          notes: finalized.data.notes ?? null,
+          isBusiness: finalized.data.isBusiness,
           filePath: storedFile.relativePath,
         },
         include: {
@@ -291,7 +311,10 @@ export async function POST(request: Request) {
         expenseId: expense.id,
         categoryId: expense.categoryId,
         paidByUserId: expense.paidByUserId,
-        amount: expense.amount.toString(),
+        amountCents: expense.amountCents,
+        taxCents: expense.taxCents,
+        currency: expense.currency,
+        isBusiness: expense.isBusiness,
         fileSize: file.size,
         mimeType: detectedMimeType ?? file.type,
         // Deploy signal: whether a trusted extraction attempt was linked.

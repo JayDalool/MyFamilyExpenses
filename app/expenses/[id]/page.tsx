@@ -10,7 +10,7 @@ import {
   getStoredExpenseMimeType,
   isPreviewableImage,
 } from "@/lib/expense-files";
-import { formatCurrency } from "@/lib/utils";
+import { formatCents, fromCents } from "@/lib/money";
 import { canAssignExpenseToOthers, canManageExpense } from "@/lib/auth/permissions";
 
 type ExpenseDetailsPageProps = {
@@ -115,7 +115,7 @@ export default async function ExpenseDetailsPage({
                 <div>
                   <dt className="text-sm font-medium text-slate-500">Amount</dt>
                   <dd className="mt-1 text-2xl font-semibold text-slate-900">
-                    {formatCurrency(expense.amount.toString())}
+                    {formatCents(expense.amountCents, expense.currency)}
                   </dd>
                 </div>
 
@@ -171,7 +171,14 @@ export default async function ExpenseDetailsPage({
                   categoryId: expense.categoryId,
                   invoiceNumber: expense.invoiceNumber,
                   invoiceDate: expense.invoiceDate.toISOString().slice(0, 10),
-                  amount: expense.amount.toString(),
+                  // The form edits dollars; the API converts back to cents.
+                  amount: fromCents(expense.amountCents).toFixed(2),
+                  tax: expense.taxCents === null ? "" : fromCents(expense.taxCents).toFixed(2),
+                  currency: expense.currency.trim(),
+                  vendor: expense.vendor ?? "",
+                  paymentMethod: expense.paymentMethod ?? "",
+                  notes: expense.notes ?? "",
+                  isBusiness: expense.isBusiness,
                   paidByUserId: expense.paidByUserId,
                 }}
               />

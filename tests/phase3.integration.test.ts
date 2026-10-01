@@ -34,6 +34,7 @@ import {
 } from "../lib/household-members";
 import { softDeleteExpenseForUser, updateExpenseForUser } from "../lib/expenses";
 import { assertSafeTestDatabase } from "./helpers/test-database";
+import { money } from "./helpers/expense-money";
 
 assertSafeTestDatabase();
 const integrationTest = test;
@@ -105,7 +106,7 @@ async function createFixture() {
         categoryId: category.id,
         invoiceNumber: "MEMBER-OWN",
         invoiceDate: new Date("2026-06-01T00:00:00.000Z"),
-        amount: 10,
+        ...money(10),
         filePath: "uploads/member.pdf",
       },
     }),
@@ -117,7 +118,7 @@ async function createFixture() {
         categoryId: category.id,
         invoiceNumber: "OTHER-MEMBER",
         invoiceDate: new Date("2026-06-01T00:00:00.000Z"),
-        amount: 20,
+        ...money(20),
         filePath: "uploads/other-member.pdf",
       },
     }),
@@ -129,7 +130,7 @@ async function createFixture() {
         categoryId: otherCategory.id,
         invoiceNumber: "OUTSIDER",
         invoiceDate: new Date("2026-06-01T00:00:00.000Z"),
-        amount: 30,
+        ...money(30),
         filePath: "uploads/outsider.pdf",
       },
     }),

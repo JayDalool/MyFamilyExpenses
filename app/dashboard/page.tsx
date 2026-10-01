@@ -10,7 +10,7 @@ import {
   getDashboardSummary,
   getReportDateRange,
 } from "@/lib/reporting";
-import { formatCurrency } from "@/lib/utils";
+import { formatCents } from "@/lib/money";
 
 export const dynamic = "force-dynamic";
 
@@ -34,12 +34,12 @@ function StatCard({ label, value }: { label: string; value: string }) {
 function MemberSnapshot({
   rows,
 }: {
-  rows: Array<{ userId: string; name: string; total: number; count: number }>;
+  rows: Array<{ userId: string; name: string; totalCents: number; count: number }>;
 }) {
   if (rows.length === 0) {
     return <p className="mt-4 text-sm text-slate-500">No spending yet this month.</p>;
   }
-  const max = Math.max(...rows.map((row) => row.total), 1);
+  const max = Math.max(...rows.map((row) => row.totalCents), 1);
   return (
     <ul className="mt-4 space-y-4">
       {rows.map((row) => (
@@ -47,13 +47,13 @@ function MemberSnapshot({
           <div className="mb-1.5 flex items-center justify-between gap-3 text-sm">
             <span className="truncate font-medium text-slate-700">{row.name}</span>
             <span className="whitespace-nowrap font-semibold text-slate-900">
-              {formatCurrency(row.total)}
+              {formatCents(row.totalCents)}
             </span>
           </div>
           <div className="h-2 overflow-hidden rounded-full bg-slate-100">
             <div
               className="h-full rounded-full bg-brand-600"
-              style={{ width: `${Math.max((row.total / max) * 100, 2)}%` }}
+              style={{ width: `${Math.max((row.totalCents / max) * 100, 2)}%` }}
             />
           </div>
         </li>
@@ -77,7 +77,7 @@ export default async function DashboardPage() {
         ]);
         return {
           recentExpenses: summary.recentExpenses.slice(0, 5),
-          monthTotal: analytics.thisMonth.total,
+          monthTotal: analytics.thisMonth.totalCents,
           monthCount: analytics.thisMonth.count,
           memberRows: analytics.memberBreakdownThisMonth,
         };
@@ -93,13 +93,13 @@ export default async function DashboardPage() {
               invoiceDate: { gte: range.from, lte: range.to },
               ...expenseReadScope(auth),
             },
-            _sum: { amount: true },
+            _sum: { amountCents: true },
             _count: { _all: true },
           }),
         ]);
         return {
           recentExpenses: recent,
-          monthTotal: Number(month._sum.amount ?? 0),
+          monthTotal: Number(month._sum.amountCents ?? 0),
           monthCount: month._count._all,
           memberRows: null,
         };
@@ -127,9 +127,9 @@ export default async function DashboardPage() {
 
         {/* Top summary — three calm cards */}
         <section className="grid gap-4 sm:grid-cols-3">
-          <StatCard label="This month" value={formatCurrency(monthTotal)} />
+          <StatCard label="This month" value={formatCents(monthTotal)} />
           <StatCard label="Expenses" value={String(monthCount)} />
-          <StatCard label="Average expense" value={formatCurrency(averageExpense)} />
+          <StatCard label="Average expense" value={formatCents(averageExpense)} />
         </section>
 
         {/* Recent expenses + member snapshot */}
@@ -168,7 +168,7 @@ export default async function DashboardPage() {
                     </div>
                     <div className="whitespace-nowrap text-right">
                       <p className="font-semibold text-slate-900">
-                        {formatCurrency(expense.amount.toString())}
+                        {formatCents(expense.amountCents, expense.currency)}
                       </p>
                       <Link
                         className="text-xs font-medium text-brand-700 hover:text-brand-800"

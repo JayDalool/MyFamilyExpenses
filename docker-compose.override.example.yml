@@ -15,9 +15,9 @@ services:
     ports: !override
       - "127.0.0.1:3002:3000"
 
-  # The base compose deliberately does not publish Postgres on the host. Add a
-  # loopback-only mapping here if you need psql or Prisma from outside the
-  # containers. Never bind it to 0.0.0.0.
-  db:
-    ports:
-      - "127.0.0.1:5434:5432"
+  # The base compose deliberately does not publish Postgres on the host. Uncomment
+  # this only if you need psql or Prisma from outside the containers, and keep it
+  # on 127.0.0.1 — never bind it to 0.0.0.0.
+  # db:
+  #   ports:
+  #     - "127.0.0.1:5434:5432"

@@ -36,7 +36,9 @@ services:
       SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-7}
       UPLOAD_DIR: /app/uploads
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-10}
-      OCR_PROVIDER: ${OCR_PROVIDER}
+      # Defaulted, not bare: Compose passes an unset variable through as an
+      # empty string, and an empty OCR_PROVIDER is a fatal config error.
+      OCR_PROVIDER: ${OCR_PROVIDER:-tesseract}
       TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-false}
       ALLOW_LOGIN_HOUSEHOLD_BOOTSTRAP: ${ALLOW_LOGIN_HOUSEHOLD_BOOTSTRAP:-false}
       NODE_ENV: production

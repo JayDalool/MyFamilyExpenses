@@ -6,7 +6,7 @@
 #   docker compose -f docker-compose.yml -f docker-compose.ocr.yml up -d
 #
 # It adds an internal-only `ocr` service and injects the Paddle wiring into the
-# existing `app` service. With the base compose alone, the app keeps using
+# existing `app` service. With the base compose alone, the app defaults to
 # OCR_PROVIDER=tesseract and this service does not exist.
 #
 # Including this file does NOT switch the app to Paddle on its own. Paddle

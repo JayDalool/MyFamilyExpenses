@@ -22,11 +22,20 @@ That is acceptable for a family. In a company it exposes colleagues' spending.
   edit, or delete.
 - In a `COMPANY`, `MEMBER` is shown as "Employee" and sees only expenses they entered or
   paid. They get no household reports, totals, or exports. `FAMILY` behavior is unchanged.
+- `VIEWER` is a `FAMILY`-only role. It is not offered or accepted in a `COMPANY`: the name
+  reads as *less* access than Employee, but a `FAMILY` `VIEWER` reads every expense, so
+  offering it in a company was a way to hand out full read access by accident. Rejected in
+  the invite, invite-acceptance and role-change paths, and absent from the role dropdowns.
+  A `VIEWER` row that predates this rule is read-scoped to its own expenses anyway.
+- A user may own at most 5 companies, and a read-only role (ACCOUNTANT, VIEWER) cannot
+  create one. Creating a company also writes a default category set, so the route needs a
+  ceiling.
 - A signed-in user creates a company from the Household page. They become its OWNER.
   Signup is unchanged.
 
 Rules live in `lib/auth/permissions.ts` (`expenseReadScope`, `canViewReports`,
-`isReadOnlyRole`). Labels live in `lib/auth/role-labels.ts`.
+`isScopedToOwnExpenses`, `isRoleAllowedForKind`, `isReadOnlyRole`). Labels live in
+`lib/auth/role-labels.ts`.
 
 ## Alternatives considered
 
@@ -42,6 +51,8 @@ Rules live in `lib/auth/permissions.ts` (`expenseReadScope`, `canViewReports`,
   so do not roll back after an ACCOUNTANT row exists.
 - Any new query that returns expenses must apply `expenseReadScope(auth)`. Household-wide
   aggregates (`lib/reporting.ts`) are for roles where `canViewReports(auth)` is true.
+- Any new role must be classified in `isScopedToOwnExpenses` and `isRoleAllowedForKind`,
+  or it silently inherits full company-wide read access.
 
 ## Future considerations
 

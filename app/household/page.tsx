@@ -63,7 +63,7 @@ export default async function HouseholdPage() {
               ...invite,
               canRevoke:
                 auth.householdRole === "OWNER" ||
-                canInviteRole(auth.householdRole, invite.role),
+                canInviteRole(auth.householdRole, invite.role, auth.householdKind),
               expiresAt: invite.expiresAt.toISOString(),
             }))}
           members={members.map((membership) => ({

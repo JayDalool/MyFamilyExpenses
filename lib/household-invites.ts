@@ -106,7 +106,10 @@ export async function createHouseholdInvite(
     maxUses: number;
   },
 ) {
-  if (!canInviteMembers(auth) || !canInviteRole(auth.householdRole, input.role)) {
+  if (
+    !canInviteMembers(auth) ||
+    !canInviteRole(auth.householdRole, input.role, auth.householdKind)
+  ) {
     throw new InviteAcceptanceError("inviter_not_authorized", auth.householdId);
   }
   if (!(await reserveInviteCreationAttempt(auth.householdId, auth.user.id))) {
@@ -182,7 +185,7 @@ export async function requireAcceptableInviteByHash(
 ) {
   const invite = await db.householdInvite.findUnique({
     where: { tokenHash },
-    include: { household: { select: { id: true, name: true } } },
+    include: { household: { select: { id: true, name: true, kind: true } } },
   });
 
   if (!invite) {
@@ -211,7 +214,10 @@ export async function requireAcceptableInviteByHash(
     },
   });
 
-  if (!inviterMembership || !canInviteRole(inviterMembership.role, invite.role)) {
+  if (
+    !inviterMembership ||
+    !canInviteRole(inviterMembership.role, invite.role, invite.household.kind)
+  ) {
     throw new InviteAcceptanceError("inviter_not_authorized", invite.householdId);
   }
 
@@ -433,7 +439,10 @@ export async function revokeHouseholdInvite(auth: AuthContext, inviteId: string)
   });
 
   if (!invite) return null;
-  if (auth.householdRole !== "OWNER" && !canInviteRole(auth.householdRole, invite.role)) {
+  if (
+    auth.householdRole !== "OWNER" &&
+    !canInviteRole(auth.householdRole, invite.role, auth.householdKind)
+  ) {
     throw new InviteAcceptanceError("inviter_not_authorized", auth.householdId);
   }
 

@@ -1,4 +1,4 @@
-import type { HouseholdRole, Prisma } from "@prisma/client";
+import type { HouseholdKind, HouseholdRole, Prisma } from "@prisma/client";
 import type { AuthContext } from "@/lib/auth/session";
 
 // VIEWER and ACCOUNTANT are read-only roles.
@@ -16,16 +16,34 @@ export function isCompanyEmployee(auth: Pick<AuthContext, "householdKind" | "hou
   return auth.householdKind === "COMPANY" && auth.householdRole === "MEMBER";
 }
 
+// A COMPANY has four roles: Owner, Admin, Accountant and Employee (MEMBER).
+// VIEWER is a FAMILY-only role. It is not offered or accepted in a COMPANY
+// because "Viewer" reads as *less* access than Employee while VIEWER is not
+// scoped to its own expenses in a FAMILY.
+export function isRoleAllowedForKind(role: HouseholdRole, kind: HouseholdKind) {
+  return !(kind === "COMPANY" && role === "VIEWER");
+}
+
+// Roles that may read only the expenses they entered or paid for. MEMBER is the
+// Employee role. VIEWER is included so that a row predating this rule, or one
+// written straight to the database, still cannot read a colleague's receipts.
+export function isScopedToOwnExpenses(
+  auth: Pick<AuthContext, "householdKind" | "householdRole">,
+) {
+  if (auth.householdKind !== "COMPANY") return false;
+  return auth.householdRole === "MEMBER" || auth.householdRole === "VIEWER";
+}
+
 // Prisma filter limiting which expenses this member may read (entered or paid by them).
 export function expenseReadScope(auth: AuthContext): Prisma.ExpenseWhereInput {
-  if (!isCompanyEmployee(auth)) return {};
+  if (!isScopedToOwnExpenses(auth)) return {};
   return { OR: [{ userId: auth.user.id }, { paidByUserId: auth.user.id }] };
 }
 
-// Household-wide totals, reports, and exports. Hidden from company employees,
-// who would otherwise see colleagues' spending.
+// Household-wide totals, reports, and exports. Hidden from the roles scoped to
+// their own expenses, who would otherwise see colleagues' spending.
 export function canViewReports(auth: AuthContext) {
-  return !isCompanyEmployee(auth);
+  return !isScopedToOwnExpenses(auth);
 }
 
 // Who may attribute an expense (paid-by) to a member OTHER than themselves.
@@ -55,8 +73,13 @@ export function canViewOcrLearning(auth: AuthContext) {
   return auth.householdRole === "OWNER" || auth.householdRole === "ADMIN";
 }
 
-export function canInviteRole(inviterRole: HouseholdRole, invitedRole: HouseholdRole) {
+export function canInviteRole(
+  inviterRole: HouseholdRole,
+  invitedRole: HouseholdRole,
+  kind: HouseholdKind,
+) {
   if (invitedRole === "OWNER") return false;
+  if (!isRoleAllowedForKind(invitedRole, kind)) return false;
   if (inviterRole === "OWNER") return true;
   return (
     inviterRole === "ADMIN" &&

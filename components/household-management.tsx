@@ -44,10 +44,19 @@ export function HouseholdManagement({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
-  const allowedInviteRoles =
-    currentRole === "OWNER"
-      ? ["ADMIN", "MEMBER", "ACCOUNTANT", "VIEWER"]
-      : ["MEMBER", "ACCOUNTANT", "VIEWER"];
+  // VIEWER is a FAMILY-only role. A company uses Owner, Admin, Accountant and
+  // Employee; the server rejects VIEWER for a company either way.
+  const assignableRoles = (
+    ["OWNER", "ADMIN", "MEMBER", "ACCOUNTANT", "VIEWER"] as Member["role"][]
+  ).filter((role) => householdKind !== "COMPANY" || role !== "VIEWER");
+  const allowedInviteRoles = assignableRoles.filter(
+    (role) => role !== "OWNER" && (currentRole === "OWNER" || role !== "ADMIN"),
+  );
+  // A member who already holds a role no longer on offer (a VIEWER from before
+  // this household became a company) still needs it in their own dropdown, or
+  // the select would silently show someone else's role.
+  const rolesForMember = (member: Member) =>
+    assignableRoles.includes(member.role) ? assignableRoles : [member.role, ...assignableRoles];
 
   const mutate = (
     input: RequestInfo,
@@ -143,9 +152,9 @@ export function HouseholdManagement({
                         changeRole(member, event.target.value as Member["role"], event.currentTarget)
                       }
                     >
-                      {["OWNER", "ADMIN", "MEMBER", "ACCOUNTANT", "VIEWER"].map((role) => (
+                      {rolesForMember(member).map((role) => (
                         <option key={role} value={role}>
-                          {roleLabel(role as Member["role"], householdKind)}
+                          {roleLabel(role, householdKind)}
                         </option>
                       ))}
                     </Select>
@@ -198,14 +207,16 @@ export function HouseholdManagement({
                           changeRole(member, event.target.value as Member["role"], event.currentTarget)
                         }
                       >
-                        {["OWNER", "ADMIN", "MEMBER", "ACCOUNTANT", "VIEWER"].map((role) => (
+                        {rolesForMember(member).map((role) => (
                           <option key={role} value={role}>
-                            {roleLabel(role as Member["role"], householdKind)}
+                            {roleLabel(role, householdKind)}
                           </option>
                         ))}
                       </Select>
                     ) : (
-                      <Badge variant={member.role === "OWNER" ? "brand" : "neutral"}>{member.role}</Badge>
+                      <Badge variant={member.role === "OWNER" ? "brand" : "neutral"}>
+                        {roleLabel(member.role, householdKind)}
+                      </Badge>
                     )}
                   </td>
                   <td className="whitespace-nowrap px-3 py-4 text-slate-600">
@@ -254,7 +265,11 @@ export function HouseholdManagement({
             <label className="space-y-1 text-sm font-medium text-slate-700">
               Role
               <Select name="role" defaultValue="MEMBER">
-                {allowedInviteRoles.map((role) => <option key={role} value={role}>{role}</option>)}
+                {allowedInviteRoles.map((role) => (
+                  <option key={role} value={role}>
+                    {roleLabel(role, householdKind)}
+                  </option>
+                ))}
               </Select>
             </label>
             <label className="space-y-1 text-sm font-medium text-slate-700">

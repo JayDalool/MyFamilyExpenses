@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db/prisma";
-import { getCurrentUser, setActiveHouseholdCookie } from "@/lib/auth/session";
+import { getCurrentHousehold, getCurrentUser, setActiveHouseholdCookie } from "@/lib/auth/session";
+import { isReadOnlyRole } from "@/lib/auth/permissions";
 import { buildDefaultCategories } from "@/lib/categories/default-categories";
+import { MAX_OWNED_COMPANIES, hasReachedCompanyLimit } from "@/lib/households";
 import { writeAuditLog } from "@/lib/audit";
 
 const createCompanySchema = z.object({
@@ -15,6 +17,27 @@ export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: { message: "Authentication required." } }, { status: 401 });
+  }
+
+  // A read-only role in the active household (accountant or viewer) does not
+  // get to create workspaces.
+  const auth = await getCurrentHousehold();
+  if (auth && isReadOnlyRole(auth.householdRole)) {
+    return NextResponse.json(
+      { error: { message: "Your role cannot create a company." } },
+      { status: 403 },
+    );
+  }
+
+  if (await hasReachedCompanyLimit(user.id)) {
+    return NextResponse.json(
+      {
+        error: {
+          message: `You already own ${MAX_OWNED_COMPANIES} companies. Remove one before creating another.`,
+        },
+      },
+      { status: 409 },
+    );
   }
 
   const parsed = createCompanySchema.safeParse(await request.json().catch(() => null));

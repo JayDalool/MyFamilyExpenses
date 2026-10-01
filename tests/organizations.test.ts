@@ -9,6 +9,8 @@ import {
   canViewReports,
   expenseReadScope,
   isCompanyEmployee,
+  isRoleAllowedForKind,
+  isScopedToOwnExpenses,
 } from "../lib/auth/permissions";
 import { roleLabel } from "../lib/auth/role-labels";
 
@@ -58,15 +60,48 @@ test("company admin and owner are not limited", () => {
 });
 
 test("owner and admin can invite an accountant; an employee cannot", () => {
-  assert.equal(canInviteRole("OWNER", "ACCOUNTANT"), true);
-  assert.equal(canInviteRole("ADMIN", "ACCOUNTANT"), true);
-  assert.equal(canInviteRole("MEMBER", "ACCOUNTANT"), false);
-  assert.equal(canInviteRole("ACCOUNTANT", "MEMBER"), false);
-  assert.equal(canInviteRole("ADMIN", "OWNER"), false);
+  assert.equal(canInviteRole("OWNER", "ACCOUNTANT", "COMPANY"), true);
+  assert.equal(canInviteRole("ADMIN", "ACCOUNTANT", "COMPANY"), true);
+  assert.equal(canInviteRole("MEMBER", "ACCOUNTANT", "COMPANY"), false);
+  assert.equal(canInviteRole("ACCOUNTANT", "MEMBER", "COMPANY"), false);
+  assert.equal(canInviteRole("ADMIN", "OWNER", "COMPANY"), false);
 });
 
 test("member is labelled Employee only in a company", () => {
   assert.equal(roleLabel("MEMBER", "COMPANY"), "Employee");
   assert.equal(roleLabel("MEMBER", "FAMILY"), "Member");
   assert.equal(roleLabel("ACCOUNTANT", "COMPANY"), "Accountant");
+});
+
+test("a company viewer is read-scoped like an employee, not given company-wide read", () => {
+  const viewer = auth("VIEWER", "COMPANY", "view-1");
+  assert.equal(isScopedToOwnExpenses(viewer), true);
+  assert.equal(canViewReports(viewer), false);
+  assert.deepEqual(expenseReadScope(viewer), {
+    OR: [{ userId: "view-1" }, { paidByUserId: "view-1" }],
+  });
+  assert.equal(canCreateExpense(viewer), false);
+});
+
+test("a family viewer still reads the whole household", () => {
+  const viewer = auth("VIEWER", "FAMILY");
+  assert.equal(isScopedToOwnExpenses(viewer), false);
+  assert.equal(canViewReports(viewer), true);
+  assert.deepEqual(expenseReadScope(viewer), {});
+});
+
+test("VIEWER is a family-only role", () => {
+  assert.equal(isRoleAllowedForKind("VIEWER", "FAMILY"), true);
+  assert.equal(isRoleAllowedForKind("VIEWER", "COMPANY"), false);
+  for (const role of ["OWNER", "ADMIN", "MEMBER", "ACCOUNTANT"] as const) {
+    assert.equal(isRoleAllowedForKind(role, "COMPANY"), true);
+    assert.equal(isRoleAllowedForKind(role, "FAMILY"), true);
+  }
+});
+
+test("nobody can invite a viewer into a company", () => {
+  assert.equal(canInviteRole("OWNER", "VIEWER", "COMPANY"), false);
+  assert.equal(canInviteRole("ADMIN", "VIEWER", "COMPANY"), false);
+  assert.equal(canInviteRole("OWNER", "VIEWER", "FAMILY"), true);
+  assert.equal(canInviteRole("ADMIN", "VIEWER", "FAMILY"), true);
 });

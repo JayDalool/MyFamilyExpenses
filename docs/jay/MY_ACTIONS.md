@@ -1,2 +1,4 @@
-- [ ] STEP-2 · Add uploads backup cron line, then offsite copy · docs/backups.md
+- [ ] STEP-2 · Create Backblaze bucket, key, restic password, offsite.env · docs/backups.md
+- [ ] STEP-2 · Plug in and mount USB disk at /mnt/mfe-backup · docs/backups.md
+- [ ] STEP-2 · Run backup-offsite.sh once, add 04:00 cron line · docs/backups.md
 - [ ] STEP-2 · Run DB restore drill into throwaway database · docs/backups.md

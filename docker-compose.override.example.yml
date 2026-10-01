@@ -1,0 +1,23 @@
+# Local-only Compose tweaks. Copy to docker-compose.override.yml and edit:
+#
+#   cp docker-compose.override.example.yml docker-compose.override.yml
+#
+# Docker Compose loads docker-compose.override.yml automatically, so nothing has
+# to be passed on the command line. The real file is gitignored: it holds
+# host-specific settings (free ports, local psql access) that must not be
+# committed, and the base docker-compose.yml stays the clean default deploy.
+
+services:
+  app:
+    # Host-specific port. `!override` REPLACES the base ports list instead of
+    # appending to it, so the base 3000 mapping is dropped. Use this when
+    # something else on the host already owns 127.0.0.1:3000.
+    ports: !override
+      - "127.0.0.1:3002:3000"
+
+  # The base compose deliberately does not publish Postgres on the host. Add a
+  # loopback-only mapping here if you need psql or Prisma from outside the
+  # containers. Never bind it to 0.0.0.0.
+  db:
+    ports:
+      - "127.0.0.1:5434:5432"

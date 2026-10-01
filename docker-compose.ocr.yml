@@ -9,6 +9,12 @@
 # existing `app` service. With the base compose alone, the app keeps using
 # OCR_PROVIDER=tesseract and this service does not exist.
 #
+# Including this file does NOT switch the app to Paddle on its own. Paddle
+# measured slower and less accurate than Tesseract here, so the default stays
+# OCR_PROVIDER=tesseract / OCR_STRATEGY=single. To benchmark Paddle, set
+# OCR_PROVIDER=paddle (and optionally OCR_STRATEGY=ensemble) in the environment
+# file while this override is included.
+#
 # Security: no public port mapping (internal Docker network only), no uploads
 # volume mounted here, no DB access, no app secrets.
 
@@ -44,8 +50,8 @@ services:
   # is included. Base docker-compose.yml is unchanged for non-Paddle deploys.
   app:
     environment:
-      OCR_PROVIDER: paddle
-      OCR_STRATEGY: ensemble
+      OCR_PROVIDER: ${OCR_PROVIDER:-tesseract}
+      OCR_STRATEGY: ${OCR_STRATEGY:-single}
       OCR_SERVICE_URL: http://ocr:8000
       OCR_TIMEOUT_MS: ${OCR_TIMEOUT_MS:-7000}
     depends_on:

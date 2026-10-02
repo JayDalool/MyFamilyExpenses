@@ -84,6 +84,34 @@ npm run test:db:teardown   # drops the test database (WITH FORCE)
 npm run test:db:setup      # recreates + re-migrates a clean one
 ```
 
+## Continuous integration
+
+`.github/workflows/ci.yml` runs the same checks on every pull request and on
+every push to `main`, so they no longer depend on someone running them locally:
+
+```text
+npm ci  →  npx prisma generate  →  lint  →  typecheck
+        →  provision test database  →  npm test  →  npm run build
+```
+
+Notes if you change it:
+
+- Node 22, matching the Dockerfile.
+- A `postgres:17` service container provides the test database. Its credentials
+  are the placeholders from the local template; the server is destroyed with the
+  job and holds no real data.
+- CI has no local dotenv file. `DATABASE_URL` and `TEST_DATABASE_URL` are set as
+  job environment variables and must stay byte-for-byte identical, or the guard
+  in `tests/helpers/test-database.ts` refuses to run. Node's `--env-file` does
+  not override variables already in the environment, so the same `npm test`
+  works in both places.
+- The provision step calls `npx tsx prisma/setup-test-db.ts` rather than
+  `npm run test:db:setup`, because that script expects the local dotenv file.
+- `npx prisma generate` must come before typecheck: the generated client is not
+  in the repo and neither is `next-env.d.ts`.
+- `npm run build` runs last because the deploy builds the image; a build break
+  should fail here first.
+
 ## What the OCR / Phase D.6 verification covers
 
 These already-present tests verify the OCR-intelligence invariants — Phase D.6 is

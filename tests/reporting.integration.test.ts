@@ -20,6 +20,7 @@ import {
 } from "../lib/reporting";
 import type { AuthContext } from "../lib/auth/session";
 import { assertSafeTestDatabase } from "./helpers/test-database";
+import { money } from "./helpers/expense-money";
 
 const testDatabaseUrl = assertSafeTestDatabase();
 const integrationTest = test;
@@ -77,7 +78,7 @@ async function createFixture() {
           categoryId: usedCategoryA.id,
           invoiceNumber,
           invoiceDate: new Date(`${invoiceDate}T00:00:00.000Z`),
-          amount,
+          ...money(amount),
           filePath: `uploads/${invoiceNumber}.pdf`,
         },
       }),
@@ -91,7 +92,7 @@ async function createFixture() {
       categoryId: usedCategoryA.id,
       invoiceNumber: "A-DELETED",
       invoiceDate: new Date("2026-06-07T00:00:00.000Z"),
-      amount: 999,
+      ...money(999),
       filePath: "uploads/deleted.pdf",
       deletedAt: new Date(),
       deletedByUserId: userA.id,
@@ -105,7 +106,7 @@ async function createFixture() {
       categoryId: categoryB.id,
       invoiceNumber: "B-TODAY",
       invoiceDate: new Date("2026-06-07T00:00:00.000Z"),
-      amount: 100,
+      ...money(100),
       filePath: "uploads/b.pdf",
     },
   });
@@ -172,11 +173,11 @@ integrationTest("dashboard totals are date-bounded, active-only, and household-s
     const dashboardA = await getDashboardSummary(fixture.householdA.id, db!, referenceDate);
     const dashboardB = await getDashboardSummary(fixture.householdB.id, db!, referenceDate);
 
-    assert.equal(dashboardA.today._sum.amount?.toString(), "10");
-    assert.equal(dashboardA.month._sum.amount?.toString(), "60");
-    assert.equal(dashboardA.allTime._sum.amount?.toString(), "150");
+    assert.equal(dashboardA.today._sum.amountCents, 1000);
+    assert.equal(dashboardA.month._sum.amountCents, 6000);
+    assert.equal(dashboardA.allTime._sum.amountCents, 15000);
     assert.equal(dashboardA.allTime._count._all, 5);
-    assert.equal(dashboardB.today._sum.amount?.toString(), "100");
+    assert.equal(dashboardB.today._sum.amountCents, 10000);
     assert.equal(dashboardB.allTime._count._all, 1);
   } finally {
     await cleanupFixture(fixture);
@@ -194,25 +195,25 @@ integrationTest("dashboard totals reflect expense create, edit, and soft delete"
         categoryId: fixture.usedCategoryA.id,
         invoiceNumber: "A-MUTATION",
         invoiceDate: new Date("2026-06-07T00:00:00.000Z"),
-        amount: 5,
+        ...money(5),
         filePath: "uploads/mutation.pdf",
       },
     });
     assert.equal(
-      (await getDashboardSummary(fixture.householdA.id, db!, referenceDate)).allTime._sum.amount?.toString(),
-      "155",
+      (await getDashboardSummary(fixture.householdA.id, db!, referenceDate)).allTime._sum.amountCents,
+      15500,
     );
 
-    await updateExpenseForUser(fixture.authA, created.id, { amount: 8 }, db!);
+    await updateExpenseForUser(fixture.authA, created.id, { ...money(8) }, db!);
     assert.equal(
-      (await getDashboardSummary(fixture.householdA.id, db!, referenceDate)).today._sum.amount?.toString(),
-      "18",
+      (await getDashboardSummary(fixture.householdA.id, db!, referenceDate)).today._sum.amountCents,
+      1800,
     );
 
     await softDeleteExpenseForUser(fixture.authA, created.id, fixture.userA.id, db!);
     assert.equal(
-      (await getDashboardSummary(fixture.householdA.id, db!, referenceDate)).allTime._sum.amount?.toString(),
-      "150",
+      (await getDashboardSummary(fixture.householdA.id, db!, referenceDate)).allTime._sum.amountCents,
+      15000,
     );
   } finally {
     await cleanupFixture(fixture);
@@ -228,12 +229,12 @@ integrationTest("reports match active household totals and exclude soft-deleted 
       getReportData(fixture.householdB.id, monthFilters, db!, referenceDate),
     ]);
 
-    assert.equal(reportA.summary.total?.toString(), "60");
+    assert.equal(reportA.summary.totalCents, 6000);
     assert.equal(reportA.summary.count, 3);
-    assert.equal(reportA.summary.average?.toString(), "20");
+    assert.equal(reportA.summary.averageCents, 2000);
     assert.equal(reportA.pagination.total, 3);
     assert.equal(reportA.expenses.length, 2);
-    assert.equal(reportB.summary.total?.toString(), "100");
+    assert.equal(reportB.summary.totalCents, 10000);
     assert.equal(reportB.summary.count, 1);
   } finally {
     await cleanupFixture(fixture);
@@ -253,7 +254,7 @@ integrationTest("accountant report applies category, member, and custom date fil
       categoryId: fixture.unusedCategoryA.id,
       invoiceNumber: "A-FILTERED",
       invoiceDate: new Date("2026-06-05T00:00:00.000Z"),
-      amount: 75,
+      ...money(75),
       filePath: "uploads/a-filtered.pdf",
     },
   });
@@ -288,11 +289,11 @@ integrationTest("accountant report applies category, member, and custom date fil
       ),
     ]);
 
-    assert.equal(all.totals.total, 135);
+    assert.equal(all.totals.totalCents, 13500);
     assert.equal(all.totals.count, 4);
     assert.equal(all.expenses.some((expense) => expense.invoiceNumber === "A-DELETED"), false);
     assert.deepEqual(byCategory.expenses.map((expense) => expense.id), [filteredExpense.id]);
-    assert.equal(byCategory.totals.total, 75);
+    assert.equal(byCategory.totals.totalCents, 7500);
     assert.deepEqual(byMember.expenses.map((expense) => expense.id), [filteredExpense.id]);
     assert.equal(byMember.memberBreakdown[0]?.name, fixture.userB.name);
     assert.equal(crossHousehold.totals.count, 0);
@@ -309,18 +310,18 @@ integrationTest("dashboard analytics totals and breakdowns are active-only and h
       getDashboardAnalytics(fixture.householdB.id, db!, referenceDate, "UTC"),
     ]);
 
-    assert.deepEqual(analyticsA.thisMonth, { total: 60, count: 3 });
-    assert.deepEqual(analyticsA.thisYear, { total: 100, count: 4 });
+    assert.deepEqual(analyticsA.thisMonth, { totalCents: 6000, count: 3 });
+    assert.deepEqual(analyticsA.thisYear, { totalCents: 10000, count: 4 });
     assert.equal(analyticsA.highestCategoryThisMonth?.name, fixture.usedCategoryA.name);
-    assert.equal(analyticsA.highestCategoryThisMonth?.total, 60);
+    assert.equal(analyticsA.highestCategoryThisMonth?.totalCents, 6000);
     assert.equal(analyticsA.topSpenderThisMonth?.name, fixture.userA.name);
-    assert.equal(analyticsA.categoryBreakdownThisYear[0]?.total, 100);
-    assert.equal(analyticsA.memberBreakdownThisYear[0]?.total, 100);
+    assert.equal(analyticsA.categoryBreakdownThisYear[0]?.totalCents, 10000);
+    assert.equal(analyticsA.memberBreakdownThisYear[0]?.totalCents, 10000);
     // Member snapshot (this month) attributes June spend to the paid-by member.
     assert.equal(analyticsA.memberBreakdownThisMonth[0]?.userId, fixture.userA.id);
-    assert.equal(analyticsA.memberBreakdownThisMonth[0]?.total, 60);
+    assert.equal(analyticsA.memberBreakdownThisMonth[0]?.totalCents, 6000);
     assert.equal(analyticsA.expenseCount.allTime, 5);
-    assert.deepEqual(analyticsB.thisMonth, { total: 100, count: 1 });
+    assert.deepEqual(analyticsB.thisMonth, { totalCents: 10000, count: 1 });
     assert.equal(analyticsB.categoryBreakdownThisYear[0]?.name, fixture.categoryB.name);
   } finally {
     await cleanupFixture(fixture);
@@ -341,7 +342,7 @@ integrationTest("expense entered by one member but paid by another attributes sp
       categoryId: fixture.usedCategoryA.id,
       invoiceNumber: "JAY-FOR-OSAMA",
       invoiceDate: new Date("2026-06-04T00:00:00.000Z"),
-      amount: 84,
+      ...money(84),
       filePath: "uploads/jay-for-osama.pdf",
     },
   });
@@ -353,8 +354,8 @@ integrationTest("expense entered by one member but paid by another attributes sp
     // Member spending attributes the 84 to Osama; Jay keeps only his own 60 (June fixture).
     const osama = report.members.find((m) => m.userId === fixture.userB.id);
     const jay = report.members.find((m) => m.userId === fixture.userA.id);
-    assert.equal(osama?.total?.toString(), "84");
-    assert.equal(jay?.total?.toString(), "60");
+    assert.equal(osama?.totalCents, 8400);
+    assert.equal(jay?.totalCents, 6000);
 
     // The register records Jay as entered-by and Osama as paid-by on the same row.
     const row = report.expenses.find((e) => e.invoiceNumber === "JAY-FOR-OSAMA");
@@ -368,7 +369,7 @@ integrationTest("expense entered by one member but paid by another attributes sp
       db!,
       referenceDate,
     );
-    assert.equal(byOsama.summary.total?.toString(), "84");
+    assert.equal(byOsama.summary.totalCents, 8400);
     assert.equal(byOsama.expenses.some((e) => e.invoiceNumber === "JAY-FOR-OSAMA"), true);
 
     const byJay = await getReportData(
@@ -377,14 +378,14 @@ integrationTest("expense entered by one member but paid by another attributes sp
       db!,
       referenceDate,
     );
-    assert.equal(byJay.summary.total?.toString(), "60");
+    assert.equal(byJay.summary.totalCents, 6000);
     assert.equal(byJay.expenses.some((e) => e.invoiceNumber === "JAY-FOR-OSAMA"), false);
 
     // Dashboard analytics attribute the year total to Osama, not Jay.
     const analytics = await getDashboardAnalytics(fixture.householdA.id, db!, referenceDate, "UTC");
     assert.equal(
-      analytics.memberBreakdownThisYear.find((m) => m.userId === fixture.userB.id)?.total,
-      84,
+      analytics.memberBreakdownThisYear.find((m) => m.userId === fixture.userB.id)?.totalCents,
+      8400,
     );
 
     // Cross-household isolation: household B still sees only its own expense.

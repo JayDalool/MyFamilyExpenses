@@ -383,16 +383,30 @@ function StepIndicator({ current }: { current: Step }) {
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
+const PAYMENT_METHOD_OPTIONS: Array<[string, string]> = [
+  ["", "Not recorded"],
+  ["CASH", "Cash"],
+  ["DEBIT", "Debit"],
+  ["CREDIT", "Credit"],
+  ["ETRANSFER", "e-Transfer"],
+  ["OTHER", "Other"],
+];
+
 export function ExpenseWizard({
   categories,
   members,
   currentUserId,
   canAssignToOthers,
+  // In a company workspace a receipt is a business expense unless the person
+  // says otherwise. The column default stays false so family data keeps one
+  // meaning; only the form's starting state changes.
+  defaultIsBusiness = false,
 }: {
   categories: CategoryOption[];
   members: MemberOption[];
   currentUserId: string;
   canAssignToOthers: boolean;
+  defaultIsBusiness?: boolean;
 }) {
   const router = useRouter();
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -409,6 +423,11 @@ export function ExpenseWizard({
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [invoiceDate, setInvoiceDate] = useState("");
   const [amount, setAmount] = useState("");
+  const [tax, setTax] = useState("");
+  const [vendor, setVendor] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("");
+  const [notes, setNotes] = useState("");
+  const [isBusiness, setIsBusiness] = useState(defaultIsBusiness);
   const [isSaving, setIsSaving] = useState(false);
   const [ocrWarning, setOcrWarning] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -447,6 +466,11 @@ export function ExpenseWizard({
     setInvoiceNumber("");
     setInvoiceDate("");
     setAmount("");
+    setTax("");
+    setVendor("");
+    setPaymentMethod("");
+    setNotes("");
+    setIsBusiness(defaultIsBusiness);
     replacePreviewUrl(null);
     clearInputElements();
   };
@@ -532,6 +556,11 @@ export function ExpenseWizard({
     if (invoiceNumber) fd.append("invoiceNumber", invoiceNumber);
     if (invoiceDate) fd.append("invoiceDate", invoiceDate);
     if (amount) fd.append("amount", amount);
+    if (tax) fd.append("tax", tax);
+    if (vendor) fd.append("vendor", vendor);
+    if (paymentMethod) fd.append("paymentMethod", paymentMethod);
+    if (notes) fd.append("notes", notes);
+    if (isBusiness) fd.append("isBusiness", "true");
     if (attemptId) fd.append("attemptId", attemptId);
 
     try {
@@ -1043,12 +1072,104 @@ export function ExpenseWizard({
                 confidence={extracted?.confidence.amount ?? 0}
                 hasOcr={!!extracted}
                 id="reviewAmount"
-                label="Amount"
+                label="Total paid (tax included)"
                 onChange={setAmount}
                 placeholder="0.00"
                 type="number"
                 value={amount}
               />
+
+              <div>
+                <label
+                  className="mb-1.5 block text-sm font-semibold text-slate-700"
+                  htmlFor="reviewTax"
+                >
+                  Tax included in that total
+                </label>
+                <input
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-4 text-slate-900 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+                  id="reviewTax"
+                  min="0"
+                  onChange={(event) => setTax(event.target.value)}
+                  placeholder="Leave blank if the receipt does not say"
+                  step="0.01"
+                  type="number"
+                  value={tax}
+                />
+              </div>
+
+              <div>
+                <label
+                  className="mb-1.5 block text-sm font-semibold text-slate-700"
+                  htmlFor="reviewVendor"
+                >
+                  Vendor
+                </label>
+                <input
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-4 text-slate-900 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+                  id="reviewVendor"
+                  maxLength={120}
+                  onChange={(event) => setVendor(event.target.value)}
+                  placeholder="Who you paid"
+                  type="text"
+                  value={vendor}
+                />
+              </div>
+
+              <div>
+                <label
+                  className="mb-1.5 block text-sm font-semibold text-slate-700"
+                  htmlFor="reviewPaymentMethod"
+                >
+                  Payment method
+                </label>
+                <select
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-4 text-slate-900 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+                  id="reviewPaymentMethod"
+                  onChange={(event) => setPaymentMethod(event.target.value)}
+                  value={paymentMethod}
+                >
+                  {PAYMENT_METHOD_OPTIONS.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label
+                  className="mb-1.5 block text-sm font-semibold text-slate-700"
+                  htmlFor="reviewNotes"
+                >
+                  Notes
+                </label>
+                <textarea
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-4 text-slate-900 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+                  id="reviewNotes"
+                  maxLength={500}
+                  onChange={(event) => setNotes(event.target.value)}
+                  placeholder="Anything the accountant should know"
+                  rows={3}
+                  value={notes}
+                />
+              </div>
+
+              <div className="flex items-center gap-3">
+                <input
+                  checked={isBusiness}
+                  className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                  id="reviewIsBusiness"
+                  onChange={(event) => setIsBusiness(event.target.checked)}
+                  type="checkbox"
+                />
+                <label
+                  className="text-sm font-semibold text-slate-700"
+                  htmlFor="reviewIsBusiness"
+                >
+                  Business expense
+                </label>
+              </div>
 
               <div>
                 <label

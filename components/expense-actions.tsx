@@ -21,9 +21,25 @@ type EditableExpense = {
   categoryId: string;
   invoiceNumber: string;
   invoiceDate: string;
+  // Dollars, as typed into the number input. The API converts to cents.
   amount: string;
+  tax: string;
+  currency: string;
+  vendor: string;
+  paymentMethod: string;
+  notes: string;
+  isBusiness: boolean;
   paidByUserId: string;
 };
+
+const PAYMENT_METHOD_LABELS: Array<[string, string]> = [
+  ["", "Not recorded"],
+  ["CASH", "Cash"],
+  ["DEBIT", "Debit"],
+  ["CREDIT", "Credit"],
+  ["ETRANSFER", "e-Transfer"],
+  ["OTHER", "Other"],
+];
 
 type ExpenseActionsProps = {
   expense: EditableExpense;
@@ -48,6 +64,12 @@ export function ExpenseActions({
   const [invoiceNumber, setInvoiceNumber] = useState(expense.invoiceNumber);
   const [invoiceDate, setInvoiceDate] = useState(expense.invoiceDate);
   const [amount, setAmount] = useState(expense.amount);
+  const [tax, setTax] = useState(expense.tax);
+  const [currency, setCurrency] = useState(expense.currency);
+  const [vendor, setVendor] = useState(expense.vendor);
+  const [paymentMethod, setPaymentMethod] = useState(expense.paymentMethod);
+  const [notes, setNotes] = useState(expense.notes);
+  const [isBusiness, setIsBusiness] = useState(expense.isBusiness);
   const [paidByUserId, setPaidByUserId] = useState(expense.paidByUserId);
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -66,6 +88,12 @@ export function ExpenseActions({
             invoiceNumber,
             invoiceDate,
             amount: Number(amount),
+            tax,
+            currency,
+            vendor,
+            paymentMethod,
+            notes,
+            isBusiness,
             paidByUserId,
           }),
         });
@@ -181,6 +209,98 @@ export function ExpenseActions({
             type="number"
             value={amount}
           />
+        </div>
+
+        <div>
+          <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="editTax">
+            Tax included in the total
+          </label>
+          <input
+            className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-brand-500"
+            id="editTax"
+            min="0"
+            onChange={(event) => setTax(event.target.value)}
+            placeholder="Leave blank if the receipt does not say"
+            step="0.01"
+            type="number"
+            value={tax}
+          />
+          <p className="mt-1 text-xs text-slate-500">
+            The amount above is the total paid, tax included.
+          </p>
+        </div>
+
+        <div>
+          <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="editVendor">
+            Vendor
+          </label>
+          <input
+            className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-brand-500"
+            id="editVendor"
+            maxLength={120}
+            onChange={(event) => setVendor(event.target.value)}
+            type="text"
+            value={vendor}
+          />
+        </div>
+
+        <div>
+          <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="editPaymentMethod">
+            Payment method
+          </label>
+          <select
+            className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-brand-500"
+            id="editPaymentMethod"
+            onChange={(event) => setPaymentMethod(event.target.value)}
+            value={paymentMethod}
+          >
+            {PAYMENT_METHOD_LABELS.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="editCurrency">
+            Currency
+          </label>
+          <input
+            className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-brand-500"
+            id="editCurrency"
+            maxLength={3}
+            onChange={(event) => setCurrency(event.target.value.toUpperCase())}
+            type="text"
+            value={currency}
+          />
+        </div>
+
+        <div>
+          <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="editNotes">
+            Notes
+          </label>
+          <textarea
+            className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-brand-500"
+            id="editNotes"
+            maxLength={500}
+            onChange={(event) => setNotes(event.target.value)}
+            rows={3}
+            value={notes}
+          />
+        </div>
+
+        <div className="flex items-center gap-3">
+          <input
+            checked={isBusiness}
+            className="h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+            id="editIsBusiness"
+            onChange={(event) => setIsBusiness(event.target.checked)}
+            type="checkbox"
+          />
+          <label className="text-sm font-medium text-slate-700" htmlFor="editIsBusiness">
+            Business expense
+          </label>
         </div>
 
         <div>

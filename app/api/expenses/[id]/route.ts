@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { centsToDecimalString, toCents } from "@/lib/money";
 import { getCurrentHousehold } from "@/lib/auth/session";
 import {
   findAllowedExpenseCategoryForUpdate,
@@ -107,11 +108,24 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
   const paidByUserId = paidByDecision.paidByUserId;
 
+  const amountCents = toCents(parsed.data.amount);
+
   const expense = await updateExpenseForUser(auth, id, {
       categoryId: parsed.data.categoryId,
       invoiceNumber: parsed.data.invoiceNumber,
       invoiceDate: new Date(`${parsed.data.invoiceDate}T00:00:00.000Z`),
-      amount: parsed.data.amount,
+      amountCents,
+      // Deprecated column, kept in step with amountCents purely so a rollback
+      // can read it. Nothing reads it.
+      amount: centsToDecimalString(amountCents),
+      taxCents: parsed.data.tax === undefined ? null : toCents(parsed.data.tax),
+      // Absent means "unchanged", not "back to CAD" — a blank currency box
+      // must not silently convert a USD expense.
+      currency: parsed.data.currency ?? existingExpense.currency,
+      vendor: parsed.data.vendor ?? null,
+      paymentMethod: parsed.data.paymentMethod ?? null,
+      notes: parsed.data.notes ?? null,
+      isBusiness: parsed.data.isBusiness,
       paidByUserId,
   });
 
@@ -132,14 +146,24 @@ export async function PATCH(request: Request, context: RouteContext) {
         categoryId: existingExpense.categoryId,
         invoiceNumber: existingExpense.invoiceNumber,
         invoiceDate: existingExpense.invoiceDate.toISOString().slice(0, 10),
-        amount: existingExpense.amount.toString(),
+        amountCents: existingExpense.amountCents,
+        taxCents: existingExpense.taxCents,
+        currency: existingExpense.currency,
+        vendor: existingExpense.vendor,
+        paymentMethod: existingExpense.paymentMethod,
+        isBusiness: existingExpense.isBusiness,
         paidByUserId: existingExpense.paidByUserId,
       },
       next: {
         categoryId: expense.categoryId,
         invoiceNumber: expense.invoiceNumber,
         invoiceDate: expense.invoiceDate.toISOString().slice(0, 10),
-        amount: expense.amount.toString(),
+        amountCents: expense.amountCents,
+        taxCents: expense.taxCents,
+        currency: expense.currency,
+        vendor: expense.vendor,
+        paymentMethod: expense.paymentMethod,
+        isBusiness: expense.isBusiness,
         paidByUserId: expense.paidByUserId,
       },
     },

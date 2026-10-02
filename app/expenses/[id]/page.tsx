@@ -10,13 +10,21 @@ import {
   getStoredExpenseMimeType,
   isPreviewableImage,
 } from "@/lib/expense-files";
-import { formatCurrency } from "@/lib/utils";
+import { formatCents, fromCents } from "@/lib/money";
 import { canAssignExpenseToOthers, canManageExpense } from "@/lib/auth/permissions";
 
 type ExpenseDetailsPageProps = {
   params: Promise<{
     id: string;
   }>;
+};
+
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  CASH: "Cash",
+  DEBIT: "Debit",
+  CREDIT: "Credit",
+  ETRANSFER: "e-Transfer",
+  OTHER: "Other",
 };
 
 export default async function ExpenseDetailsPage({
@@ -113,10 +121,40 @@ export default async function ExpenseDetailsPage({
                 </div>
 
                 <div>
-                  <dt className="text-sm font-medium text-slate-500">Amount</dt>
+                  <dt className="text-sm font-medium text-slate-500">
+                    Total paid (tax included)
+                  </dt>
                   <dd className="mt-1 text-2xl font-semibold text-slate-900">
-                    {formatCurrency(expense.amount.toString())}
+                    {formatCents(expense.amountCents, expense.currency)}
                   </dd>
+                </div>
+
+                <div>
+                  <dt className="text-sm font-medium text-slate-500">Tax</dt>
+                  <dd className="mt-1 text-slate-900">
+                    {expense.taxCents === null
+                      ? "Not recorded"
+                      : formatCents(expense.taxCents, expense.currency)}
+                  </dd>
+                </div>
+
+                <div>
+                  <dt className="text-sm font-medium text-slate-500">Vendor</dt>
+                  <dd className="mt-1 text-slate-900">{expense.vendor ?? "Not recorded"}</dd>
+                </div>
+
+                <div>
+                  <dt className="text-sm font-medium text-slate-500">Payment method</dt>
+                  <dd className="mt-1 text-slate-900">
+                    {expense.paymentMethod
+                      ? PAYMENT_METHOD_LABELS[expense.paymentMethod] ?? expense.paymentMethod
+                      : "Not recorded"}
+                  </dd>
+                </div>
+
+                <div>
+                  <dt className="text-sm font-medium text-slate-500">Business expense</dt>
+                  <dd className="mt-1 text-slate-900">{expense.isBusiness ? "Yes" : "No"}</dd>
                 </div>
 
                 <div>
@@ -140,6 +178,13 @@ export default async function ExpenseDetailsPage({
                   <dt className="text-sm font-medium text-slate-500">Entered by</dt>
                   <dd className="mt-1 text-slate-900">{expense.user.name}</dd>
                 </div>
+
+                {expense.notes ? (
+                  <div>
+                    <dt className="text-sm font-medium text-slate-500">Notes</dt>
+                    <dd className="mt-1 whitespace-pre-wrap text-slate-900">{expense.notes}</dd>
+                  </div>
+                ) : null}
               </dl>
 
               <div className="mt-8 border-t border-slate-200 pt-6">
@@ -171,7 +216,14 @@ export default async function ExpenseDetailsPage({
                   categoryId: expense.categoryId,
                   invoiceNumber: expense.invoiceNumber,
                   invoiceDate: expense.invoiceDate.toISOString().slice(0, 10),
-                  amount: expense.amount.toString(),
+                  // The form edits dollars; the API converts back to cents.
+                  amount: fromCents(expense.amountCents).toFixed(2),
+                  tax: expense.taxCents === null ? "" : fromCents(expense.taxCents).toFixed(2),
+                  currency: expense.currency.trim(),
+                  vendor: expense.vendor ?? "",
+                  paymentMethod: expense.paymentMethod ?? "",
+                  notes: expense.notes ?? "",
+                  isBusiness: expense.isBusiness,
                   paidByUserId: expense.paidByUserId,
                 }}
               />

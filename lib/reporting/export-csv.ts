@@ -1,3 +1,4 @@
+import { fromCents } from "@/lib/money";
 import type { AccountantReport } from "@/lib/reporting";
 
 const NEWLINE = "\r\n"; // RFC 4180-compliant line terminator
@@ -48,29 +49,29 @@ export function reportToCsv(report: AccountantReport): string {
   lines.push(toRow(["Household", report.household.name]));
   lines.push(toRow(["Reporting period", `${from} to ${to}`]));
   lines.push(toRow(["Generated at", report.generatedAt.toISOString()]));
-  lines.push(toRow(["Total spending", report.totals.total]));
+  lines.push(toRow(["Total spending", fromCents(report.totals.totalCents)]));
   lines.push(toRow(["Expense count", report.totals.count]));
-  lines.push(toRow(["Average expense", report.totals.average]));
+  lines.push(toRow(["Average expense", fromCents(report.totals.averageCents)]));
   lines.push("");
 
   lines.push(toRow(["Category breakdown"]));
   lines.push(toRow(["Category", "Total", "Count"]));
   for (const row of report.categoryBreakdown) {
-    lines.push(toRow([row.name, row.total, row.count]));
+    lines.push(toRow([row.name, fromCents(row.totalCents), row.count]));
   }
   lines.push("");
 
   lines.push(toRow(["Member breakdown (paid by)"]));
   lines.push(toRow(["Member (paid by)", "Total", "Count"]));
   for (const row of report.memberBreakdown) {
-    lines.push(toRow([row.name, row.total, row.count]));
+    lines.push(toRow([row.name, fromCents(row.totalCents), row.count]));
   }
   lines.push("");
 
   lines.push(toRow(["Monthly totals"]));
   lines.push(toRow(["Month", "Total", "Count"]));
   for (const row of report.monthlyTotals) {
-    lines.push(toRow([row.month, row.total, row.count]));
+    lines.push(toRow([row.month, fromCents(row.totalCents), row.count]));
   }
   lines.push("");
 
@@ -82,7 +83,13 @@ export function reportToCsv(report: AccountantReport): string {
       "Category",
       "Paid by (member)",
       "Entered by",
+      "Vendor",
       "Amount",
+      "Tax",
+      "Currency",
+      "Payment method",
+      "Business",
+      "Notes",
       "Receipt reference",
     ]),
   );
@@ -94,7 +101,13 @@ export function reportToCsv(report: AccountantReport): string {
         expense.categoryName,
         expense.userName,
         expense.enteredByUserName,
-        expense.amount,
+        expense.vendor ?? "",
+        fromCents(expense.amountCents),
+        expense.taxCents === null ? "" : fromCents(expense.taxCents),
+        expense.currency,
+        expense.paymentMethod ?? "",
+        expense.isBusiness ? "Yes" : "No",
+        expense.notes ?? "",
         expense.filePath,
       ]),
     );

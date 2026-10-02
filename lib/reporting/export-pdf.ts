@@ -38,8 +38,9 @@ type Column<Row> = {
 };
 
 // ── Formatting helpers ───────────────────────────────────────────────────────
-function formatCurrency(value: number): string {
-  const safe = Number.isFinite(value) ? value : 0;
+// Takes CENTS, like everything else that reads amountCents.
+function formatCentsForPdf(cents: number): string {
+  const safe = Number.isFinite(cents) ? cents / 100 : 0;
   return `$${safe.toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -147,9 +148,9 @@ function drawSummaryCards(doc: Doc, report: AccountantReport) {
   const top = doc.y;
 
   const cards: Array<{ label: string; value: string }> = [
-    { label: "TOTAL SPENDING", value: formatCurrency(report.totals.total) },
+    { label: "TOTAL SPENDING", value: formatCentsForPdf(report.totals.totalCents) },
     { label: "NUMBER OF EXPENSES", value: String(report.totals.count) },
-    { label: "AVERAGE EXPENSE", value: formatCurrency(report.totals.average) },
+    { label: "AVERAGE EXPENSE", value: formatCentsForPdf(report.totals.averageCents) },
   ];
 
   cards.forEach((card, index) => {
@@ -301,9 +302,9 @@ function drawBreakdowns(doc: Doc, report: AccountantReport) {
 
   const totalW = 64;
   const countW = 46;
-  const miniColumns = (label: string): Column<{ name: string; total: number; count: number }>[] => [
+  const miniColumns = (label: string): Column<{ name: string; totalCents: number; count: number }>[] => [
     { label, width: colW - totalW - countW, value: (r) => r.name },
-    { label: "Total", width: totalW, align: "right", value: (r) => formatCurrency(r.total) },
+    { label: "Total", width: totalW, align: "right", value: (r) => formatCentsForPdf(r.totalCents) },
     { label: "Count", width: countW, align: "right", value: (r) => String(r.count) },
   ];
 
@@ -338,9 +339,9 @@ function drawBreakdowns(doc: Doc, report: AccountantReport) {
   }
 
   // Stacked fallback — full width, paginated.
-  const fullColumns = (label: string): Column<{ name: string; total: number; count: number }>[] => [
+  const fullColumns = (label: string): Column<{ name: string; totalCents: number; count: number }>[] => [
     { label, width: width - 120 - 80, value: (r) => r.name },
-    { label: "Total", width: 120, align: "right", value: (r) => formatCurrency(r.total) },
+    { label: "Total", width: 120, align: "right", value: (r) => formatCentsForPdf(r.totalCents) },
     { label: "Count", width: 80, align: "right", value: (r) => String(r.count) },
   ];
   drawSectionTitle(doc, "Category breakdown");
@@ -354,21 +355,37 @@ function drawExpenseRegister(doc: Doc, report: AccountantReport) {
   drawSectionTitle(doc, "Expense register");
 
   const width = contentWidth(doc);
-  const dateW = 64; // comfortably fits "YYYY-MM-DD" at 9pt
-  const invoiceW = 82;
-  const amountW = 72;
-  const remaining = width - dateW - invoiceW - amountW;
-  const categoryW = Math.round(remaining * 0.38);
-  const paidW = Math.round(remaining * 0.31);
-  const enteredW = remaining - categoryW - paidW;
+  const dateW = 60; // comfortably fits "YYYY-MM-DD" at 9pt
+  const invoiceW = 74;
+  const amountW = 66;
+  // 60, not 52: at 52 the cell truncated from $1,234.56 upward, and a tax figure
+  // in that range occurs on this data. A money column that ellipsizes the number
+  // it exists to show is worse than a narrower vendor column beside it.
+  const taxW = 60;
+  // Vendor and tax earn a column here because an accountant checking a printed
+  // register needs them. Payment method, the business flag and notes stay in the
+  // CSV and XLSX registers, which have no width limit.
+  const remaining = width - dateW - invoiceW - amountW - taxW;
+  const categoryW = Math.round(remaining * 0.28);
+  const vendorW = Math.round(remaining * 0.24);
+  const paidW = Math.round(remaining * 0.24);
+  const enteredW = remaining - categoryW - vendorW - paidW;
 
   const columns: Column<AccountantReport["expenses"][number]>[] = [
     { label: "Date", width: dateW, value: (r) => formatDate(r.invoiceDate) },
     { label: "Invoice", width: invoiceW, value: (r) => r.invoiceNumber },
     { label: "Category", width: categoryW, value: (r) => r.categoryName },
+    { label: "Vendor", width: vendorW, value: (r) => r.vendor ?? "" },
     { label: "Paid by", width: paidW, value: (r) => r.userName },
     { label: "Entered by", width: enteredW, value: (r) => r.enteredByUserName },
-    { label: "Amount", width: amountW, align: "right", value: (r) => formatCurrency(r.amount) },
+    { label: "Amount", width: amountW, align: "right", value: (r) => formatCentsForPdf(r.amountCents) },
+    {
+      label: "Tax",
+      width: taxW,
+      align: "right",
+      // Blank, not $0.00: a receipt that does not state tax is not tax-free.
+      value: (r) => (r.taxCents === null ? "" : formatCentsForPdf(r.taxCents)),
+    },
   ];
 
   drawSimpleTable(doc, columns, report.expenses, "No expenses in this period.");
@@ -429,7 +446,7 @@ export function reportToPdf(report: AccountantReport): Promise<Buffer> {
       doc,
       [
         { label: "Month", width: contentWidth(doc) - 120 - 80, value: (r: AccountantReport["monthlyTotals"][number]) => r.month },
-        { label: "Total", width: 120, align: "right", value: (r) => formatCurrency(r.total) },
+        { label: "Total", width: 120, align: "right", value: (r) => formatCentsForPdf(r.totalCents) },
         { label: "Count", width: 80, align: "right", value: (r) => String(r.count) },
       ],
       report.monthlyTotals,

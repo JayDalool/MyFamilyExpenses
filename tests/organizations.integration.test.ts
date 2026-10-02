@@ -13,6 +13,7 @@ import { changeHouseholdMemberRole } from "../lib/household-members";
 import { createHouseholdInvite } from "../lib/household-invites";
 import { MAX_OWNED_COMPANIES, countOwnedCompanies, hasReachedCompanyLimit } from "../lib/households";
 import { assertSafeTestDatabase } from "./helpers/test-database";
+import { money } from "./helpers/expense-money";
 
 assertSafeTestDatabase();
 
@@ -84,7 +85,7 @@ async function createFixture() {
         categoryId,
         invoiceNumber,
         invoiceDate: new Date("2026-06-01T00:00:00.000Z"),
-        amount: 10,
+        ...money(10),
         filePath: `uploads/${invoiceNumber}.pdf`,
       },
     });

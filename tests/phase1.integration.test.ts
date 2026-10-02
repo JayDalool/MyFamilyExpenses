@@ -12,6 +12,7 @@ import {
   updateExpenseForUser,
 } from "../lib/expenses";
 import { assertSafeTestDatabase } from "./helpers/test-database";
+import { money } from "./helpers/expense-money";
 
 const testDatabaseUrl = assertSafeTestDatabase();
 const integrationTest = test;
@@ -74,7 +75,7 @@ async function createFixture() {
           categoryId: index === 0 ? disabledCategoryA.id : activeCategoryA.id,
           invoiceNumber: `A-${String(index).padStart(2, "0")}`,
           invoiceDate: new Date(`2026-05-${String(index + 1).padStart(2, "0")}T00:00:00.000Z`),
-          amount: index + 1,
+          ...money(index + 1),
           filePath: `uploads/a-${index}.pdf`,
           ...(index === 1 ? { deletedAt: new Date(), deletedByUserId: userA.id } : {}),
         },
@@ -89,7 +90,7 @@ async function createFixture() {
       categoryId: activeCategoryB.id,
       invoiceNumber: "B-00",
       invoiceDate: new Date("2026-05-01T00:00:00.000Z"),
-      amount: 50,
+      ...money(50),
       filePath: "uploads/b.pdf",
     },
   });

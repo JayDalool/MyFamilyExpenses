@@ -360,6 +360,46 @@ Backend must always verify membership.
 
 ---
 
+## 5.5 Expense Fields and Money
+
+See `docs/adr/0002-money-in-cents.md`.
+
+Money is stored as **integer cents** in `expenses.amount_cents`, and that figure is the
+total actually paid, **tax included** — the same shape as SamVision's `amount_cents`, so
+the step-7 file exchange needs no conversion.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `amount_cents` | `INTEGER NOT NULL` | Total paid, tax included. CHECK >= 0 |
+| `tax_cents` | `INTEGER NULL` | Tax portion *of* the total. CHECK >= 0 and <= `amount_cents` |
+| `currency` | `CHAR(3) NOT NULL` | Default `CAD`. No conversion; deferred |
+| `vendor` | `TEXT NULL` | Indexed with `household_id` for the step-6 category suggestion |
+| `payment_method` | `PaymentMethod NULL` | `CASH`, `DEBIT`, `CREDIT`, `ETRANSFER`, `OTHER` |
+| `notes` | `TEXT NULL` | 500 characters in validation |
+| `is_business` | `BOOLEAN NOT NULL` | Default `false`; the form pre-ticks it in a COMPANY |
+| `amount` | `DECIMAL(12,2) NOT NULL` | **Deprecated.** Still written, never read. Dropped next |
+
+Every conversion lives in `lib/money.ts` — `toCents`, `fromCents`,
+`centsToDecimalString`, `formatCents`, `subtotalCents`. Nothing else multiplies or divides
+by 100.
+
+**Units are part of the name.** `lib/money.ts` exports `formatCents`; `lib/utils.ts`
+exports `formatDollars`. Reporting returns `totalCents`, `averageCents` and `amountCents`.
+A formatter that accepts either unit renders cents at 100x, which is why the old
+`formatCurrency` was split.
+
+```text
+form (dollars)
+   ↓ toCents
+API route  ->  amount_cents + amount (dual-written)
+   ↓
+lib/reporting.ts  ->  totalCents / averageCents / amountCents
+   ↓                              ↓
+formatCents (screen, PDF)   fromCents (CSV, XLSX -> spreadsheet numbers)
+```
+
+---
+
 ## 6. Subscription-Ready Household Model
 
 Subscriptions should be attached to the household, not only the user.

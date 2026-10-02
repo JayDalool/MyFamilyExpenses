@@ -1,4 +1,7 @@
-export function formatCurrency(value: number | string) {
+// Formats a value already expressed in DOLLARS. Anything stored in cents goes
+// through formatCents in lib/money.ts instead — the old name took number|string
+// and silently accepted cents, which renders 100x.
+export function formatDollars(value: number | string) {
   return new Intl.NumberFormat("en-CA", {
     style: "currency",
     currency: "CAD",

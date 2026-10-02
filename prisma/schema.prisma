@@ -30,6 +30,16 @@ enum HouseholdKind {
   COMPANY
 }
 
+// How an expense was paid. Nullable on Expense: most receipts do not say, and
+// OCR does not guess.
+enum PaymentMethod {
+  CASH
+  DEBIT
+  CREDIT
+  ETRANSFER
+  OTHER
+}
+
 enum CategoryStatus {
   ACTIVE
   DISABLED
@@ -172,7 +182,23 @@ model Expense {
   categoryId      String    @map("category_id") @db.Uuid
   invoiceNumber   String    @map("invoice_number")
   invoiceDate     DateTime  @map("invoice_date") @db.Date
+  // DEPRECATED: superseded by amountCents. Still WRITTEN (kept in step with
+  // amountCents) so a rollback can read it for rows created after this release,
+  // but never READ by application code. Dropped in the follow-up migration.
+  // See docs/adr/0002-money-in-cents.md.
   amount          Decimal   @db.Decimal(12, 2)
+  // The total actually paid, tax INCLUDED, in cents. Matches SamVision's
+  // `amount_cents` so the step-7 file exchange needs no conversion.
+  amountCents     Int       @map("amount_cents")
+  // The tax portion of amountCents, in cents. Null when the receipt does not
+  // state it — never inferred.
+  taxCents        Int?      @map("tax_cents")
+  // ISO 4217. Single-currency for now; conversion is explicitly deferred.
+  currency        String    @default("CAD") @db.Char(3)
+  vendor          String?
+  paymentMethod   PaymentMethod? @map("payment_method")
+  notes           String?
+  isBusiness      Boolean   @default(false) @map("is_business")
   filePath        String    @map("file_path")
   deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
   deletedByUserId String?   @map("deleted_by_user_id") @db.Uuid
@@ -201,6 +227,8 @@ model Expense {
   @@index([userId, invoiceDate])
   @@index([householdId, paidByUserId])
   @@index([categoryId, invoiceDate])
+  // Supports vendor lookup and the vendor-based category suggestion in step 6.
+  @@index([householdId, vendor])
   @@map("expenses")
 }
 

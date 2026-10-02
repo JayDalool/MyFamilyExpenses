@@ -47,20 +47,20 @@ export async function GET(request: Request) {
   return NextResponse.json({
     data: {
       today: {
-        total: Number(dashboard.today._sum.amount ?? 0),
+        totalCents: Number(dashboard.today._sum.amountCents ?? 0),
         count: dashboard.today._count._all,
       },
       month: {
-        total: Number(dashboard.month._sum.amount ?? 0),
+        totalCents: Number(dashboard.month._sum.amountCents ?? 0),
         count: dashboard.month._count._all,
       },
       allTime: {
-        total: Number(dashboard.allTime._sum.amount ?? 0),
+        totalCents: Number(dashboard.allTime._sum.amountCents ?? 0),
         count: dashboard.allTime._count._all,
       },
       range: customRange
         ? {
-            total: Number(customRange.summary.total ?? 0),
+            totalCents: Number(customRange.summary.totalCents ?? 0),
             count: customRange.summary.count,
             fromDate: customRange.range.from.toISOString().slice(0, 10),
             toDate: customRange.range.to.toISOString().slice(0, 10),

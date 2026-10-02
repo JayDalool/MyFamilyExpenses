@@ -11,15 +11,25 @@ and licensed professionals:
 - at year end, export every receipt with its data for the accountant
 - exchange car and maintenance receipts with SamVision by file
 
-## Where we are (2026-09-30)
+## Where we are (2026-10-01)
 
-- `main` is the initial setup. All work is on `phase5-ocr-foundation`.
-- Lint, typecheck and 348 tests pass.
-- `Expense` stores only invoice number, date, amount, category, file and payer.
-  No vendor, tax, currency, payment method, notes or business flag.
-- Reports export CSV, XLSX and PDF (cap 5,000 rows). No receipt-file ZIP.
-- Accounts are per household. OWNER and MEMBER roles only.
-- Nightly database backup exists. Receipt-file backup and a restore drill are unverified.
+Steps 1-3 are merged to `main`. Step 4 is open in a pull request, as is the first CI
+workflow; this section describes what is merged, not what is in flight.
+
+- `main` carries phase5, the backup work and company households.
+- Lint, typecheck and the test suite pass locally. CI (`.github/workflows/ci.yml`) is a
+  separate open pull request — until it merges, every check figure in this repo comes from
+  someone running the commands by hand.
+- `Expense` stores vendor, tax, currency, payment method, notes and a business flag.
+  Money is integer cents, tax included (`docs/adr/0002-money-in-cents.md`). The
+  deprecated `amount` Decimal is still written and must be dropped in a follow-up
+  migration.
+- Reports export CSV, XLSX and PDF (cap 5,000 rows) and now carry the new fields. No
+  receipt-file ZIP yet — that is step 5.
+- Households have a `kind` (FAMILY / COMPANY) with Admin, Accountant and Employee roles
+  (`docs/adr/0001-organizations-as-households.md`).
+- Nightly database backup and the receipt-file backup scripts exist. The restore drill and
+  the offsite setup are still open on Jay in `docs/jay/MY_ACTIONS.md`.
 
 ## Decisions
 

@@ -8,6 +8,7 @@ import {
   nextInternalInvoiceNumber,
 } from "../lib/expenses";
 import { assertSafeTestDatabase } from "./helpers/test-database";
+import { money } from "./helpers/expense-money";
 
 const testDatabaseUrl = assertSafeTestDatabase();
 const db = new PrismaClient({ datasourceUrl: testDatabaseUrl });
@@ -49,7 +50,7 @@ async function createExpense(
         categoryId: member.category.id,
         invoiceNumber,
         invoiceDate: new Date("2026-06-19T00:00:00.000Z"),
-        amount: "144.48",
+        ...money(144.48),
         filePath: `uploads/${crypto.randomUUID()}.png`,
       },
     });

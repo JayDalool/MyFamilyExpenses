@@ -18,13 +18,13 @@ import {
   type RiskLevel,
   type RecommendationSeverity,
 } from "@/lib/ocr/templates";
-import { formatCurrency } from "@/lib/utils";
+import { formatDollars } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
 const pct = (rate: number) => `${Math.round(rate * 100)}%`;
 const amount = (value: number | null) =>
-  value === null ? "—" : formatCurrency(value.toString());
+  value === null ? "—" : formatDollars(value.toString());
 const day = (iso: string) => iso.slice(0, 10);
 
 const severityBadge: Record<RecommendationSeverity, "warning" | "brand" | "neutral"> = {

@@ -1,4 +1,5 @@
 import { deflateRawSync } from "node:zlib";
+import { fromCents } from "@/lib/money";
 import type { AccountantReport } from "@/lib/reporting";
 
 // A minimal zero-dependency XLSX writer. Produces a single-sheet workbook
@@ -189,26 +190,26 @@ export function reportToXlsx(report: AccountantReport): Buffer {
   rows.push([s("Household"), s(report.household.name)]);
   rows.push([s("Reporting period"), s(`${from} to ${to}`)]);
   rows.push([s("Generated at"), s(report.generatedAt.toISOString())]);
-  rows.push([s("Total spending"), n(report.totals.total)]);
+  rows.push([s("Total spending"), n(fromCents(report.totals.totalCents))]);
   rows.push([s("Expense count"), n(report.totals.count)]);
-  rows.push([s("Average expense"), n(report.totals.average)]);
+  rows.push([s("Average expense"), n(fromCents(report.totals.averageCents))]);
   rows.push([]);
   rows.push([s("Category breakdown")]);
   rows.push([s("Category"), s("Total"), s("Count")]);
   for (const row of report.categoryBreakdown) {
-    rows.push([s(row.name), n(row.total), n(row.count)]);
+    rows.push([s(row.name), n(fromCents(row.totalCents)), n(row.count)]);
   }
   rows.push([]);
   rows.push([s("Member breakdown (paid by)")]);
   rows.push([s("Member (paid by)"), s("Total"), s("Count")]);
   for (const row of report.memberBreakdown) {
-    rows.push([s(row.name), n(row.total), n(row.count)]);
+    rows.push([s(row.name), n(fromCents(row.totalCents)), n(row.count)]);
   }
   rows.push([]);
   rows.push([s("Monthly totals")]);
   rows.push([s("Month"), s("Total"), s("Count")]);
   for (const row of report.monthlyTotals) {
-    rows.push([s(row.month), n(row.total), n(row.count)]);
+    rows.push([s(row.month), n(fromCents(row.totalCents)), n(row.count)]);
   }
   rows.push([]);
   rows.push([s("Expense register")]);
@@ -218,7 +219,13 @@ export function reportToXlsx(report: AccountantReport): Buffer {
     s("Category"),
     s("Paid by (member)"),
     s("Entered by"),
+    s("Vendor"),
     s("Amount"),
+    s("Tax"),
+    s("Currency"),
+    s("Payment method"),
+    s("Business"),
+    s("Notes"),
     s("Receipt reference"),
   ]);
   for (const expense of report.expenses) {
@@ -228,7 +235,14 @@ export function reportToXlsx(report: AccountantReport): Buffer {
       s(expense.categoryName),
       s(expense.userName),
       s(expense.enteredByUserName),
-      n(expense.amount),
+      s(expense.vendor ?? ""),
+      n(fromCents(expense.amountCents)),
+      // Blank, not zero: a receipt that does not state tax is not tax-free.
+      expense.taxCents === null ? s("") : n(fromCents(expense.taxCents)),
+      s(expense.currency.trim()),
+      s(expense.paymentMethod ?? ""),
+      s(expense.isBusiness ? "Yes" : "No"),
+      s(expense.notes ?? ""),
       s(expense.filePath),
     ]);
   }

@@ -6,6 +6,7 @@ import { hashPassword } from "../../lib/auth/password";
 import { createInviteToken, hashInviteToken } from "../../lib/household-invites";
 import { MAX_SYNC_EXPORT_ROWS } from "../../lib/reporting";
 import { assertSafeTestDatabase } from "../helpers/test-database";
+import { money } from "../helpers/expense-money";
 
 assertSafeTestDatabase();
 test.beforeEach(() => {
@@ -372,7 +373,7 @@ test("category form sends a protected native POST without JavaScript", async ({ 
         categoryId: usedCategory.id,
         invoiceNumber: "CATEGORY-IN-USE",
         invoiceDate: new Date("2026-06-07T00:00:00.000Z"),
-        amount: 1,
+        ...money(1),
         filePath: "uploads/category-in-use.pdf",
       },
     });
@@ -462,7 +463,7 @@ test("authenticated PDF preview and download responses keep correct framing and 
       categoryId: category.id,
       invoiceNumber: "PDF-E2E",
       invoiceDate: new Date("2026-06-01T00:00:00.000Z"),
-      amount: 10,
+      ...money(10),
       filePath: `uploads/${fileName}`,
     },
   });
@@ -690,7 +691,7 @@ test("multi-household users only see the selected household on dashboard and rep
         categoryId: categoryA.id,
         invoiceNumber: "HOUSEHOLD-A",
         invoiceDate: new Date(`${today}T00:00:00.000Z`),
-        amount: 10,
+        ...money(10),
         filePath: "uploads/household-a.pdf",
       },
       {
@@ -700,7 +701,7 @@ test("multi-household users only see the selected household on dashboard and rep
         categoryId: categoryB.id,
         invoiceNumber: "HOUSEHOLD-B",
         invoiceDate: new Date(`${today}T00:00:00.000Z`),
-        amount: 100,
+        ...money(100),
         filePath: "uploads/household-b.pdf",
       },
     ],
@@ -789,7 +790,7 @@ test("multi-household users only see the selected household on dashboard and rep
         categoryId: categoryB.id,
         invoiceNumber: `EXPORT-LIMIT-${index}`,
         invoiceDate: new Date(`${today}T00:00:00.000Z`),
-        amount: 1,
+        ...money(1),
         filePath: `uploads/export-limit-${index}.pdf`,
       })),
     });
@@ -1106,7 +1107,7 @@ test("expense and category HTTP routes enforce VIEWER, MEMBER, and ADMIN roles",
         categoryId: category.id,
         invoiceNumber: "OWNER-ROUTE",
         invoiceDate: new Date("2026-06-01T00:00:00.000Z"),
-        amount: 10,
+        ...money(10),
         filePath: "uploads/owner-route.pdf",
       },
     }),
@@ -1118,7 +1119,7 @@ test("expense and category HTTP routes enforce VIEWER, MEMBER, and ADMIN roles",
         categoryId: category.id,
         invoiceNumber: "MEMBER-ROUTE",
         invoiceDate: new Date("2026-06-01T00:00:00.000Z"),
-        amount: 20,
+        ...money(20),
         filePath: "uploads/member-route.pdf",
       },
     }),

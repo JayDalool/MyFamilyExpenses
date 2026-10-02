@@ -11,6 +11,7 @@ import {
 import { parseInvoiceFieldsFromText } from "../lib/ocr/ocr-parsing";
 import type { OcrExtractionEnvelope } from "../lib/ocr/types";
 import { assertSafeTestDatabase } from "./helpers/test-database";
+import { money } from "./helpers/expense-money";
 
 const testDatabaseUrl = assertSafeTestDatabase();
 const db = new PrismaClient({ datasourceUrl: testDatabaseUrl });
@@ -44,7 +45,7 @@ async function makeExpense(member: Awaited<ReturnType<typeof makeMember>>) {
       categoryId: member.category.id,
       invoiceNumber: `INV-${crypto.randomUUID().slice(0, 8)}`,
       invoiceDate: new Date("2018-01-01T00:00:00.000Z"),
-      amount: "84.80",
+      ...money(84.80),
       filePath: `uploads/${crypto.randomUUID()}.png`,
     },
   });

@@ -1,3 +1,7 @@
+- [ ] STEP-4 · New expense fields save and show on a receipt
+- [ ] STEP-4 · Totals and reports still show correct dollar amounts
+- [ ] STEP-4 · CSV, XLSX and PDF exports carry vendor and tax
+- [ ] STEP-4 · Company form pre-ticks Business expense
 - [ ] STEP-3 · Company invite and role lists offer no Viewer
 - [ ] STEP-3 · Create a company on /household, lands back on /household
 - [ ] STEP-3 · Company shows Admin / Accountant / Employee labels, family shows Member

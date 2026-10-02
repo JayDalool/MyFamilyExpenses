@@ -203,17 +203,17 @@ export async function getDashboardSummary(
   const [today, month, allTime, recentExpenses] = await Promise.all([
     db.expense.aggregate({
       where: activeExpenseWhere(householdId, todayRange),
-      _sum: { amount: true },
+      _sum: { amountCents: true },
       _count: { _all: true },
     }),
     db.expense.aggregate({
       where: activeExpenseWhere(householdId, monthRange),
-      _sum: { amount: true },
+      _sum: { amountCents: true },
       _count: { _all: true },
     }),
     db.expense.aggregate({
       where: activeExpenseWhere(householdId),
-      _sum: { amount: true },
+      _sum: { amountCents: true },
       _count: { _all: true },
     }),
     db.expense.findMany({
@@ -237,27 +237,27 @@ type AnalyticsStore = Pick<typeof prisma, "expense" | "category" | "user"> & {
 
 export type DashboardAnalytics = {
   generatedAt: Date;
-  thisMonth: { total: number; count: number };
-  lastMonth: { total: number; count: number };
-  thisYear: { total: number; count: number };
-  averageMonthly: { total: number; months: number };
+  thisMonth: { totalCents: number; count: number };
+  lastMonth: { totalCents: number; count: number };
+  thisYear: { totalCents: number; count: number };
+  averageMonthly: { totalCents: number; months: number };
   highestCategoryThisMonth:
-    | { categoryId: string; name: string; total: number }
+    | { categoryId: string; name: string; totalCents: number }
     | null;
   topSpenderThisMonth:
-    | { userId: string; name: string; total: number }
+    | { userId: string; name: string; totalCents: number }
     | null;
-  monthlyTrend: Array<{ month: string; total: number; count: number }>;
+  monthlyTrend: Array<{ month: string; totalCents: number; count: number }>;
   categoryBreakdownThisYear: Array<{
     categoryId: string;
     name: string;
-    total: number;
+    totalCents: number;
     count: number;
   }>;
   memberBreakdownThisYear: Array<{
     userId: string;
     name: string;
-    total: number;
+    totalCents: number;
     count: number;
   }>;
   // Additive: per-member spending for the current month (paid-by attribution),
@@ -265,10 +265,10 @@ export type DashboardAnalytics = {
   memberBreakdownThisMonth: Array<{
     userId: string;
     name: string;
-    total: number;
+    totalCents: number;
     count: number;
   }>;
-  dailyTrendThisMonth: Array<{ day: string; total: number; count: number }>;
+  dailyTrendThisMonth: Array<{ day: string; totalCents: number; count: number }>;
   expenseCount: { thisMonth: number; thisYear: number; allTime: number };
 };
 
@@ -325,23 +325,23 @@ export async function getDashboardAnalytics(
   ] = await Promise.all([
     db.expense.aggregate({
       where: activeExpenseWhere(householdId, thisMonthRange),
-      _sum: { amount: true },
+      _sum: { amountCents: true },
       _count: { _all: true },
     }),
     db.expense.aggregate({
       where: activeExpenseWhere(householdId, lastMonthRange),
-      _sum: { amount: true },
+      _sum: { amountCents: true },
       _count: { _all: true },
     }),
     db.expense.aggregate({
       where: activeExpenseWhere(householdId, yearRange),
-      _sum: { amount: true },
+      _sum: { amountCents: true },
       _count: { _all: true },
     }),
-    db.$queryRaw<Array<{ bucket: Date; total: string; count: bigint }>>`
+    db.$queryRaw<Array<{ bucket: Date; totalCents: string; count: bigint }>>`
       SELECT
         DATE_TRUNC('month', "invoice_date")::date AS "bucket",
-        COALESCE(SUM("amount"), 0)::text         AS "total",
+        COALESCE(SUM("amount_cents"), 0)::text         AS "totalCents",
         COUNT(*)::bigint                          AS "count"
       FROM "expenses"
       WHERE "household_id" = CAST(${householdId} AS uuid)
@@ -354,31 +354,31 @@ export async function getDashboardAnalytics(
     db.expense.groupBy({
       by: ["categoryId"],
       where: activeExpenseWhere(householdId, yearRange),
-      _sum: { amount: true },
+      _sum: { amountCents: true },
       _count: { _all: true },
     }),
     db.expense.groupBy({
       by: ["paidByUserId"],
       where: activeExpenseWhere(householdId, yearRange),
-      _sum: { amount: true },
+      _sum: { amountCents: true },
       _count: { _all: true },
     }),
     db.expense.groupBy({
       by: ["categoryId"],
       where: activeExpenseWhere(householdId, thisMonthRange),
-      _sum: { amount: true },
+      _sum: { amountCents: true },
       _count: { _all: true },
     }),
     db.expense.groupBy({
       by: ["paidByUserId"],
       where: activeExpenseWhere(householdId, thisMonthRange),
-      _sum: { amount: true },
+      _sum: { amountCents: true },
       _count: { _all: true },
     }),
-    db.$queryRaw<Array<{ bucket: Date; total: string; count: bigint }>>`
+    db.$queryRaw<Array<{ bucket: Date; totalCents: string; count: bigint }>>`
       SELECT
         "invoice_date"::date              AS "bucket",
-        COALESCE(SUM("amount"), 0)::text  AS "total",
+        COALESCE(SUM("amount_cents"), 0)::text  AS "totalCents",
         COUNT(*)::bigint                  AS "count"
       FROM "expenses"
       WHERE "household_id" = CAST(${householdId} AS uuid)
@@ -430,51 +430,51 @@ export async function getDashboardAnalytics(
     .map((row) => ({
       categoryId: row.categoryId,
       name: categoryNames.get(row.categoryId) ?? "Unknown category",
-      total: Number(row._sum.amount ?? 0),
+      totalCents: Number(row._sum.amountCents ?? 0),
       count: row._count._all,
     }))
-    .sort((left, right) => right.total - left.total);
+    .sort((left, right) => right.totalCents - left.totalCents);
 
   const memberBreakdownThisYear = memberGroupsYear
     .map((row) => ({
       userId: row.paidByUserId,
       name: userNames.get(row.paidByUserId) ?? "Unknown member",
-      total: Number(row._sum.amount ?? 0),
+      totalCents: Number(row._sum.amountCents ?? 0),
       count: row._count._all,
     }))
-    .sort((left, right) => right.total - left.total);
+    .sort((left, right) => right.totalCents - left.totalCents);
 
   const highestCategoryThisMonth = categoryGroupsMonth.length
     ? categoryGroupsMonth
         .map((row) => ({
           categoryId: row.categoryId,
           name: categoryNames.get(row.categoryId) ?? "Unknown category",
-          total: Number(row._sum.amount ?? 0),
+          totalCents: Number(row._sum.amountCents ?? 0),
         }))
-        .sort((left, right) => right.total - left.total)[0]
+        .sort((left, right) => right.totalCents - left.totalCents)[0]
     : null;
 
   const memberBreakdownThisMonth = memberGroupsMonth
     .map((row) => ({
       userId: row.paidByUserId,
       name: userNames.get(row.paidByUserId) ?? "Unknown member",
-      total: Number(row._sum.amount ?? 0),
+      totalCents: Number(row._sum.amountCents ?? 0),
       count: row._count._all,
     }))
-    .sort((left, right) => right.total - left.total);
+    .sort((left, right) => right.totalCents - left.totalCents);
 
   const topSpenderThisMonth = memberBreakdownThisMonth[0]
     ? {
         userId: memberBreakdownThisMonth[0].userId,
         name: memberBreakdownThisMonth[0].name,
-        total: memberBreakdownThisMonth[0].total,
+        totalCents: memberBreakdownThisMonth[0].totalCents,
       }
     : null;
 
-  const trendMonthsWithSpend = monthlyTrend.filter((m) => m.total > 0).length;
+  const trendMonthsWithSpend = monthlyTrend.filter((m) => m.totalCents > 0).length;
   const averageMonthly = {
-    total: trendMonthsWithSpend > 0
-      ? monthlyTrend.reduce((sum, m) => sum + m.total, 0) / trendMonthsWithSpend
+    totalCents: trendMonthsWithSpend > 0
+      ? monthlyTrend.reduce((sum, m) => sum + m.totalCents, 0) / trendMonthsWithSpend
       : 0,
     months: trendMonthsWithSpend,
   };
@@ -482,15 +482,15 @@ export async function getDashboardAnalytics(
   return {
     generatedAt: new Date(),
     thisMonth: {
-      total: Number(thisMonthAgg._sum.amount ?? 0),
+      totalCents: Number(thisMonthAgg._sum.amountCents ?? 0),
       count: thisMonthAgg._count._all,
     },
     lastMonth: {
-      total: Number(lastMonthAgg._sum.amount ?? 0),
+      totalCents: Number(lastMonthAgg._sum.amountCents ?? 0),
       count: lastMonthAgg._count._all,
     },
     thisYear: {
-      total: Number(yearAgg._sum.amount ?? 0),
+      totalCents: Number(yearAgg._sum.amountCents ?? 0),
       count: yearAgg._count._all,
     },
     averageMonthly,
@@ -512,21 +512,21 @@ export async function getDashboardAnalytics(
 function buildMonthlyTrend(
   start: Date,
   end: Date,
-  rows: Array<{ bucket: Date; total: string; count: bigint }>,
+  rows: Array<{ bucket: Date; totalCents: string; count: bigint }>,
 ) {
   const byKey = new Map(
     rows.map((row) => [
       `${row.bucket.getUTCFullYear()}-${String(row.bucket.getUTCMonth() + 1).padStart(2, "0")}`,
-      { total: Number(row.total), count: Number(row.count) },
+      { totalCents: Number(row.totalCents), count: Number(row.count) },
     ]),
   );
-  const trend: Array<{ month: string; total: number; count: number }> = [];
+  const trend: Array<{ month: string; totalCents: number; count: number }> = [];
   const cursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
   const stop = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1));
   while (cursor <= stop) {
     const key = `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, "0")}`;
-    const value = byKey.get(key) ?? { total: 0, count: 0 };
-    trend.push({ month: key, total: value.total, count: value.count });
+    const value = byKey.get(key) ?? { totalCents: 0, count: 0 };
+    trend.push({ month: key, totalCents: value.totalCents, count: value.count });
     cursor.setUTCMonth(cursor.getUTCMonth() + 1);
   }
   return trend;
@@ -534,20 +534,20 @@ function buildMonthlyTrend(
 
 function buildDailyTrend(
   range: { from: Date; to: Date },
-  rows: Array<{ bucket: Date; total: string; count: bigint }>,
+  rows: Array<{ bucket: Date; totalCents: string; count: bigint }>,
 ) {
   const byKey = new Map(
     rows.map((row) => [
       row.bucket.toISOString().slice(0, 10),
-      { total: Number(row.total), count: Number(row.count) },
+      { totalCents: Number(row.totalCents), count: Number(row.count) },
     ]),
   );
-  const trend: Array<{ day: string; total: number; count: number }> = [];
+  const trend: Array<{ day: string; totalCents: number; count: number }> = [];
   const cursor = new Date(range.from);
   while (cursor <= range.to) {
     const key = cursor.toISOString().slice(0, 10);
-    const value = byKey.get(key) ?? { total: 0, count: 0 };
-    trend.push({ day: key, total: value.total, count: value.count });
+    const value = byKey.get(key) ?? { totalCents: 0, count: 0 };
+    trend.push({ day: key, totalCents: value.totalCents, count: value.count });
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
   return trend;
@@ -562,25 +562,31 @@ export type AccountantReport = {
     categoryId?: string;
     memberUserId?: string;
   };
-  totals: { total: number; count: number; average: number };
+  totals: { totalCents: number; count: number; averageCents: number };
   categoryBreakdown: Array<{
     categoryId: string;
     name: string;
-    total: number;
+    totalCents: number;
     count: number;
   }>;
   memberBreakdown: Array<{
     userId: string;
     name: string;
-    total: number;
+    totalCents: number;
     count: number;
   }>;
-  monthlyTotals: Array<{ month: string; total: number; count: number }>;
+  monthlyTotals: Array<{ month: string; totalCents: number; count: number }>;
   expenses: Array<{
     id: string;
     invoiceNumber: string;
     invoiceDate: Date;
-    amount: number;
+    amountCents: number;
+    taxCents: number | null;
+    currency: string;
+    vendor: string | null;
+    paymentMethod: string | null;
+    notes: string | null;
+    isBusiness: boolean;
     categoryId: string;
     categoryName: string;
     // paid-by member (spending attribution)
@@ -617,26 +623,26 @@ export async function buildAccountantReport(
   const [summary, categoryGroups, memberGroups, monthlyRows, expenses] = await Promise.all([
     db.expense.aggregate({
       where,
-      _sum: { amount: true },
-      _avg: { amount: true },
+      _sum: { amountCents: true },
+      _avg: { amountCents: true },
       _count: { _all: true },
     }),
     db.expense.groupBy({
       by: ["categoryId"],
       where,
-      _sum: { amount: true },
+      _sum: { amountCents: true },
       _count: { _all: true },
     }),
     db.expense.groupBy({
       by: ["paidByUserId"],
       where,
-      _sum: { amount: true },
+      _sum: { amountCents: true },
       _count: { _all: true },
     }),
-    db.$queryRaw<Array<{ bucket: Date; total: string; count: bigint }>>`
+    db.$queryRaw<Array<{ bucket: Date; totalCents: string; count: bigint }>>`
       SELECT
         DATE_TRUNC('month', "invoice_date")::date AS "bucket",
-        COALESCE(SUM("amount"), 0)::text         AS "total",
+        COALESCE(SUM("amount_cents"), 0)::text         AS "totalCents",
         COUNT(*)::bigint                          AS "count"
       FROM "expenses"
       WHERE "household_id" = CAST(${household.id} AS uuid)
@@ -675,36 +681,42 @@ export async function buildAccountantReport(
       memberUserId: filters.memberUserId,
     },
     totals: {
-      total: Number(summary._sum.amount ?? 0),
+      totalCents: Number(summary._sum.amountCents ?? 0),
       count: summary._count._all,
-      average: Number(summary._avg.amount ?? 0),
+      averageCents: Number(summary._avg.amountCents ?? 0),
     },
     categoryBreakdown: categoryGroups
       .map((row) => ({
         categoryId: row.categoryId,
         name: categoryNames.get(row.categoryId) ?? "Unknown category",
-        total: Number(row._sum.amount ?? 0),
+        totalCents: Number(row._sum.amountCents ?? 0),
         count: row._count._all,
       }))
-      .sort((l, r) => r.total - l.total),
+      .sort((l, r) => r.totalCents - l.totalCents),
     memberBreakdown: memberGroups
       .map((row) => ({
         userId: row.paidByUserId,
         name: userNames.get(row.paidByUserId) ?? "Unknown member",
-        total: Number(row._sum.amount ?? 0),
+        totalCents: Number(row._sum.amountCents ?? 0),
         count: row._count._all,
       }))
-      .sort((l, r) => r.total - l.total),
+      .sort((l, r) => r.totalCents - l.totalCents),
     monthlyTotals: monthlyRows.map((row) => ({
       month: row.bucket.toISOString().slice(0, 7),
-      total: Number(row.total),
+      totalCents: Number(row.totalCents),
       count: Number(row.count),
     })),
     expenses: expenses.map((e) => ({
       id: e.id,
       invoiceNumber: e.invoiceNumber,
       invoiceDate: e.invoiceDate,
-      amount: Number(e.amount),
+      amountCents: e.amountCents,
+      taxCents: e.taxCents,
+      currency: e.currency,
+      vendor: e.vendor,
+      paymentMethod: e.paymentMethod,
+      notes: e.notes,
+      isBusiness: e.isBusiness,
       categoryId: e.categoryId,
       categoryName: e.category.name,
       userId: e.paidByUserId,
@@ -745,26 +757,26 @@ export async function getReportData(
   const [summary, categoryGroups, memberGroups, monthlyRows, total] = await Promise.all([
     db.expense.aggregate({
       where,
-      _sum: { amount: true },
-      _avg: { amount: true },
+      _sum: { amountCents: true },
+      _avg: { amountCents: true },
       _count: { _all: true },
     }),
     db.expense.groupBy({
       by: ["categoryId"],
       where,
-      _sum: { amount: true },
+      _sum: { amountCents: true },
       _count: { _all: true },
     }),
     db.expense.groupBy({
       by: ["paidByUserId"],
       where,
-      _sum: { amount: true },
+      _sum: { amountCents: true },
       _count: { _all: true },
     }),
-    db.$queryRaw<Array<{ bucket: Date; total: string; count: bigint }>>`
+    db.$queryRaw<Array<{ bucket: Date; totalCents: string; count: bigint }>>`
       SELECT
         DATE_TRUNC('month', "invoice_date")::date AS "bucket",
-        COALESCE(SUM("amount"), 0)::text         AS "total",
+        COALESCE(SUM("amount_cents"), 0)::text         AS "totalCents",
         COUNT(*)::bigint                          AS "count"
       FROM "expenses"
       WHERE "household_id" = CAST(${householdId} AS uuid)
@@ -810,29 +822,29 @@ export async function getReportData(
   return {
     range,
     summary: {
-      total: summary._sum.amount ?? null,
-      average: summary._avg.amount ?? null,
+      totalCents: summary._sum.amountCents ?? null,
+      averageCents: summary._avg.amountCents ?? null,
       count: summary._count._all,
     },
     categories: categoryGroups
       .map((group) => ({
         categoryId: group.categoryId,
         name: categoryNames.get(group.categoryId) ?? "Unknown category",
-        total: group._sum.amount ?? null,
+        totalCents: group._sum.amountCents ?? null,
         count: group._count._all,
       }))
-      .sort((left, right) => Number(right.total ?? 0) - Number(left.total ?? 0)),
+      .sort((left, right) => Number(right.totalCents ?? 0) - Number(left.totalCents ?? 0)),
     members: memberGroups
       .map((group) => ({
         userId: group.paidByUserId,
         name: userNames.get(group.paidByUserId) ?? "Unknown member",
-        total: group._sum.amount ?? null,
+        totalCents: group._sum.amountCents ?? null,
         count: group._count._all,
       }))
-      .sort((left, right) => Number(right.total ?? 0) - Number(left.total ?? 0)),
+      .sort((left, right) => Number(right.totalCents ?? 0) - Number(left.totalCents ?? 0)),
     monthlyTotals: monthlyRows.map((row) => ({
       month: row.bucket.toISOString().slice(0, 7),
-      total: Number(row.total),
+      totalCents: Number(row.totalCents),
       count: Number(row.count),
     })),
     expenses,

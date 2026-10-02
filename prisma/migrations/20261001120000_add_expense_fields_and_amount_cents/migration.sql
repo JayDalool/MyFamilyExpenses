@@ -14,6 +14,19 @@ ALTER TABLE "expenses" ADD COLUMN "payment_method" "PaymentMethod";
 ALTER TABLE "expenses" ADD COLUMN "notes" TEXT;
 ALTER TABLE "expenses" ADD COLUMN "is_business" BOOLEAN NOT NULL DEFAULT false;
 
+-- Pre-flight: amount_cents is INTEGER, which caps at $21,474,836.47, while
+-- Decimal(12,2) allowed far more and the pre-change validation had no maximum.
+-- Without this the cast below fails with Postgres's bare "integer out of range",
+-- naming no table or column, and leaves the migration in a failed state.
+DO $$
+DECLARE too_big BIGINT;
+BEGIN
+  SELECT count(*) INTO too_big FROM "expenses" WHERE "amount" > 21474836.47;
+  IF too_big > 0 THEN
+    RAISE EXCEPTION 'Cannot convert amount to amount_cents: % expense(s) exceed the INTEGER cent limit of 21474836.47. Inspect them with: SELECT id, amount FROM expenses WHERE amount > 21474836.47;', too_big;
+  END IF;
+END $$;
+
 -- Backfill. amount is Decimal(12,2), so scaling by 100 is exact; ROUND guards
 -- against any stored value with more scale than the type advertises.
 UPDATE "expenses" SET "amount_cents" = ROUND("amount" * 100)::INTEGER WHERE "amount_cents" IS NULL;

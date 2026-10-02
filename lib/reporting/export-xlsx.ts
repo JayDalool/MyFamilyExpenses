@@ -219,7 +219,13 @@ export function reportToXlsx(report: AccountantReport): Buffer {
     s("Category"),
     s("Paid by (member)"),
     s("Entered by"),
+    s("Vendor"),
     s("Amount"),
+    s("Tax"),
+    s("Currency"),
+    s("Payment method"),
+    s("Business"),
+    s("Notes"),
     s("Receipt reference"),
   ]);
   for (const expense of report.expenses) {
@@ -229,7 +235,14 @@ export function reportToXlsx(report: AccountantReport): Buffer {
       s(expense.categoryName),
       s(expense.userName),
       s(expense.enteredByUserName),
+      s(expense.vendor ?? ""),
       n(fromCents(expense.amountCents)),
+      // Blank, not zero: a receipt that does not state tax is not tax-free.
+      expense.taxCents === null ? s("") : n(fromCents(expense.taxCents)),
+      s(expense.currency.trim()),
+      s(expense.paymentMethod ?? ""),
+      s(expense.isBusiness ? "Yes" : "No"),
+      s(expense.notes ?? ""),
       s(expense.filePath),
     ]);
   }

@@ -5,7 +5,6 @@ import {
   centsToDecimalString,
   formatCents,
   fromCents,
-  subtotalCents,
   toCents,
 } from "../lib/money";
 
@@ -57,11 +56,4 @@ test("formatCents formats cents, not dollars", () => {
   assert.match(formatCents(12345), /123\.45/);
   assert.doesNotMatch(formatCents(12345), /12,345/);
   assert.match(formatCents(0), /0\.00/);
-});
-
-test("subtotalCents subtracts tax from the inclusive total", () => {
-  // The total includes tax, so the pre-tax figure is a subtraction.
-  assert.equal(subtotalCents(11300, 1300), 10000);
-  assert.equal(subtotalCents(11300, null), null);
-  assert.equal(subtotalCents(1300, 1300), 0);
 });

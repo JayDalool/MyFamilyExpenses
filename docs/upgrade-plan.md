@@ -13,11 +13,13 @@ and licensed professionals:
 
 ## Where we are (2026-10-01)
 
-Steps 1-4 are merged to `main`. Step 5 is next.
+Steps 1-3 are merged to `main`. Step 4 is open in a pull request, as is the first CI
+workflow; this section describes what is merged, not what is in flight.
 
-- `main` carries phase5, the backup work, company households and the step-4 expense fields.
-- Lint, typecheck and 380 tests pass, and CI now runs them on every pull request
-  (`.github/workflows/ci.yml`).
+- `main` carries phase5, the backup work and company households.
+- Lint, typecheck and the test suite pass locally. CI (`.github/workflows/ci.yml`) is a
+  separate open pull request — until it merges, every check figure in this repo comes from
+  someone running the commands by hand.
 - `Expense` stores vendor, tax, currency, payment method, notes and a business flag.
   Money is integer cents, tax included (`docs/adr/0002-money-in-cents.md`). The
   deprecated `amount` Decimal is still written and must be dropped in a follow-up

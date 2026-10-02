@@ -48,9 +48,3 @@ export function formatCents(cents: number, currency = "CAD"): string {
     currency: currency.trim() || "CAD",
   }).format(fromCents(cents));
 }
-
-// Tax is part of the total, so the pre-tax figure is a subtraction, not a rate.
-export function subtotalCents(amountCents: number, taxCents: number | null): number | null {
-  if (taxCents === null) return null;
-  return amountCents - taxCents;
-}

@@ -466,6 +466,11 @@ export function ExpenseWizard({
     setInvoiceNumber("");
     setInvoiceDate("");
     setAmount("");
+    setTax("");
+    setVendor("");
+    setPaymentMethod("");
+    setNotes("");
+    setIsBusiness(defaultIsBusiness);
     replacePreviewUrl(null);
     clearInputElements();
   };

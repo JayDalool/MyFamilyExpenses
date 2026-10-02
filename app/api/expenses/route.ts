@@ -96,6 +96,15 @@ export async function POST(request: Request) {
     invoiceDate: String(formData.get("invoiceDate") ?? ""),
     amount: String(formData.get("amount") ?? ""),
     paidByUserId: String(formData.get("paidByUserId") ?? ""),
+    tax: String(formData.get("tax") ?? ""),
+    currency: String(formData.get("currency") ?? ""),
+    vendor: String(formData.get("vendor") ?? ""),
+    paymentMethod: String(formData.get("paymentMethod") ?? ""),
+    notes: String(formData.get("notes") ?? ""),
+    // Raw, not String(): an unchecked box is absent from the FormData, and
+    // optionalBusinessField resolves null/undefined to false. String(null)
+    // would be the literal "null".
+    isBusiness: formData.get("isBusiness"),
   });
 
   if (!input.success) {

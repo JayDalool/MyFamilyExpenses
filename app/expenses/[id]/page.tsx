@@ -19,6 +19,14 @@ type ExpenseDetailsPageProps = {
   }>;
 };
 
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  CASH: "Cash",
+  DEBIT: "Debit",
+  CREDIT: "Credit",
+  ETRANSFER: "e-Transfer",
+  OTHER: "Other",
+};
+
 export default async function ExpenseDetailsPage({
   params,
 }: ExpenseDetailsPageProps) {
@@ -113,10 +121,40 @@ export default async function ExpenseDetailsPage({
                 </div>
 
                 <div>
-                  <dt className="text-sm font-medium text-slate-500">Amount</dt>
+                  <dt className="text-sm font-medium text-slate-500">
+                    Total paid (tax included)
+                  </dt>
                   <dd className="mt-1 text-2xl font-semibold text-slate-900">
                     {formatCents(expense.amountCents, expense.currency)}
                   </dd>
+                </div>
+
+                <div>
+                  <dt className="text-sm font-medium text-slate-500">Tax</dt>
+                  <dd className="mt-1 text-slate-900">
+                    {expense.taxCents === null
+                      ? "Not recorded"
+                      : formatCents(expense.taxCents, expense.currency)}
+                  </dd>
+                </div>
+
+                <div>
+                  <dt className="text-sm font-medium text-slate-500">Vendor</dt>
+                  <dd className="mt-1 text-slate-900">{expense.vendor ?? "Not recorded"}</dd>
+                </div>
+
+                <div>
+                  <dt className="text-sm font-medium text-slate-500">Payment method</dt>
+                  <dd className="mt-1 text-slate-900">
+                    {expense.paymentMethod
+                      ? PAYMENT_METHOD_LABELS[expense.paymentMethod] ?? expense.paymentMethod
+                      : "Not recorded"}
+                  </dd>
+                </div>
+
+                <div>
+                  <dt className="text-sm font-medium text-slate-500">Business expense</dt>
+                  <dd className="mt-1 text-slate-900">{expense.isBusiness ? "Yes" : "No"}</dd>
                 </div>
 
                 <div>
@@ -140,6 +178,13 @@ export default async function ExpenseDetailsPage({
                   <dt className="text-sm font-medium text-slate-500">Entered by</dt>
                   <dd className="mt-1 text-slate-900">{expense.user.name}</dd>
                 </div>
+
+                {expense.notes ? (
+                  <div>
+                    <dt className="text-sm font-medium text-slate-500">Notes</dt>
+                    <dd className="mt-1 whitespace-pre-wrap text-slate-900">{expense.notes}</dd>
+                  </div>
+                ) : null}
               </dl>
 
               <div className="mt-8 border-t border-slate-200 pt-6">

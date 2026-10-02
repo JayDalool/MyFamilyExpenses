@@ -119,7 +119,9 @@ export async function PATCH(request: Request, context: RouteContext) {
       // can read it. Nothing reads it.
       amount: centsToDecimalString(amountCents),
       taxCents: parsed.data.tax === undefined ? null : toCents(parsed.data.tax),
-      currency: parsed.data.currency ?? "CAD",
+      // Absent means "unchanged", not "back to CAD" — a blank currency box
+      // must not silently convert a USD expense.
+      currency: parsed.data.currency ?? existingExpense.currency,
       vendor: parsed.data.vendor ?? null,
       paymentMethod: parsed.data.paymentMethod ?? null,
       notes: parsed.data.notes ?? null,

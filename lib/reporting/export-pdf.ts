@@ -355,21 +355,34 @@ function drawExpenseRegister(doc: Doc, report: AccountantReport) {
   drawSectionTitle(doc, "Expense register");
 
   const width = contentWidth(doc);
-  const dateW = 64; // comfortably fits "YYYY-MM-DD" at 9pt
-  const invoiceW = 82;
-  const amountW = 72;
-  const remaining = width - dateW - invoiceW - amountW;
-  const categoryW = Math.round(remaining * 0.38);
-  const paidW = Math.round(remaining * 0.31);
-  const enteredW = remaining - categoryW - paidW;
+  const dateW = 60; // comfortably fits "YYYY-MM-DD" at 9pt
+  const invoiceW = 74;
+  const amountW = 66;
+  const taxW = 52;
+  // Vendor and tax earn a column here because an accountant checking a printed
+  // register needs them. Payment method, the business flag and notes stay in the
+  // CSV and XLSX registers, which have no width limit.
+  const remaining = width - dateW - invoiceW - amountW - taxW;
+  const categoryW = Math.round(remaining * 0.27);
+  const vendorW = Math.round(remaining * 0.27);
+  const paidW = Math.round(remaining * 0.24);
+  const enteredW = remaining - categoryW - vendorW - paidW;
 
   const columns: Column<AccountantReport["expenses"][number]>[] = [
     { label: "Date", width: dateW, value: (r) => formatDate(r.invoiceDate) },
     { label: "Invoice", width: invoiceW, value: (r) => r.invoiceNumber },
     { label: "Category", width: categoryW, value: (r) => r.categoryName },
+    { label: "Vendor", width: vendorW, value: (r) => r.vendor ?? "" },
     { label: "Paid by", width: paidW, value: (r) => r.userName },
     { label: "Entered by", width: enteredW, value: (r) => r.enteredByUserName },
     { label: "Amount", width: amountW, align: "right", value: (r) => formatCentsForPdf(r.amountCents) },
+    {
+      label: "Tax",
+      width: taxW,
+      align: "right",
+      // Blank, not $0.00: a receipt that does not state tax is not tax-free.
+      value: (r) => (r.taxCents === null ? "" : formatCentsForPdf(r.taxCents)),
+    },
   ];
 
   drawSimpleTable(doc, columns, report.expenses, "No expenses in this period.");

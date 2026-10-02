@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { inflateRawSync } from "node:zlib";
 import test from "node:test";
 import type { AccountantReport } from "../lib/reporting";
 import { reportToCsv } from "../lib/reporting/export-csv";
@@ -129,4 +130,51 @@ test("XLSX export produces a non-empty OOXML zip", () => {
   assert.ok(xlsx.length > 500);
   assert.equal(xlsx.subarray(0, 2).toString("ascii"), "PK");
   assert.equal(xlsx.subarray(-22, -18).readUInt32LE(0), 0x06054b50);
+});
+
+// The XLSX register once omitted the step-4 fields while the CSV carried them,
+// and nothing caught it: the only XLSX assertions were about the zip envelope.
+// This reads the sheet back out of the archive.
+function readSheetXml(xlsx: Buffer): string {
+  // Local file headers: "PK\x03\x04", then name length at +26, extra at +28,
+  // compressed size at +18, method at +8 (8 = deflate, 0 = stored).
+  let offset = 0;
+  while (offset + 30 <= xlsx.length && xlsx.readUInt32LE(offset) === 0x04034b50) {
+    const method = xlsx.readUInt16LE(offset + 8);
+    const compressedSize = xlsx.readUInt32LE(offset + 18);
+    const nameLength = xlsx.readUInt16LE(offset + 26);
+    const extraLength = xlsx.readUInt16LE(offset + 28);
+    const name = xlsx.subarray(offset + 30, offset + 30 + nameLength).toString("utf8");
+    const dataStart = offset + 30 + nameLength + extraLength;
+    const data = xlsx.subarray(dataStart, dataStart + compressedSize);
+
+    if (name.endsWith("sheet1.xml")) {
+      return (method === 8 ? inflateRawSync(data) : data).toString("utf8");
+    }
+    offset = dataStart + compressedSize;
+  }
+  throw new Error("sheet1.xml not found in the XLSX archive");
+}
+
+test("XLSX expense register carries the step-4 fields", () => {
+  const sheet = readSheetXml(reportToXlsx(report));
+
+  for (const header of [
+    "Vendor",
+    "Amount",
+    "Tax",
+    "Currency",
+    "Payment method",
+    "Business",
+    "Notes",
+    "Receipt reference",
+  ]) {
+    assert.ok(sheet.includes(header), `header missing from the XLSX sheet: ${header}`);
+  }
+
+  assert.ok(sheet.includes("Paper Depot"), "vendor value missing");
+  assert.ok(sheet.includes("CREDIT"), "payment method missing");
+  // Money is written as a number in dollars, not a formatted string.
+  assert.ok(sheet.includes(">123.45<"), "amount should be a numeric 123.45");
+  assert.ok(sheet.includes(">16.05<"), "tax should be a numeric 16.05");
 });

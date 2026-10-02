@@ -91,36 +91,77 @@ If you use Windows + WSL2, use the Linux path inside WSL, not a Windows-mounted 
 - Keep app config and infrastructure config separate where possible.
 - Use one app URL and one storage root.
 
-### Recommended environment variables
+### Environment variables
 
-| Variable | Purpose | Example |
+Every variable below is read by the code; the file reference is where. Anything
+not listed here is not read by anything. `.env.example` carries the subset a
+normal deploy needs — copy it to `.env` and fill it in.
+
+**Required**
+
+| Variable | Purpose | Read at |
 | --- | --- | --- |
-| `NODE_ENV` | App environment | `production` |
-| `APP_URL` | Public base URL | `https://expenses.example.com` |
-| `DATABASE_URL` | Prisma runtime connection string | `postgresql://myfamilyexpenses:strongpassword@db:5432/myfamilyexpenses` |
-| `DIRECT_URL` | Direct DB URL for Prisma migrations if needed | `postgresql://myfamilyexpenses:strongpassword@db:5432/myfamilyexpenses` |
-| `AUTH_COOKIE_SECRET` | Session cookie signing/encryption secret | generated 32+ byte secret |
-| `SESSION_TTL_HOURS` | Session lifetime | `168` |
-| `PASSWORD_RESET_TOKEN_TTL_MINUTES` | Reset token lifetime | `45` |
-| `STORAGE_ROOT` | Root local file storage path inside container | `/var/lib/myfamilyexpenses` |
-| `INVOICE_STORAGE_ROOT` | Final invoice storage path | `/var/lib/myfamilyexpenses/invoices` |
-| `TEMP_UPLOAD_ROOT` | Draft upload path | `/var/lib/myfamilyexpenses/tmp` |
-| `MAX_UPLOAD_MB` | Max upload size | `15` |
-| `OCR_PROVIDER` | OCR engine selector (`tesseract` \| `paddle` \| `mock` non-prod) | `tesseract` |
-| `OCR_STRATEGY` | Engine strategy (`single` \| `fallback` \| `parallel` \| `ensemble`) | `single` |
-| `OCR_SERVICE_URL` | Internal PaddleOCR sidecar URL (required when `OCR_PROVIDER=paddle`) | `http://ocr:8000` |
-| `OCR_TIMEOUT_MS` | Paddle request timeout; engine clamps to 1000–8000 | `7000` |
-| `RATE_LIMIT_LOGIN_PER_15M` | Login rate limit | `5` |
-| `RATE_LIMIT_UPLOADS_PER_HOUR` | Upload rate limit | `30` |
-| `SMTP_ENABLED` | Enable signup verification + self-service password reset emails | `false` |
-| `SMTP_HOST` | SMTP host | `smtp.example.com` |
+| `DATABASE_URL` | Prisma connection string | `prisma/schema.prisma` |
+| `SESSION_SECRET` | Session HMAC key. Validated: in production it must be >=32 characters and not a placeholder, or the app fails closed | `lib/auth/session.ts:45`, `lib/auth/session-secret.ts` |
+| `APP_BASE_URL` | Public base URL. Auth flows throw without it (a request-derived fallback covers some paths) | `lib/auth/app-url.ts:2` |
+| `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | Compose only — they build the `db` container and the app's `DATABASE_URL` | `docker-compose.yml` |
+
+**Optional, with the default the code applies**
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `NODE_ENV` | App environment | set to `production` by `docker-compose.yml` |
+| `APP_TIME_ZONE` | Time zone for dashboard and report period labels | `UTC` |
+| `SESSION_COOKIE_NAME` | Session cookie name | `mfe_session` |
+| `ACTIVE_HOUSEHOLD_COOKIE_NAME` | Active-household cookie name | `mfe_household` |
+| `SESSION_TTL_DAYS` | Session lifetime in days | `7` |
+| `COOKIE_SECURE` | Force the Secure cookie flag. `true`/`false` override; otherwise derived from `NODE_ENV` | derived |
+| `TRUST_PROXY_HEADERS` | Honour `X-Forwarded-For` for rate limiting. Only turn on behind a proxy you control | `false` |
+| `ALLOW_LOGIN_HOUSEHOLD_BOOTSTRAP` | Let the first login create a household | `false` |
+| `UPLOAD_DIR` | Receipt storage root. Must be absolute or it is ignored | `<cwd>/uploads` |
+| `MAX_UPLOAD_MB` | Maximum upload size | `10` |
+
+**OCR**
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `OCR_PROVIDER` | `tesseract` \| `paddle` \| `mock` (non-production only). An unknown or empty value fails closed | `tesseract` |
+| `OCR_STRATEGY` | `single` \| `fallback` \| `parallel` \| `ensemble` | `single` |
+| `OCR_SERVICE_URL` | PaddleOCR sidecar URL. Required when `OCR_PROVIDER=paddle` | none |
+| `OCR_TIMEOUT_MS` | Paddle request timeout, clamped to 1000-8000 | clamped |
+| `TESSERACT_CACHE_DIR` | Tesseract model cache | `<cwd>/.cache/tesseract` |
+| `TESSERACT_LANG_PATH` | Tesseract language data path | library default |
+| `OCR_DEBUG`, `OCR_DEBUG_DIR` | Write per-extraction debug artifacts | off, `<cwd>/.cache/ocr-debug` |
+| `OCR_TEMPLATE_MODE` | Static merchant-template mode | off |
+| `OCR_TEMPLATE_APPLY_IN_PRODUCTION` | Allow template application in production | `false` |
+
+**Email** (see the SMTP note below — `SMTP_ENABLED=false` changes signup and
+password-reset behaviour)
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `SMTP_ENABLED` | Enable verification and password-reset email | `false` |
+| `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | SMTP credentials and sender | empty |
 | `SMTP_PORT` | SMTP port | `587` |
-| `SMTP_SECURE` | Use TLS on connect (set true for port 465) | `false` |
-| `SMTP_USER` | SMTP username | `mailer@example.com` |
-| `SMTP_PASSWORD` | SMTP password | secret |
-| `SMTP_FROM` | Sender address | `noreply@example.com` |
-| `DEV_SHOW_VERIFICATION_LINKS` | Return signup verification and password reset URLs in API responses (development only, ignored in production) | `false` |
-| `LOG_LEVEL` | App log verbosity | `info` |
+| `SMTP_SECURE` | TLS on connect; `true` for port 465 | `false` |
+| `DEV_SHOW_VERIFICATION_LINKS` | Return verification and reset URLs in API responses. Development only, ignored in production | `false` |
+
+**OAuth** (both providers are off unless their `*_OAUTH_ENABLED` is `true`)
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `GOOGLE_OAUTH_ENABLED`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` | Google sign-in | off |
+| `MICROSOFT_OAUTH_ENABLED`, `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_REDIRECT_URI`, `MICROSOFT_TENANT_ID` | Microsoft sign-in | off, tenant `common` |
+
+**Seeding and tests**
+
+| Variable | Purpose | Notes |
+| --- | --- | --- |
+| `SEED_USER_PASSWORD` | Password for the seeded user | Deliberately absent from the long-running app container. Run `docker compose run --rm app npx tsx prisma/seed.ts` |
+| `TEST_DATABASE_URL` | Test database, must equal `DATABASE_URL` byte for byte | See `docs/testing.md` |
+
+Rate limits (login, invites, password reset) are enforced with database tables
+rather than environment variables, so there is nothing to configure.
 
 ### OCR provider note (current vs planned)
 
@@ -505,7 +546,8 @@ If public:
 
 ### Authentication and secrets
 
-- use a long random `AUTH_COOKIE_SECRET`
+- use a long random `SESSION_SECRET` (>=32 characters; the app refuses a
+  placeholder in production)
 - use strong database passwords
 - rotate secrets if a host is compromised
 - keep `.env.production` readable only by the deployment user

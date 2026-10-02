@@ -358,13 +358,16 @@ function drawExpenseRegister(doc: Doc, report: AccountantReport) {
   const dateW = 60; // comfortably fits "YYYY-MM-DD" at 9pt
   const invoiceW = 74;
   const amountW = 66;
-  const taxW = 52;
+  // 60, not 52: at 52 the cell truncated from $1,234.56 upward, and a tax figure
+  // in that range occurs on this data. A money column that ellipsizes the number
+  // it exists to show is worse than a narrower vendor column beside it.
+  const taxW = 60;
   // Vendor and tax earn a column here because an accountant checking a printed
   // register needs them. Payment method, the business flag and notes stay in the
   // CSV and XLSX registers, which have no width limit.
   const remaining = width - dateW - invoiceW - amountW - taxW;
-  const categoryW = Math.round(remaining * 0.27);
-  const vendorW = Math.round(remaining * 0.27);
+  const categoryW = Math.round(remaining * 0.28);
+  const vendorW = Math.round(remaining * 0.24);
   const paidW = Math.round(remaining * 0.24);
   const enteredW = remaining - categoryW - vendorW - paidW;
 

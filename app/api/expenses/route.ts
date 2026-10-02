@@ -17,9 +17,9 @@ import { centsToDecimalString, toCents } from "@/lib/money";
 import { saveUploadedFile, deleteUploadedFile } from "@/lib/storage";
 import { detectExpenseUploadMimeType, validateExpenseUploadFile } from "@/lib/uploads";
 import {
-  expenseInputSchema,
   finalExpenseSchema,
   friendlyExpenseError,
+  parseExpenseForm,
 } from "@/lib/validation/expense";
 import {
   computeFileSha256,
@@ -90,22 +90,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: { message: uploadError } }, { status: 400 });
   }
 
-  const input = expenseInputSchema.safeParse({
-    categoryId: String(formData.get("categoryId") ?? ""),
-    invoiceNumber: String(formData.get("invoiceNumber") ?? ""),
-    invoiceDate: String(formData.get("invoiceDate") ?? ""),
-    amount: String(formData.get("amount") ?? ""),
-    paidByUserId: String(formData.get("paidByUserId") ?? ""),
-    tax: String(formData.get("tax") ?? ""),
-    currency: String(formData.get("currency") ?? ""),
-    vendor: String(formData.get("vendor") ?? ""),
-    paymentMethod: String(formData.get("paymentMethod") ?? ""),
-    notes: String(formData.get("notes") ?? ""),
-    // Raw, not String(): an unchecked box is absent from the FormData, and
-    // optionalBusinessField resolves null/undefined to false. String(null)
-    // would be the literal "null".
-    isBusiness: formData.get("isBusiness"),
-  });
+  const input = parseExpenseForm(formData);
 
   if (!input.success) {
     return NextResponse.json(

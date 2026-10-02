@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { expenseInputSchema, finalExpenseSchema } from "../lib/validation/expense";
+import { finalExpenseSchema, parseExpenseForm } from "../lib/validation/expense";
 
-// The create route reads the expense from a multipart FormData. It parsed only
-// the five original keys, so vendor, tax, currency, payment method, notes and
-// the business flag were silently dropped on every new expense while the edit
-// path worked. 380 tests were green because every test built the row through
-// Prisma directly instead of through this mapping. These tests pin the mapping
-// itself: they must stay in step with app/api/expenses/route.ts.
+// The create route reads the expense from a multipart form. It parsed only the
+// five original keys, so vendor, tax, currency, payment method, notes and the
+// business flag were silently dropped on every new expense while the edit path
+// worked. 380 tests were green because every test built the row through Prisma
+// directly instead of through this mapping. These tests call the same
+// parseExpenseForm the route calls, so there is no copy here to drift.
 function formDataFromWizard(overrides: Record<string, string> = {}) {
   const fd = new FormData();
   fd.append("categoryId", "6f3f8f1a-0000-4000-8000-000000000001");
@@ -26,25 +26,8 @@ function formDataFromWizard(overrides: Record<string, string> = {}) {
   return fd;
 }
 
-// Mirrors the parse in app/api/expenses/route.ts.
-function parseLikeCreateRoute(formData: FormData) {
-  return expenseInputSchema.safeParse({
-    categoryId: String(formData.get("categoryId") ?? ""),
-    invoiceNumber: String(formData.get("invoiceNumber") ?? ""),
-    invoiceDate: String(formData.get("invoiceDate") ?? ""),
-    amount: String(formData.get("amount") ?? ""),
-    paidByUserId: String(formData.get("paidByUserId") ?? ""),
-    tax: String(formData.get("tax") ?? ""),
-    currency: String(formData.get("currency") ?? ""),
-    vendor: String(formData.get("vendor") ?? ""),
-    paymentMethod: String(formData.get("paymentMethod") ?? ""),
-    notes: String(formData.get("notes") ?? ""),
-    isBusiness: formData.get("isBusiness"),
-  });
-}
-
 test("the create route carries every field the wizard sends", () => {
-  const parsed = parseLikeCreateRoute(formDataFromWizard());
+  const parsed = parseExpenseForm(formDataFromWizard());
   assert.equal(parsed.success, true);
   if (!parsed.success) return;
 
@@ -62,14 +45,14 @@ test("an unticked business box means false, not the string \"null\"", () => {
   const fd = formDataFromWizard();
   fd.delete("isBusiness");
 
-  const parsed = parseLikeCreateRoute(fd);
+  const parsed = parseExpenseForm(fd);
   assert.equal(parsed.success, true);
   if (!parsed.success) return;
   assert.equal(parsed.data.isBusiness, false);
 });
 
 test("fields the wizard leaves blank arrive as undefined, not empty strings", () => {
-  const parsed = parseLikeCreateRoute(
+  const parsed = parseExpenseForm(
     formDataFromWizard({ tax: "", vendor: "", paymentMethod: "", notes: "", currency: "" }),
   );
   assert.equal(parsed.success, true);
@@ -85,7 +68,7 @@ test("fields the wizard leaves blank arrive as undefined, not empty strings", ()
 test("the create route rejects tax above the inclusive total", () => {
   // finalExpenseSchema carries the refinement; the database carries the same
   // rule as a CHECK constraint.
-  const input = parseLikeCreateRoute(formDataFromWizard({ amount: "10.00", tax: "11.00" }));
+  const input = parseExpenseForm(formDataFromWizard({ amount: "10.00", tax: "11.00" }));
   assert.equal(input.success, true);
   if (!input.success) return;
 
@@ -108,10 +91,10 @@ test("the create route rejects tax above the inclusive total", () => {
 });
 
 test("a bad payment method or currency is refused rather than stored", () => {
-  assert.equal(parseLikeCreateRoute(formDataFromWizard({ paymentMethod: "BITCOIN" })).success, false);
-  assert.equal(parseLikeCreateRoute(formDataFromWizard({ currency: "DOLLARS" })).success, false);
+  assert.equal(parseExpenseForm(formDataFromWizard({ paymentMethod: "BITCOIN" })).success, false);
+  assert.equal(parseExpenseForm(formDataFromWizard({ currency: "DOLLARS" })).success, false);
   // Lower case is coerced, not rejected.
-  const ok = parseLikeCreateRoute(formDataFromWizard({ currency: "usd" }));
+  const ok = parseExpenseForm(formDataFromWizard({ currency: "usd" }));
   assert.equal(ok.success, true);
   if (!ok.success) return;
   assert.equal(ok.data.currency, "USD");

@@ -145,6 +145,31 @@ export const finalExpenseSchema = z
     path: ["tax"],
   });
 
+// The create route receives a multipart form, so every value arrives as a
+// string (or is absent). This is the ONLY place that maps the form to the input
+// schema: the route and its test both call it, so a new field cannot be added to
+// one and forgotten in the other. That omission is exactly what shipped vendor,
+// tax, payment method, notes and the business flag as nulls.
+export function parseExpenseForm(formData: Pick<FormData, "get">) {
+  const text = (key: string) => String(formData.get(key) ?? "");
+
+  return expenseInputSchema.safeParse({
+    categoryId: text("categoryId"),
+    invoiceNumber: text("invoiceNumber"),
+    invoiceDate: text("invoiceDate"),
+    amount: text("amount"),
+    paidByUserId: text("paidByUserId"),
+    tax: text("tax"),
+    currency: text("currency"),
+    vendor: text("vendor"),
+    paymentMethod: text("paymentMethod"),
+    notes: text("notes"),
+    // Raw, not text(): an unticked checkbox is absent from the form, and
+    // optionalBusinessField resolves null to false. String(null) is "null".
+    isBusiness: formData.get("isBusiness"),
+  });
+}
+
 export const extractExpenseSchema = z.object({
   categoryId: z.string().uuid("Select a category before scanning or uploading"),
 });

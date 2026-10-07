@@ -81,7 +81,7 @@ test("saved-expense benchmark reads only the chosen user's live expenses", async
     assert.equal(run.overall.fields.amount.correct, 1);
     assert.equal(run.overall.fields.date.correct, 1);
     assert.equal(run.overall.fields.vendor.correct, 1);
-    assert.equal(run.overall.fields.tax.unsupported, 1);
+    assert.equal(run.overall.fields.tax.missing, 1, "the fake OCR read no tax");
 
     // A household scope includes every member's live expenses.
     const householdRun = await benchmarkSavedExpenses(

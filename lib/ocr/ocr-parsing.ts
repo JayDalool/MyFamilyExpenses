@@ -1,15 +1,23 @@
+import { checkReceiptTotals, type ReceiptTotals } from "@/lib/ocr/totals-check";
 import type {
   OcrAmountCandidate,
   OcrBlock,
   OcrCandidates,
   OcrResult,
+  OcrTaxReading,
   OcrTextCandidate,
   ReceiptType,
 } from "@/lib/ocr/types";
 
 // Bump when parser logic changes so persisted attempts can be attributed to the
 // rule version that produced them (used by ReceiptExtractionAttempt).
-export const PARSER_VERSION = "phase2-amount-guards";
+export const PARSER_VERSION = "phase6b-tax-checks";
+
+// Step 6b: only an amount the receipt's own arithmetic backs is shown green
+// (the review step's green line is 0.7). Anything else is capped below it, and
+// also below the 0.65 that makes OCR_STRATEGY=fallback ask a second engine.
+export const VERIFIED_CONFIDENCE = 0.95;
+export const UNVERIFIED_CONFIDENCE_CAP = 0.6;
 
 type AmountToken = {
   value: number;
@@ -152,7 +160,7 @@ const STRONG_FINAL_TOTAL_PATTERN =
 
 const NEGATIVE_AMOUNT_PATTERNS = {
   subtotal: /\bsub[\s-]?total\b/i,
-  tax: /\b(?:tax|gst|pst|hst|qst|vat|iva)\b/i,
+  tax: /\b(?:tax|gst|pst|hst|qst|rst|vat|iva)\b/i,
   taxTotal: /\b(?:tax\s+total|total\s+tax)\b/i,
   // Fees/surcharges are never the payable total. Critically this also catches the
   // misleading "Fee total $0.00" line (which otherwise matches the generic Total
@@ -1757,16 +1765,19 @@ export function parseInvoiceFieldsFromText(
   const bestInvoice = invoiceCandidates[0] ?? null;
   const bestDate = dateCandidates[0] ?? null;
   const bestAmount = pickBestAmount(amountCandidates, receiptType);
+  const totals = checkReceiptTotals(lines);
+  const amount = checkAmount(bestAmount, totals, receiptType);
+  const tax = readTax(totals, scale);
 
   const result: OcrResult = {
     invoiceNumber: bestInvoice?.value ?? "",
     invoiceDate: bestDate?.value ?? "",
-    amount: bestAmount?.value ?? 0,
+    amount: amount.value,
     provider,
     confidence: {
       invoiceNumber: clampConfidence((bestInvoice?.confidence ?? 0) * scale),
       invoiceDate: clampConfidence((bestDate?.confidence ?? 0) * scale),
-      amount: clampConfidence((bestAmount?.confidence ?? 0) * scale),
+      amount: clampConfidence(amount.confidence * scale),
     },
     receiptType,
     multipleReceipts,
@@ -1778,11 +1789,45 @@ export function parseInvoiceFieldsFromText(
       merchant: toTextCandidates(merchantCandidates, blocks, 1, provider),
     },
     merchant: merchantCandidates[0]?.value ?? "",
+    amountVerified: amount.verified,
+    ...(tax ? { tax } : {}),
   };
 
   result.warnings = buildWarnings(result, lines.length > 0);
 
   return result;
+}
+
+// Receipt types where a checked sum still should not look like a confident spend.
+const UNCHECKABLE_TYPES = new Set<ReceiptType>(["informational", "bank_deposit", "transfer"]);
+
+function checkAmount(
+  bestAmount: AmountCandidate | null,
+  totals: ReceiptTotals,
+  receiptType: ReceiptType,
+): { value: number; confidence: number; verified: boolean } {
+  const picked = { value: bestAmount?.value ?? 0, confidence: bestAmount?.confidence ?? 0 };
+  const proven = totals.verifiedTotalCents;
+
+  if (proven === null || UNCHECKABLE_TYPES.has(receiptType)) {
+    return { ...picked, confidence: Math.min(picked.confidence, UNVERIFIED_CONFIDENCE_CAP), verified: false };
+  }
+  if (bestAmount && Math.round(bestAmount.value * 100) === proven) {
+    return { ...picked, confidence: Math.max(picked.confidence, VERIFIED_CONFIDENCE), verified: true };
+  }
+  // The label rules picked a number the receipt's own arithmetic does not back,
+  // while another printed total passes it (e.g. a pre-tip "Total" chosen over
+  // "Amount Paid", or a misread digit). The checked total wins.
+  return { value: proven / 100, confidence: VERIFIED_CONFIDENCE, verified: true };
+}
+
+function readTax(totals: ReceiptTotals, scale: number): OcrTaxReading | null {
+  if (totals.taxCents === null) return null;
+  return {
+    value: totals.taxCents / 100,
+    confidence: clampConfidence((totals.taxVerified ? VERIFIED_CONFIDENCE : UNVERIFIED_CONFIDENCE_CAP) * scale),
+    verified: totals.taxVerified,
+  };
 }
 
 export function hasAnyOcrField(result: Pick<OcrResult, "confidence">) {

@@ -135,6 +135,8 @@ when the primary is genuinely uncertain.
 - Normalize before comparing: dates as ISO, amounts to integer cents, invoice
   numbers uppercased and stripped of punctuation.
 - **Agree** → keep the value (primary's, for geometry) and **boost** confidence.
+  An amount no engine's receipt arithmetic backed stays under the green line
+  (capped at 0.69): agreement between readers is not proof. See below.
 - **Only one engine found it** → use that one (this is how a Paddle miss is filled
   by Tesseract, and vice-versa).
 - **Strong candidates disagree** → take the higher-confidence value but **lower**
@@ -142,6 +144,44 @@ when the primary is genuinely uncertain.
   than blank). A "two engines read different amounts" warning is added.
 - Invoice numbers are never taken from weak/unlabelled generic text — labelled
   candidates only.
+
+## Arithmetic checks and tax (step 6b)
+
+`lib/ocr/totals-check.ts` reads the receipt's money lines in order (pairing a
+label-only line with the amount on the next line, since PP-OCR returns "TOTAL"
+and "85.90" as separate boxes) and asks whether the receipt proves its own total:
+
+| Check | Example |
+|---|---|
+| subtotal + tax (+ tip) = total | Subtotal 20.39, GST 0.24, PST 0.34, Total 20.97 |
+| items + tax (+ tip) = total | a hydro bill: charges + GST = amount due |
+| a card line equals a total line | Total 85.90, Credit 85.90 |
+| cash − change = total | Cash 25.00, Change 5.60, Total 19.40 (or exact cash, no change) |
+
+- The field is the total **paid**, tip included: when a checked total plus the
+  tip is also printed (Total 31.50, Tip 5.00, Amount Paid 36.50) the larger
+  figure wins. Without this rule the arithmetic "proves" the pre-tip total.
+- **Checked** → amount confidence ≥ 0.95, shown green. If the label rules picked a
+  different number (a misread digit, a pre-tip total), the checked total replaces it.
+- **Not checked** → confidence capped at 0.6: amber in the review step, and under
+  the 0.65 that makes `OCR_STRATEGY=fallback` ask the second engine.
+- Previous balance, payments received, savings, points, cash back, suggested-tip
+  tables and GST/HST registration-number lines are ignored. Two or more different
+  tip amounts mean a tip table, so no tip is assumed.
+- **Tax** is the sum of GST/PST/HST/QST/RST lines (`OcrResult.tax`). It is green
+  when it is part of a passing sum, amber otherwise, and dropped when it is more
+  than 15.5% of the pre-tax amount (no Canadian rate is that high).
+- Deposits, transfers and informational slips are never shown green.
+
+The scorecard now scores tax and splits wrong answers: **wrong** means shown
+green (it can be saved without a second look), **flagged** means wrong but shown
+amber. On the 40 generated receipts no setup has a wrong (green) amount:
+
+| OCR | Amount right | Wrong (green) | Flagged (amber) | Tax right |
+|---|---|---|---|---|
+| Tesseract | 72.5% | 0 | 9 | 63.9% |
+| PP-OCRv6 small | 97.5% | 0 | 1 | 91.7% |
+| PP-OCRv6 small + Tesseract fallback | 100% | 0 | 0 | 97.2% |
 
 ## Why the merger is safer than trusting one engine
 

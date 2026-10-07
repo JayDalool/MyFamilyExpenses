@@ -13,6 +13,9 @@
     "test:db:teardown": "node --env-file=.env.test --import tsx prisma/teardown-test-db.ts",
     "test:db": "node --env-file=.env.test --import tsx --test --test-concurrency=1 tests/*.integration.test.ts",
     "test:ocr": "node --env-file-if-exists=.env.test --import tsx --test --test-concurrency=1 tests/ocr-learning.integration.test.ts tests/ocr-internal-guards.test.ts tests/ocr-diagnostics.test.ts tests/ocr-amount-guards.test.ts tests/ocr-receipt-fixtures.test.ts tests/phase2-invoice-fallback.integration.test.ts tests/permissions.test.ts",
+    "ocr:bench": "tsx scripts/ocr-bench/run.ts",
+    "ocr:bench:real": "tsx scripts/ocr-bench/real.ts",
+    "ocr:bench:generate": "tsx scripts/ocr-bench/generate.ts",
     "test:repeat-password-reset": "node --env-file-if-exists=.env.test --import tsx --test --test-concurrency=1 tests/phase3_5.integration.test.ts tests/password-reset.routes.integration.test.ts tests/password-reset-email.test.ts",
     "test:e2e": "playwright test",
     "maintenance:invite-rate-limits": "tsx prisma/cleanup-invite-rate-limits.ts",
@@ -49,6 +52,7 @@
     "eslint-config-next": "^16.2.4",
     "postcss": "^8.5.10",
     "prisma": "^6.19.3",
+    "sharp": "^0.34.5",
     "tailwindcss": "^3.4.19",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"

@@ -1,4 +1,4 @@
-"""Internal PaddleOCR sidecar for MyFamilyExpenses.
+"""Internal PaddleOCR sidecar for MyFamilyExpenses (PP-OCRv6 on ONNX Runtime).
 
 Contract (app-owned DTO — NOT raw Paddle JSON):
 
@@ -9,7 +9,7 @@ Contract (app-owned DTO — NOT raw Paddle JSON):
                  {"text": "...", "bbox": [[x1,y1],[x2,y2],[x3,y3],[x4,y4]], "score": 0.92}
              ],
              "meanScore": 0.91,
-             "modelVersion": "PP-OCRv4"
+             "modelVersion": "PP-OCRv6-small"
            }
     GET  /healthz -> 200 {"status": "ok"} once the model is loaded, else 503
 
@@ -20,7 +20,7 @@ Hard rules:
   * All scores are normalized/clamped to 0-1 before leaving the service.
   * Intended to run on an internal Docker network only (no public port).
 
-If PaddleOCR is not installed the service still starts and /healthz reports
+If onnxocr is not installed the service still starts and /healthz reports
 503 (not ready); /ocr returns 503. See README.md for install commands.
 """
 
@@ -29,10 +29,15 @@ from __future__ import annotations
 import logging
 import os
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+# onnxruntime 1.30 on Linux sends usage telemetry to Microsoft by default. Turn it
+# off before the library loads; receipts are private and this service has no
+# business on the internet (docker-compose.ocr.yml also gives it no route out).
+os.environ.setdefault("ORT_DISABLE_TELEMETRY", "1")
+
+from fastapi import FastAPI, File, HTTPException, UploadFile  # noqa: E402
 from fastapi.responses import JSONResponse
 
-from preprocess import preprocess_for_ocr
+from preprocess import preprocess_for_ocr  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("paddle-ocr")
@@ -40,13 +45,22 @@ logger = logging.getLogger("paddle-ocr")
 # Reject oversized uploads at the service edge (defense in depth; the Next app
 # also enforces its own MAX_UPLOAD_MB before ever calling this service).
 MAX_UPLOAD_BYTES = int(os.environ.get("OCR_MAX_UPLOAD_BYTES", str(15 * 1024 * 1024)))
-MODEL_VERSION = os.environ.get("OCR_MODEL_VERSION", "PP-OCRv4")
-OCR_LANG = os.environ.get("OCR_LANG", "en")
+# PP-OCRv6 size: "small" (default, measured best on the scorecard) or "tiny"
+# (about twice as fast, weaker on dates and faded text). Both ship inside the
+# onnxocr wheel, so nothing is downloaded at runtime.
+OCR_MODEL_SIZE = os.environ.get("OCR_MODEL_SIZE", "small")
+if OCR_MODEL_SIZE not in ("small", "tiny"):
+    raise SystemExit("OCR_MODEL_SIZE must be 'small' or 'tiny'")
+MODEL_VERSION = f"PP-OCRv6-{OCR_MODEL_SIZE}"
+# ONNX Runtime sizes its thread pool from the host's cores, not the container's
+# CPU limit, and a pool larger than the limit gets throttled. Keep this equal to
+# the `cpus` limit in docker-compose.ocr.yml.
+OCR_THREADS = max(1, int(os.environ.get("OCR_THREADS", "2")))
 
 app = FastAPI(title="MyFamilyExpenses PaddleOCR", version="0.1.0")
 
 # The model is loaded once at startup (preload) so /healthz only reports ready
-# after recognition is actually available. `_ocr` stays None if PaddleOCR is not
+# after recognition is actually available. `_ocr` stays None if onnxocr is not
 # installed, which keeps the scaffold runnable for contract/wiring checks.
 _ocr = None
 _load_error: str | None = None
@@ -70,12 +84,25 @@ def _clamp01(value: float) -> float:
 def _load_model() -> None:
     global _ocr, _load_error
     try:
-        from paddleocr import PaddleOCR
+        import onnxocr.inference_engine as engine
+        import onnxruntime
+        from onnxocr.onnx_paddleocr import ONNXPaddleOcr
 
-        # CPU-only by default; set OCR_USE_GPU=1 only if a GPU is available.
-        use_gpu = os.environ.get("OCR_USE_GPU", "0") == "1"
-        _ocr = PaddleOCR(use_angle_cls=True, lang=OCR_LANG, use_gpu=use_gpu, show_log=False)
-        logger.info("PaddleOCR model loaded (lang=%s, gpu=%s)", OCR_LANG, use_gpu)
+        onnxruntime.disable_telemetry_events()
+
+        # onnxocr 4.0.0 builds every ONNX session from this module-level helper
+        # and has no thread option, so wrap it. Pinned version; recheck on bump.
+        default_options = engine._default_session_options
+
+        def session_options():
+            options = default_options()
+            options.intra_op_num_threads = OCR_THREADS
+            options.inter_op_num_threads = 1
+            return options
+
+        engine._default_session_options = session_options
+        _ocr = ONNXPaddleOcr(use_angle_cls=True, use_gpu=False, ocr_model_size=OCR_MODEL_SIZE)
+        logger.info("OCR model loaded (%s, threads=%d)", MODEL_VERSION, OCR_THREADS)
     except Exception as exc:  # noqa: BLE001 - we intentionally degrade gracefully
         _load_error = type(exc).__name__
         logger.warning("PaddleOCR not available: %s (service will report not-ready)", _load_error)

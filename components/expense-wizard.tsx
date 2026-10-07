@@ -533,6 +533,7 @@ export function ExpenseWizard({
       setInvoiceNumber(applyOcrValue(extraction.invoiceNumber, extraction.confidence.invoiceNumber));
       setInvoiceDate(applyOcrValue(extraction.invoiceDate, extraction.confidence.invoiceDate));
       setAmount(applyOcrAmount(extraction));
+      setTax(extraction.tax && extraction.tax.confidence > 0 ? extraction.tax.value.toFixed(2) : "");
       setOcrWarning(extraction.warnings?.[0] ?? null);
     } catch {
       setOcrWarning(
@@ -1079,24 +1080,16 @@ export function ExpenseWizard({
                 value={amount}
               />
 
-              <div>
-                <label
-                  className="mb-1.5 block text-sm font-semibold text-slate-700"
-                  htmlFor="reviewTax"
-                >
-                  Tax included in that total
-                </label>
-                <input
-                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-4 text-slate-900 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
-                  id="reviewTax"
-                  min="0"
-                  onChange={(event) => setTax(event.target.value)}
-                  placeholder="Leave blank if the receipt does not say"
-                  step="0.01"
-                  type="number"
-                  value={tax}
-                />
-              </div>
+              <OcrFieldRow
+                confidence={extracted?.tax?.confidence ?? 0}
+                hasOcr={!!extracted}
+                id="reviewTax"
+                label="Tax included in that total"
+                onChange={setTax}
+                placeholder="Leave blank if the receipt does not say"
+                type="number"
+                value={tax}
+              />
 
               <div>
                 <label

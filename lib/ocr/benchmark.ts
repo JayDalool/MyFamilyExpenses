@@ -18,8 +18,20 @@ export type BenchmarkExpected = {
   taxCents: number | null;
 };
 
-/** "skipped": no answer to compare with. "unsupported": the parser does not read it yet. */
-export type FieldOutcome = "correct" | "wrong" | "missing" | "skipped" | "unsupported";
+/**
+ * "wrong": wrong and shown green, so a person may save it without looking.
+ * "flagged": wrong but shown amber (confidence under GREEN_CONFIDENCE), so the
+ * review step asks for a look. "skipped": no answer to compare with.
+ * "unsupported": the parser does not read the field.
+ */
+export type FieldOutcome = "correct" | "wrong" | "flagged" | "missing" | "skipped" | "unsupported";
+
+/** Same line as `isHigh` in components/expense-wizard.tsx: at or above it a field shows green. */
+export const GREEN_CONFIDENCE = 0.7;
+
+function wrongOutcome(confidence: number): FieldOutcome {
+  return confidence >= GREEN_CONFIDENCE ? "wrong" : "flagged";
+}
 
 export type ReceiptScore = Record<BenchmarkField, FieldOutcome>;
 
@@ -58,13 +70,13 @@ export function scoreReceipt(result: OcrResult, expected: BenchmarkExpected): Re
     result.amount > 0
       ? toCents(result.amount) === expected.amountCents
         ? "correct"
-        : "wrong"
+        : wrongOutcome(result.confidence.amount)
       : "missing";
 
   const date: FieldOutcome = result.invoiceDate
     ? result.invoiceDate === expected.invoiceDate
       ? "correct"
-      : "wrong"
+      : wrongOutcome(result.confidence.invoiceDate)
     : "missing";
 
   const vendor: FieldOutcome =
@@ -76,15 +88,20 @@ export function scoreReceipt(result: OcrResult, expected: BenchmarkExpected): Re
           : "wrong"
         : "missing";
 
-  // The parser has no tax field yet (step 6b). Report it as unsupported rather
-  // than missing so the baseline is honest about why it is zero.
-  const tax: FieldOutcome = expected.taxCents === null ? "skipped" : "unsupported";
+  const tax: FieldOutcome =
+    expected.taxCents === null
+      ? "skipped"
+      : result.tax
+        ? toCents(result.tax.value) === expected.taxCents
+          ? "correct"
+          : wrongOutcome(result.tax.confidence)
+        : "missing";
 
   return { amount, date, vendor, tax };
 }
 
 function emptyFieldTotals(): FieldTotals {
-  return { correct: 0, wrong: 0, missing: 0, skipped: 0, unsupported: 0, scored: 0, accuracy: null };
+  return { correct: 0, wrong: 0, flagged: 0, missing: 0, skipped: 0, unsupported: 0, scored: 0, accuracy: null };
 }
 
 /**
@@ -103,7 +120,7 @@ export function totalScores(scores: ReceiptScore[], failed = 0): BenchmarkTotals
   }
   for (const field of BENCHMARK_FIELDS) {
     const totals = fields[field];
-    totals.scored = totals.correct + totals.wrong + totals.missing + totals.unsupported;
+    totals.scored = totals.correct + totals.wrong + totals.flagged + totals.missing + totals.unsupported;
     totals.accuracy = totals.scored > 0 ? totals.correct / totals.scored : null;
   }
 
@@ -116,15 +133,16 @@ export function formatTotals(title: string, totals: BenchmarkTotals) {
   const lines = [
     title,
     `Receipts: ${totals.receipts}  (OCR failed on ${totals.failed})`,
-    `field    accuracy  correct  wrong  missing  not-read  skipped`,
+    `field    accuracy  correct  wrong  flagged  missing  not-read  skipped`,
   ];
   for (const field of BENCHMARK_FIELDS) {
     const t = totals.fields[field];
     lines.push(
       `${field.padEnd(8)} ${percent(t.accuracy)}  ${String(t.correct).padStart(7)}  ` +
-        `${String(t.wrong).padStart(5)}  ${String(t.missing).padStart(7)}  ` +
+        `${String(t.wrong).padStart(5)}  ${String(t.flagged).padStart(7)}  ${String(t.missing).padStart(7)}  ` +
         `${String(t.unsupported).padStart(8)}  ${String(t.skipped).padStart(7)}`,
     );
   }
+  lines.push("wrong = shown green, so it can be saved unchecked; flagged = wrong but shown amber");
   return lines.join("\n");
 }

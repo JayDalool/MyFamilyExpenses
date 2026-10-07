@@ -653,6 +653,34 @@ Usage counters:
 
 This prepares the app for subscription plans without adding billing too early.
 
+### 7.9 OCR Scorecard
+
+Every OCR change (upgrade-plan step 6) is measured before it is kept. `lib/ocr/benchmark.ts`
+compares what `extractInvoiceData` read with the right answer for amount, date, vendor
+and tax. It reports correct / wrong / missing / not-read / skipped and an accuracy per
+field.
+
+| Command | Receipts | Answer | Where |
+| --- | --- | --- | --- |
+| `npm run ocr:bench` | 10 made-up receipts x 4 image conditions (clean, blur, tilt, faded-noisy) in `tests/fixtures/receipt-images/` | `expected` in `receipts.ts` | Any machine |
+| `npm run ocr:bench:real -- --user <email>` or `--household <uuid>` | Saved expenses, newest 500 | What the user typed and saved | Server only, Jay runs it |
+
+The real run is read-only and prints totals only, never vendors, amounts, file names or
+OCR text. PDFs are counted and skipped until step 6e. Scope: Jay's household and
+Osama's account (agreed 2026-10-06).
+
+Baseline, 2026-10-06, Tesseract single strategy, generated receipts:
+
+| Field | clean | blur | tilt | faded-noisy | overall |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| amount | 100% | 100% | 90% | 0% | 72.5% |
+| date | 100% | 100% | 90% | 0% | 72.5% |
+| vendor | 90% | 90% | 90% | 20% | 72.5% |
+| tax | not read | not read | not read | not read | 0% |
+
+`npm run ocr:bench:generate` re-renders the images with sharp. Run it only when the
+receipt list changes, and commit the images, so every machine scores the same pixels.
+
 ---
 
 ## 8. Reports Architecture

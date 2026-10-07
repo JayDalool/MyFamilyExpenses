@@ -1,3 +1,4 @@
+- [ ] STEP-6a · Run ocr:bench:real for your household and Osama · docs/architecture.md
 - [ ] STEP-4 · After merge run prisma migrate deploy, then check a receipt total · docs/adr/0002-money-in-cents.md
 - [ ] STEP-2 · Create Backblaze bucket, key, restic password, offsite.env · docs/backups.md
 - [ ] STEP-2 · Plug in and mount USB disk at /mnt/mfe-backup · docs/backups.md

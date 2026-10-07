@@ -50,8 +50,20 @@ workflow; this section describes what is merged, not what is in flight.
 4. **Expense fields.** Migration adding the fields above. Backfill existing rows safely.
 5. **Accountant year-end package.** ZIP with receipt files, an index CSV/XLSX and a PDF
    summary. Streamed, no row cap.
-6. **OCR accuracy.** Benchmark Tesseract on `tests/fixtures/receipts`. Read vendor and
-   tax. Image cleanup. Vendor-based category suggestion from correction feedback.
+6. **OCR accuracy.** Split into PRs, each measured against the scorecard from 6a.
+   - **6a Scorecard.** `npm run ocr:bench` scores amount, date, vendor and tax on
+     generated receipt images committed to the repo. `npm run ocr:bench:real` scores
+     saved expenses, using the values the user typed as the answer. Jay runs it on the
+     server; it prints totals only. Scope: Jay's household and Osama's account, with
+     Osama's agreement (decided 2026-10-06). Other users' receipts stay out until a
+     privacy policy covers it.
+   - **6b Tax.** Read the tax line.
+   - **6c Image cleanup.** Grayscale, contrast, deskew before OCR. Keep only what
+     the scorecard shows helps.
+   - **6d Vendor to category.** Suggest a category from saved corrections.
+   - **6e Utility and electric PDF bills.** Read the PDF's text layer (OCR rejects
+     PDFs today). Pick "Amount due", not the previous balance; read the billing period
+     and due date; never store full account numbers.
 7. **Vehicle receipts and SamVision file exchange.** See below.
 
 ## SamVision file exchange
@@ -82,6 +94,12 @@ A live API between the apps. Keep the manifest version field so the format can c
 ### Explicitly deferred
 
 Vehicle, trip and deduction logic in MFE. Automatic sync. Multi-currency conversion.
+
+## Later: email inbox bill finder
+
+Jay wants bills found in an email inbox and added automatically. Deferred until 6e
+reads PDF bills well. It needs mailbox OAuth (read-only, bill senders only), its own
+security review, and the user still confirms every expense before it is saved.
 
 ## Risks and warnings
 

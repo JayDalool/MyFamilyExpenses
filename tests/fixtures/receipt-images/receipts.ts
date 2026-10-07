@@ -1,0 +1,223 @@
+import type { BenchmarkExpected } from "../../../lib/ocr/benchmark";
+
+// Made-up receipts for the OCR scorecard (upgrade-plan step 6a). Every store,
+// address, number and amount is invented. scripts/ocr-bench/generate.ts renders
+// each one into images under ./images in several conditions (clean, blurred,
+// tilted, faded and noisy); scripts/ocr-bench/run.ts runs Tesseract on them.
+//
+// Amounts are tax included, like Expense.amountCents. Canadian GST/PST layout,
+// since that is what the app's users upload.
+
+export type SyntheticReceipt = {
+  name: string;
+  lines: string[];
+  expected: BenchmarkExpected;
+};
+
+export const SYNTHETIC_RECEIPTS: SyntheticReceipt[] = [
+  {
+    name: "grocery-gst-pst",
+    lines: [
+      "NORTHGATE FRESH MARKET",
+      "1450 Pembina Hwy",
+      "Winnipeg MB R3T 2C1",
+      "",
+      "2026-03-14   10:42",
+      "Trans # 004417",
+      "",
+      "MILK 2L            5.49",
+      "BREAD WW           3.99",
+      "APPLES 1.2KG       6.12",
+      "DISH SOAP          4.79 T",
+      "",
+      "SUBTOTAL          20.39",
+      "GST 5%             0.24",
+      "PST 7%             0.34",
+      "TOTAL             20.97",
+      "",
+      "DEBIT             20.97",
+      "THANK YOU",
+    ],
+    expected: { amountCents: 2097, invoiceDate: "2026-03-14", vendor: "Northgate Fresh Market", taxCents: 58 },
+  },
+  {
+    name: "hardware-hst",
+    lines: [
+      "BOLT & BEAM HARDWARE",
+      "88 King St W",
+      "",
+      "INVOICE 55-20931",
+      "Date: Mar 02 2026",
+      "",
+      "2x4 STUD 8FT x6   29.94",
+      "WOOD SCREWS 3IN   12.49",
+      "",
+      "SUBTOTAL          42.43",
+      "HST 13%            5.52",
+      "TOTAL             47.95",
+      "VISA ****1111     47.95",
+    ],
+    expected: { amountCents: 4795, invoiceDate: "2026-03-02", vendor: "Bolt & Beam Hardware", taxCents: 552 },
+  },
+  {
+    name: "restaurant-tip",
+    lines: [
+      "THE MAPLE TABLE",
+      "Bistro & Bar",
+      "",
+      "Server: 12   Table 7",
+      "Jan 22, 2026  19:15",
+      "",
+      "Soup of the day    8.50",
+      "Burger            18.00",
+      "Iced tea           3.50",
+      "",
+      "Subtotal          30.00",
+      "GST                1.50",
+      "Total             31.50",
+      "Tip                5.00",
+      "Amount Paid       36.50",
+    ],
+    expected: { amountCents: 3650, invoiceDate: "2026-01-22", vendor: "The Maple Table", taxCents: 150 },
+  },
+  {
+    name: "gas-station",
+    lines: [
+      "PRAIRIE FUEL CO",
+      "Station 0218",
+      "",
+      "2026-02-09 07:58",
+      "PUMP 04  REGULAR",
+      "38.214 L @ 1.389",
+      "",
+      "FUEL SALE         53.08",
+      "GST INCL           2.53",
+      "TOTAL             53.08",
+      "",
+      "MASTERCARD        53.08",
+      "AUTH 093311",
+    ],
+    expected: { amountCents: 5308, invoiceDate: "2026-02-09", vendor: "Prairie Fuel Co", taxCents: 253 },
+  },
+  {
+    name: "pharmacy-cash-change",
+    lines: [
+      "CORNERSTONE PHARMACY",
+      "",
+      "Receipt 7781",
+      "2026/04/18",
+      "",
+      "VITAMIN D 1000IU  11.99",
+      "BANDAGES           6.49",
+      "",
+      "SUBTOTAL          18.48",
+      "GST                0.92",
+      "TOTAL             19.40",
+      "CASH              25.00",
+      "CHANGE             5.60",
+    ],
+    expected: { amountCents: 1940, invoiceDate: "2026-04-18", vendor: "Cornerstone Pharmacy", taxCents: 92 },
+  },
+  {
+    name: "coffee-small",
+    lines: [
+      "BEAN THERE CAFE",
+      "",
+      "05-May-2026 08:03",
+      "",
+      "LATTE LG           5.75",
+      "MUFFIN             3.25",
+      "",
+      "TOTAL              9.45",
+      "  incl. GST 0.45",
+      "TAP VISA           9.45",
+    ],
+    expected: { amountCents: 945, invoiceDate: "2026-05-05", vendor: "Bean There Cafe", taxCents: 45 },
+  },
+  {
+    name: "office-supplies-invoice",
+    lines: [
+      "PAPERTRAIL OFFICE SUPPLY",
+      "Invoice No: PT-104552",
+      "Invoice Date: 2026-06-30",
+      "",
+      "Toner cartridge   89.99",
+      "Copy paper x5     42.50",
+      "",
+      "Subtotal         132.49",
+      "GST               6.62",
+      "PST               9.27",
+      "Total Due       148.38",
+    ],
+    expected: { amountCents: 14838, invoiceDate: "2026-06-30", vendor: "Papertrail Office Supply", taxCents: 1589 },
+  },
+  {
+    name: "big-box-many-lines",
+    lines: [
+      "VALUEMART SUPERCENTRE",
+      "Store 3307",
+      "",
+      "2026-07-11 16:20",
+      "",
+      "PAPER TOWEL       12.97",
+      "DETERGENT         14.47",
+      "CEREAL             5.98",
+      "CHICKEN BRST      18.42",
+      "RICE 8KG          16.97",
+      "BATTERIES AA      11.88",
+      "",
+      "SUBTOTAL          80.69",
+      "GST                2.17",
+      "PST                3.04",
+      "TOTAL             85.90",
+      "CREDIT            85.90",
+      "ITEMS SOLD 6",
+    ],
+    expected: { amountCents: 8590, invoiceDate: "2026-07-11", vendor: "Valuemart Supercentre", taxCents: 521 },
+  },
+  {
+    name: "utility-electric-bill",
+    lines: [
+      "PRAIRIE HYDRO",
+      "Electricity Statement",
+      "",
+      "Account: ****-4417",
+      "Bill date: 2026-08-05",
+      "Billing period: Jul 01 - Jul 31",
+      "",
+      "Previous balance          84.10",
+      "Payment received         -84.10",
+      "Basic monthly charge      14.25",
+      "Energy 612 kWh            62.53",
+      "GST                        3.84",
+      "",
+      "Amount due                80.62",
+      "Due date: 2026-08-26",
+    ],
+    expected: { amountCents: 8062, invoiceDate: "2026-08-05", vendor: "Prairie Hydro", taxCents: 384 },
+  },
+  {
+    name: "no-tax-shown",
+    lines: [
+      "RIVERSIDE FARMERS STALL",
+      "",
+      "2026-09-12",
+      "",
+      "Tomatoes           6.00",
+      "Corn x6            5.00",
+      "",
+      "TOTAL             11.00",
+      "CASH              20.00",
+      "CHANGE             9.00",
+    ],
+    expected: { amountCents: 1100, invoiceDate: "2026-09-12", vendor: "Riverside Farmers Stall", taxCents: null },
+  },
+];
+
+/** Image conditions the generator renders for every receipt. */
+export const IMAGE_VARIANTS = ["clean", "blur", "tilt", "faded-noisy"] as const;
+export type ImageVariant = (typeof IMAGE_VARIANTS)[number];
+
+export function imageFileName(receipt: SyntheticReceipt, variant: ImageVariant) {
+  return `${receipt.name}.${variant}.jpg`;
+}

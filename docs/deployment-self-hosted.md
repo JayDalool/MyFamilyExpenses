@@ -216,6 +216,9 @@ Hard requirements (enforced by the override / service):
 - **No public port** — the `ocr` service is reachable only on the internal
   Docker network via the name `ocr`. Never add a host `ports:` mapping for it.
 - **No uploads volume mounted into Paddle** — bytes are passed per request.
+- **No internet for the OCR service.** It sits only on the `ocr-internal`
+  network (`internal: true`); the app joins that network and `default`.
+  onnxruntime telemetry is switched off as well.
 - **No DB access and no app secrets** are given to the OCR service.
 - The Next engine enforces a **5–8 s total timeout** (`OCR_TIMEOUT_MS`, clamped
   to 1000–8000 ms). On timeout / network error / 5xx / malformed response it

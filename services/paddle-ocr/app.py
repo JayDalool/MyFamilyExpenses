@@ -29,10 +29,15 @@ from __future__ import annotations
 import logging
 import os
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+# onnxruntime 1.30 on Linux sends usage telemetry to Microsoft by default. Turn it
+# off before the library loads; receipts are private and this service has no
+# business on the internet (docker-compose.ocr.yml also gives it no route out).
+os.environ.setdefault("ORT_DISABLE_TELEMETRY", "1")
+
+from fastapi import FastAPI, File, HTTPException, UploadFile  # noqa: E402
 from fastapi.responses import JSONResponse
 
-from preprocess import preprocess_for_ocr
+from preprocess import preprocess_for_ocr  # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("paddle-ocr")
@@ -80,7 +85,10 @@ def _load_model() -> None:
     global _ocr, _load_error
     try:
         import onnxocr.inference_engine as engine
+        import onnxruntime
         from onnxocr.onnx_paddleocr import ONNXPaddleOcr
+
+        onnxruntime.disable_telemetry_events()
 
         # onnxocr 4.0.0 builds every ONNX session from this module-level helper
         # and has no thread option, so wrap it. Pinned version; recheck on bump.

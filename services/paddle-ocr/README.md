@@ -95,6 +95,11 @@ covers English and French in one model, the version comes from
 ## Security notes
 
 - Do **not** publish the service port publicly — internal Docker network only.
+- **No route to the internet.** `docker-compose.ocr.yml` puts the service only on
+  the `ocr-internal` network, which Docker marks `internal`. onnxruntime's
+  built-in usage telemetry to Microsoft is also switched off
+  (`ORT_DISABLE_TELEMETRY=1` and `disable_telemetry_events()`); without that,
+  onnxruntime 1.30 tried to reach `mobile.events.data.microsoft.com`.
 - Do **not** mount the uploads volume into this service; bytes are passed
   per-request.
 - Runs as a non-root user in the image.

@@ -11,6 +11,10 @@ RUN apt-get update \
 
 WORKDIR /app
 
+# onnxruntime sends usage telemetry to Microsoft unless this is set. app.py sets
+# it too; this covers anything else run inside the image.
+ENV ORT_DISABLE_TELEMETRY=1
+
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 

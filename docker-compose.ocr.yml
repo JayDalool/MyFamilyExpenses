@@ -15,8 +15,10 @@
 # an .env copied from .env.example (OCR_PROVIDER=tesseract) still needs editing.
 # Run `npm run ocr:bench:real` with these settings before switching production.
 #
-# Security: no public port mapping (internal Docker network only), no uploads
-# volume mounted here, no DB access, no app secrets.
+# Security: no public port mapping, no uploads volume mounted here, no DB access,
+# no app secrets. The `ocr` service sits only on the `ocr-internal` network,
+# which Docker marks internal: it has no route to the internet, so receipt
+# images cannot leave the machine even if a library tries to phone home.
 
 services:
   ocr:
@@ -28,6 +30,8 @@ services:
     # compose services via the service name `ocr`.
     expose:
       - "8000"
+    networks:
+      - ocr-internal
     environment:
       OCR_MODEL_SIZE: ${OCR_MODEL_SIZE:-small}
       # Keep equal to the cpus limit below.
@@ -49,6 +53,11 @@ services:
   # Inject Paddle wiring into the existing app container only when this override
   # is included. Base docker-compose.yml is unchanged for non-Paddle deploys.
   app:
+    # `default` keeps the app on the base network (database, internet for
+    # sign-in and email); `ocr-internal` lets it reach the sidecar.
+    networks:
+      - default
+      - ocr-internal
     environment:
       OCR_PROVIDER: ${OCR_PROVIDER:-paddle}
       OCR_STRATEGY: ${OCR_STRATEGY:-fallback}
@@ -57,3 +66,7 @@ services:
     depends_on:
       ocr:
         condition: service_healthy
+
+networks:
+  ocr-internal:
+    internal: true

@@ -165,10 +165,11 @@ rather than environment variables, so there is nothing to configure.
 
 ### OCR provider note (current vs planned)
 
-- **Production: set `OCR_PROVIDER=tesseract` and `OCR_STRATEGY=single`.** This is
-  the only supported production configuration today: one known-good local engine
-  with a predictable latency profile. Image OCR runs in-process via
-  `tesseract.js`; PDF OCR is not supported yet and PDFs fall back to manual entry.
+- **Production without the OCR sidecar: `OCR_PROVIDER=tesseract` and
+  `OCR_STRATEGY=single`.** Image OCR runs in-process via `tesseract.js`. With the
+  PP-OCRv6 sidecar, use `OCR_PROVIDER=paddle` + `OCR_STRATEGY=fallback` once
+  `npm run ocr:bench:real` confirms it (see below). PDF OCR is not supported yet
+  and PDFs fall back to manual entry.
 - **Do not run `OCR_STRATEGY=ensemble` (or `parallel`) in production while the
   engines run sequentially.** The orchestrator awaits the primary engine before
   the secondary/legacy strategies start, so a slow or unreachable Paddle sidecar
@@ -183,12 +184,12 @@ rather than environment variables, so there is nothing to configure.
 - Unknown `OCR_PROVIDER` values **fail closed** with a config error — there is no
   silent fallback to mock. The canonical Paddle name is **`paddle`**;
   `paddleocr` is **not** accepted and fails closed.
-- **PaddleOCR is scaffolded and experimental — not the production default.** An
-  internal sidecar (`services/paddle-ocr`) and the Next engine
-  (`lib/ocr/paddle-ocr-engine.ts`) exist and are wired through Docker Compose,
-  but the model has not been load-tested here. Keep `OCR_PROVIDER=tesseract` in
-  production until you have validated Paddle yourself. It does **not** add OCR
-  persistence yet.
+- **PP-OCRv6 sidecar (opt-in).** An internal sidecar (`services/paddle-ocr`)
+  runs PP-OCRv6 small on ONNX Runtime, called through
+  `lib/ocr/paddle-ocr-engine.ts`. On the 40 generated scorecard receipts it read
+  the amount on 97.5%, or 100% with `OCR_STRATEGY=fallback`, against Tesseract's
+  72.5%. Run `npm run ocr:bench:real` with `OCR_PROVIDER=paddle` +
+  `OCR_STRATEGY=fallback` on the server before switching production.
 
 #### Enabling the PaddleOCR sidecar (opt-in)
 
@@ -203,13 +204,12 @@ Including `docker-compose.ocr.yml` starts the internal `ocr` service and sets
 `OCR_SERVICE_URL=http://ocr:8000` and `OCR_TIMEOUT_MS` on the `app` container.
 With the base `docker-compose.yml` alone, none of this exists.
 
-It does **not** switch the app to Paddle. Paddle measured slower and less
-accurate than Tesseract on this hardware, so the override defaults to
-`OCR_PROVIDER=tesseract` / `OCR_STRATEGY=single` and both are read from the
-environment (`${OCR_PROVIDER:-tesseract}`). To benchmark Paddle, set
-`OCR_PROVIDER=paddle` (and optionally `OCR_STRATEGY=ensemble`) in the
-environment file while the override is included. Measure before making it the
-default again.
+The override defaults the app to `OCR_PROVIDER=paddle` /
+`OCR_STRATEGY=fallback`, but values in the environment file win
+(`${OCR_PROVIDER:-paddle}`), so an `.env` copied from `.env.example` keeps
+Tesseract until you change those two lines. The earlier "Paddle is slower and
+less accurate" result was PaddleOCR 2.9 (PP-OCRv4) limited to 2 CPUs with a 7 s
+timeout; PP-OCRv6 replaced it.
 
 Hard requirements (enforced by the override / service):
 
@@ -221,10 +221,10 @@ Hard requirements (enforced by the override / service):
   to 1000–8000 ms). On timeout / network error / 5xx / malformed response it
   returns a controlled OCR error so the user can enter fields manually — it does
   **not** fabricate data and does **not** silently fall back to mock.
-- Resources: PaddleOCR is CPU-bound (~1–4 s/image) and needs ~1–2 GB RAM. Run
-  one worker per container and scale with replicas; CPU/memory limits are set in
-  the override. See `services/paddle-ocr/README.md` for model preloading and
-  tuning.
+- Resources: CPU-bound, about 1–2.5 s for a 12 MP photo on 2 threads, and
+  about 1 GB RAM. Run one worker per container and scale with replicas; CPU and
+  memory limits are set in the override, and `OCR_THREADS` must match the CPU
+  limit. See `services/paddle-ocr/README.md` for tuning.
 
 ### Local Compose overrides
 

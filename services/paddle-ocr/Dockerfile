@@ -21,12 +21,11 @@ RUN useradd --create-home --uid 10001 ocr \
     && chown -R ocr:ocr /app
 USER ocr
 
-# Model files download on first run into the user's cache. To bake them into the
-# image instead (so /healthz is ready immediately), pre-warm during build — see
-# README.md "Preloading the model".
+# The PP-OCRv6 model files ship inside the onnxocr wheel, so the image needs no
+# network at runtime and /healthz is ready a few seconds after start.
 
 EXPOSE 8000
 
 # Single worker keeps memory predictable; scale concurrency via replicas, not
-# threads (PaddleOCR is CPU-heavy). See README.md "Resources & concurrency".
+# threads (OCR is CPU-heavy). See README.md "Resources & concurrency".
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

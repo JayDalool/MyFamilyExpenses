@@ -1,22 +1,24 @@
-# PaddleOCR sidecar (experimental)
+# PaddleOCR sidecar (PP-OCRv6)
 
 Internal OCR service for MyFamilyExpenses. The Next.js app talks to it over HTTP
 through the `OcrEngine` boundary (`lib/ocr/paddle-ocr-engine.ts`) when
 `OCR_PROVIDER=paddle`.
 
-> **Status: experimental / opt-in.** Production default remains
-> `OCR_PROVIDER=tesseract`. This service is scaffolded and wired, but the
-> PaddleOCR model has not been load-tested in this repo's CI. Validate locally
-> before relying on it.
+> **Status: opt-in.** Runs PP-OCRv6 small on ONNX Runtime (CPU) through the
+> [`onnxocr`](https://pypi.org/project/onnxocr/) package. On the 40 generated
+> scorecard receipts (`npm run ocr:bench`) it read the amount on 97.5% (100% with
+> `OCR_STRATEGY=fallback`) against Tesseract's 72.5%, and 10 of 10 faded receipts
+> against 0. Confirm on saved receipts with `npm run ocr:bench:real` before
+> switching production.
 
 ## What it is
 
 - A small **FastAPI** app exposing exactly two routes.
 - **Image OCR only.** No PDF / rasterization.
-- **Safe preprocessing** (`preprocess.py`): small/low-res images are upscaled
-  (cubic) and mildly enhanced (grayscale + CLAHE contrast + gentle sharpen)
-  before recognition; large, already-clear images are left untouched. The output
-  DTO is unchanged.
+- **Preprocessing** (`preprocess.py`): photos over 2.5 megapixels are shrunk to
+  that budget (a 12 MP photo went from 2.7 s to 0.66 s with the same lines
+  found). Smaller images are passed through untouched: upscaling and contrast
+  enhancement made PP-OCRv6 less accurate and twice as slow.
 - Returns an **app-owned DTO**, never raw Paddle JSON.
 - Receives **file bytes** via multipart upload — never filesystem paths.
 - **No database access, no app secrets**, intended for an **internal Docker
@@ -39,7 +41,7 @@ through the `OcrEngine` boundary (`lib/ocr/paddle-ocr-engine.ts`) when
       { "text": "line text", "bbox": [[x1,y1],[x2,y2],[x3,y3],[x4,y4]], "score": 0.92 }
     ],
     "meanScore": 0.91,
-    "modelVersion": "PP-OCRv4"
+    "modelVersion": "PP-OCRv6-small"
   }
   ```
 - `score` and `meanScore` are normalized/clamped to **0–1**.
@@ -47,10 +49,10 @@ through the `OcrEngine` boundary (`lib/ocr/paddle-ocr-engine.ts`) when
   `file_too_large` (413), `ocr_not_ready` (503), `ocr_failed` (500).
 - File bytes and raw OCR text are **never logged** (only sizes / counts / codes).
 
-## Run locally (real PaddleOCR)
+## Run locally
 
-PaddleOCR pulls heavy ML dependencies (`paddlepaddle`, `paddleocr`, OpenCV) and
-downloads model files on first use. CPU-only is the default.
+CPU-only. The PP-OCRv6 small and tiny model files ship inside the `onnxocr`
+wheel, so nothing is downloaded at runtime.
 
 ```bash
 cd services/paddle-ocr
@@ -60,35 +62,35 @@ pip install -r requirements.txt
 uvicorn app:app --host 0.0.0.0 --port 8000 --workers 1
 ```
 
-First request triggers a one-time model download. Until the model is loaded,
-`/healthz` returns `503`.
+The model loads in a few seconds at startup. Until then `/healthz` returns `503`.
 
-### Preloading the model
-To make `/healthz` ready immediately (and avoid a slow first request), pre-warm
-the model during the Docker build by adding, after `COPY app.py`:
+To score this service against the repo's receipts, run it on port 8000 and then,
+from the repo root:
 
-```dockerfile
-RUN python -c "from paddleocr import PaddleOCR; PaddleOCR(use_angle_cls=True, lang='en', use_gpu=False)"
+```bash
+OCR_PROVIDER=paddle OCR_STRATEGY=fallback OCR_SERVICE_URL=http://127.0.0.1:8000 npm run ocr:bench
 ```
-
-This downloads and caches the detection/recognition/angle models into the image.
 
 ## Configuration
 
 | Env | Purpose | Default |
 |---|---|---|
-| `OCR_LANG` | PaddleOCR language | `en` |
-| `OCR_MODEL_VERSION` | Value reported as `modelVersion` | `PP-OCRv4` |
+| `OCR_MODEL_SIZE` | PP-OCRv6 size: `small`, or `tiny` (about twice as fast, weaker on dates and faded text). Also reported as `modelVersion` | `small` |
+| `OCR_THREADS` | ONNX Runtime threads. Keep equal to the container's CPU limit: the runtime counts the host's cores, and a larger pool gets throttled | `2` |
 | `OCR_MAX_UPLOAD_BYTES` | Reject larger uploads at the edge | `15728640` (15 MB) |
-| `OCR_USE_GPU` | Use GPU build (only if CUDA present) | `0` |
+
+`OCR_LANG`, `OCR_MODEL_VERSION` and `OCR_USE_GPU` are gone: the PP-OCRv6 model
+covers English and French in one model, the version comes from
+`OCR_MODEL_SIZE`, and the image is CPU-only.
 
 ## Resources & concurrency
 
-- **CPU-bound.** Recognition can take ~1–4 s/image on CPU. The Next engine
+- **CPU-bound.** About 0.5 s for a generated receipt and 1–2.5 s for a 12 MP
+  phone photo on 2 threads, measured in a 4-core sandbox. The Next engine
   enforces a 5–8 s total timeout (`OCR_TIMEOUT_MS`).
 - Run **one uvicorn worker** per container; scale by adding container replicas
   rather than threads. Set CPU/memory limits in Compose.
-- Models + runtime need roughly **1–2 GB RAM**; size the container accordingly.
+- Models + runtime peaked at about **1 GB RAM**; the Compose limit is 2 GB.
 
 ## Security notes
 
@@ -104,6 +106,7 @@ Set on the **app** container (not here):
 
 ```
 OCR_PROVIDER=paddle
+OCR_STRATEGY=fallback # Tesseract runs only when the PP-OCRv6 result is weak
 OCR_SERVICE_URL=http://ocr:8000
 OCR_TIMEOUT_MS=7000   # optional; clamped to 1000–8000 by the engine
 ```

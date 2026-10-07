@@ -24,8 +24,9 @@ workflow; this section describes what is merged, not what is in flight.
   Money is integer cents, tax included (`docs/adr/0002-money-in-cents.md`). The
   deprecated `amount` Decimal is still written and must be dropped in a follow-up
   migration.
-- Reports export CSV, XLSX and PDF (cap 5,000 rows) and now carry the new fields. No
-  receipt-file ZIP yet — that is step 5.
+- Reports export CSV, XLSX and PDF (cap 5,000 rows) and carry the new fields. Step 5
+  adds a streamed ZIP with every receipt file, the index and the PDF summary, no row cap
+  (`docs/architecture.md` §8.1).
 - Households have a `kind` (FAMILY / COMPANY) with Admin, Accountant and Employee roles
   (`docs/adr/0001-organizations-as-households.md`).
 - Nightly database backup and the receipt-file backup scripts exist. The restore drill and

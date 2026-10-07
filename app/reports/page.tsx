@@ -43,7 +43,7 @@ function buildReportsHref(filters: ReportFilters, page: number) {
   return `/reports?${params.toString()}`;
 }
 
-function buildExportHref(filters: ReportFilters, format: "pdf" | "csv" | "xlsx") {
+function buildExportHref(filters: ReportFilters, format: "pdf" | "csv" | "xlsx" | "zip") {
   const params = reportParams(filters);
   params.set("format", format);
   return `/api/reports/export?${params.toString()}`;
@@ -84,10 +84,17 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
             </p>
           </div>
           {parsedFilters.ok ? (
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
               <ButtonLink href={buildExportHref(filters, "pdf")} variant="secondary">PDF</ButtonLink>
               <ButtonLink href={buildExportHref(filters, "csv")} variant="secondary">CSV</ButtonLink>
               <ButtonLink href={buildExportHref(filters, "xlsx")} variant="secondary">XLSX</ButtonLink>
+              {/* Receipt files plus the index and summary, for the accountant. */}
+              <ButtonLink
+                href={buildExportHref(filters, "zip")}
+                className="col-span-3 sm:col-span-1"
+              >
+                ZIP with receipts
+              </ButtonLink>
             </div>
           ) : null}
         </div>

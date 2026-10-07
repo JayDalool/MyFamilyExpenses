@@ -1,3 +1,7 @@
+- [ ] STEP-5 · Reports shows "ZIP with receipts" button, desktop and phone
+- [ ] STEP-5 · ZIP opens: README, summary.pdf, index.csv/xlsx, receipts folder
+- [ ] STEP-5 · index.csv receipt names match files in receipts/
+- [ ] STEP-5 · Accountant can download ZIP; company employee gets 403
 - [ ] STEP-4 · New expense fields save and show on a receipt
 - [ ] STEP-4 · Totals and reports still show correct dollar amounts
 - [ ] STEP-4 · CSV, XLSX and PDF exports carry vendor and tax

@@ -703,6 +703,38 @@ Dashboard should show:
 * Recent expenses
 * Current household name
 
+### 8.1 Exports and the accountant package
+
+`GET /api/reports/export?format=…` takes the same filters as `/reports` and needs
+`canViewReports` (owner, admin, accountant; not a company employee).
+
+| Format | Built by | Limit |
+| --- | --- | --- |
+| `pdf`, `csv`, `xlsx` | `lib/reporting/export-{pdf,csv,xlsx}.ts`, in memory | 5,000 rows (`MAX_SYNC_EXPORT_ROWS`), else 413 |
+| `zip` | `lib/reporting/export-package.ts`, streamed with `yazl` | No row cap |
+
+The ZIP holds `README.txt`, `summary.pdf`, `index.csv`, `index.xlsx` and
+`receipts/<date>_<vendor>_<amount>_<id8>.<ext>`. The index's "Receipt reference" column
+names the file inside the ZIP, never the server path. An expense whose stored file is gone
+stays in the index as `(file missing)` and is listed in the README.
+
+```text
+/reports "ZIP with receipts"
+   ↓
+export route (auth, canViewReports, parseReportFilters)
+   ↓
+buildAccountantReport  ->  all rows in the range (row data only, held in memory)
+   ↓
+planAccountantPackage  ->  stat each receipt in UPLOAD_DIR, rename for the ZIP
+   ↓
+accountantPackageStream  ->  yazl: index + summary, then receipts read one at a time
+   ↓
+Readable.toWeb  ->  streamed response, receipts never buffered
+```
+
+Receipts are stored uncompressed (JPEG, PNG, WebP and PDF already are). yazl switches to
+ZIP64 past 4 GB.
+
 ---
 
 ## 9. Category Management

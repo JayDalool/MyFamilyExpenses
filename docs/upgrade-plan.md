@@ -66,6 +66,9 @@ workflow; this section describes what is merged, not what is in flight.
      PDFs today). Pick "Amount due", not the previous balance; read the billing period
      and due date; never store full account numbers.
 7. **Vehicle receipts and SamVision file exchange.** See below.
+   - **7a (MFE-010, PR 1 of 3).** Optional `vehicle_label` and `odometer_km` on an
+     expense: create/edit/detail, audit, CSV/XLSX trailing columns. Export (7b) and
+     import (7c) come next.
 
 ## SamVision file exchange
 

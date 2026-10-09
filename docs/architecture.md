@@ -377,6 +377,8 @@ the step-7 file exchange needs no conversion.
 | `payment_method` | `PaymentMethod NULL` | `CASH`, `DEBIT`, `CREDIT`, `ETRANSFER`, `OTHER` |
 | `notes` | `TEXT NULL` | 500 characters in validation |
 | `is_business` | `BOOLEAN NOT NULL` | Default `false`; the form pre-ticks it in a COMPANY |
+| `vehicle_label` | `TEXT NULL` | Optional car name, 80 characters in validation (MFE-010) |
+| `odometer_km` | `INTEGER NULL` | Whole km, 0 to 2,000,000. CHECK >= 0 and requires `vehicle_label` |
 | `amount` | `DECIMAL(12,2) NOT NULL` | **Deprecated.** Still written, never read. Dropped next |
 
 Every conversion lives in `lib/money.ts` — `toCents`, `fromCents`,

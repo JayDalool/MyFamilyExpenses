@@ -428,6 +428,8 @@ export function ExpenseWizard({
   const [paymentMethod, setPaymentMethod] = useState("");
   const [notes, setNotes] = useState("");
   const [isBusiness, setIsBusiness] = useState(defaultIsBusiness);
+  const [vehicleLabel, setVehicleLabel] = useState("");
+  const [odometerKm, setOdometerKm] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [ocrWarning, setOcrWarning] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -561,6 +563,8 @@ export function ExpenseWizard({
     if (paymentMethod) fd.append("paymentMethod", paymentMethod);
     if (notes) fd.append("notes", notes);
     if (isBusiness) fd.append("isBusiness", "true");
+    if (vehicleLabel.trim()) fd.append("vehicleLabel", vehicleLabel.trim());
+    if (odometerKm.trim()) fd.append("odometerKm", odometerKm.trim());
     if (attemptId) fd.append("attemptId", attemptId);
 
     try {
@@ -1169,6 +1173,46 @@ export function ExpenseWizard({
                 >
                   Business expense
                 </label>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label
+                    className="mb-2 block text-sm font-semibold text-slate-700"
+                    htmlFor="reviewVehicle"
+                  >
+                    Vehicle (optional)
+                  </label>
+                  <input
+                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-4 text-slate-900 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+                    id="reviewVehicle"
+                    maxLength={80}
+                    onChange={(event) => setVehicleLabel(event.target.value)}
+                    placeholder="e.g. Blue Civic"
+                    type="text"
+                    value={vehicleLabel}
+                  />
+                </div>
+                <div>
+                  <label
+                    className="mb-2 block text-sm font-semibold text-slate-700"
+                    htmlFor="reviewOdometer"
+                  >
+                    Odometer (km)
+                  </label>
+                  <input
+                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-4 text-slate-900 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+                    id="reviewOdometer"
+                    inputMode="numeric"
+                    max={2000000}
+                    min={0}
+                    onChange={(event) => setOdometerKm(event.target.value)}
+                    placeholder="Needs a vehicle"
+                    step={1}
+                    type="number"
+                    value={odometerKm}
+                  />
+                </div>
               </div>
 
               <div>

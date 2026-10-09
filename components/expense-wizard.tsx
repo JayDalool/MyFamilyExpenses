@@ -473,6 +473,8 @@ export function ExpenseWizard({
     setPaymentMethod("");
     setNotes("");
     setIsBusiness(defaultIsBusiness);
+    setVehicleLabel("");
+    setOdometerKm("");
     replacePreviewUrl(null);
     clearInputElements();
   };

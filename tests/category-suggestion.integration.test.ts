@@ -43,6 +43,8 @@ async function createFixture() {
   const company = await prisma.household.create({ data: { name: `SugCompany ${suffix}`, kind: "COMPANY" } });
   const memberships: Array<[keyof typeof users, string, HouseholdRole]> = [
     ["parent", family.id, "OWNER"],
+    // Expense (userId, householdId) must reference a membership row.
+    ["parent", other.id, "OWNER"],
     ["owner", company.id, "OWNER"],
     ["empA", company.id, "MEMBER"],
     ["empB", company.id, "MEMBER"],

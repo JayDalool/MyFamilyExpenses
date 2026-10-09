@@ -3,7 +3,7 @@ import { after, before, test } from "node:test";
 import type { HouseholdKind, HouseholdRole } from "@prisma/client";
 import { prisma } from "../lib/db/prisma";
 import type { AuthContext } from "../lib/auth/session";
-import { suggestCategoryForVendor } from "../lib/category-suggestion";
+import { handleCategorySuggestionRequest, suggestCategoryForVendor } from "../lib/category-suggestion";
 import { assertSafeTestDatabase } from "./helpers/test-database";
 import { money } from "./helpers/expense-money";
 
@@ -170,4 +170,12 @@ test("an expense the employee paid for counts", async () => {
 
 test("unknown vendor gives nothing", async () => {
   assert.equal(await suggestCategoryForVendor(fixture.parent, "Zzneverseen"), null);
+});
+
+test("handler: 200 returns the data.suggestion envelope from the database", async () => {
+  const res = await handleCategorySuggestionRequest(fixture.parent, { vendor: " Zzfoodmart " });
+  assert.deepEqual(res, {
+    status: 200,
+    body: { data: { suggestion: { categoryId: fixture.cats.food.id, count: 2, total: 3 } } },
+  });
 });

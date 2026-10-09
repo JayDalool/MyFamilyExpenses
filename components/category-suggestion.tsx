@@ -45,28 +45,30 @@ export function CategorySuggestion({ vendor, categories, currentCategoryId, onUs
     };
   }, [key]);
 
-  if (!key || !result || result.key !== key || !result.suggestion) return null;
+  const { categoryId, count, total } = result?.key === key && result.suggestion
+    ? result.suggestion
+    : { categoryId: "", count: 0, total: 0 };
+  const category = key ? categories.find((item) => item.id === categoryId) : undefined;
+  const show = !!category && categoryId !== currentCategoryId;
 
-  const { categoryId, count, total } = result.suggestion;
-  const category = categories.find((item) => item.id === categoryId);
-  if (!category || categoryId === currentCategoryId) return null;
-
+  // The live region stays mounted so screen readers announce the text when it appears.
   return (
-    <div
-      aria-live="polite"
-      className="mt-2 flex flex-wrap items-center gap-2 rounded-2xl border border-brand-100 bg-brand-50 px-4 py-2 text-sm text-slate-700"
-    >
-      <span>
-        Filed under <span className="font-semibold">{category.name}</span> {count} of {total}{" "}
-        {total === 1 ? "time" : "times"} before
-      </span>
-      <button
-        className="min-h-11 rounded-xl border border-brand-500 bg-white px-4 text-sm font-semibold text-brand-700 transition hover:bg-brand-50 focus:outline-none focus:ring-2 focus:ring-brand-100"
-        onClick={() => onUse(categoryId)}
-        type="button"
-      >
-        Use {category.name}
-      </button>
+    <div aria-live="polite">
+      {show && category ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-2xl border border-brand-100 bg-brand-50 px-4 py-2 text-sm text-slate-700">
+          <span>
+            Filed under <span className="font-semibold">{category.name}</span> {count} of {total}{" "}
+            {total === 1 ? "time" : "times"} before
+          </span>
+          <button
+            className="min-h-11 rounded-xl border border-brand-500 bg-white px-4 text-sm font-semibold text-brand-700 transition hover:bg-brand-50 focus:outline-none focus:ring-2 focus:ring-brand-100"
+            onClick={() => onUse(categoryId)}
+            type="button"
+          >
+            Use {category.name}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

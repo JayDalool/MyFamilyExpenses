@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
-import { expenseReadScope } from "@/lib/auth/permissions";
+import { z } from "zod";
+import { canCreateExpense, expenseReadScope } from "@/lib/auth/permissions";
 import type { AuthContext } from "@/lib/auth/session";
 import { prisma } from "@/lib/db/prisma";
 import { normalizeVendor, vendorMatches } from "@/lib/ocr/benchmark";
@@ -87,4 +88,44 @@ export async function suggestCategoryForVendor(
   }
 
   return pickCategorySuggestion(rows, key);
+}
+
+const bodySchema = z.object({ vendor: z.string().trim().min(1).max(120) });
+
+export type CategorySuggestionResponse =
+  | { status: 200; body: { data: { suggestion: CategorySuggestion | null } } }
+  | { status: 400 | 401 | 403 | 500; body: { error: { message: string } } };
+
+/**
+ * Body of POST /api/expenses/category-suggestion, kept out of route.ts so it
+ * can be tested without cookies(). The vendor is never logged or audited.
+ */
+export async function handleCategorySuggestionRequest(
+  auth: AuthContext | null,
+  body: unknown,
+  db: Pick<typeof prisma, "expense"> = prisma,
+): Promise<CategorySuggestionResponse> {
+  if (!auth) {
+    return { status: 401, body: { error: { message: "Authentication required." } } };
+  }
+
+  if (!canCreateExpense(auth)) {
+    return {
+      status: 403,
+      body: { error: { message: "Your household role cannot add expenses." } },
+    };
+  }
+
+  const parsed = bodySchema.safeParse(body);
+  if (!parsed.success) {
+    return { status: 400, body: { error: { message: "A vendor name is required." } } };
+  }
+
+  try {
+    const suggestion = await suggestCategoryForVendor(auth, parsed.data.vendor, db);
+    return { status: 200, body: { data: { suggestion } } };
+  } catch (error) {
+    console.error("Category suggestion failed:", error instanceof Error ? error.name : "unknown");
+    return { status: 500, body: { error: { message: "Could not look up a suggestion." } } };
+  }
 }

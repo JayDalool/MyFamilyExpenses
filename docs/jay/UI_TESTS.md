@@ -1,3 +1,4 @@
+- [ ] MFE-008 · Review step suggests last category for same vendor
 - [ ] STEP-5 · Reports shows "ZIP with receipts" button, desktop and phone
 - [ ] STEP-5 · ZIP opens: README, summary.pdf, index.csv/xlsx, receipts folder
 - [ ] STEP-5 · index.csv receipt names match files in receipts/

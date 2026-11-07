@@ -780,6 +780,8 @@ Rules:
 * Categories with expenses should not be hard-deleted.
 * Categories with no expenses may be deleted if safe.
 
+Category suggestion (MFE-008): on the review step, `POST /api/expenses/category-suggestion` looks up the typed vendor (or the OCR merchant guess) in the household's saved, non-deleted expenses with an ACTIVE category and returns the most frequent category (a tie goes to the most recent). It is a lookup, not training. The result is limited by `expenseReadScope`, so a company employee only learns from their own expenses. The wizard shows a "Use X" button; nothing is applied until the user taps it. The vendor is sent in a POST body and is never logged or audited. Code: `lib/category-suggestion.ts`, `components/category-suggestion.tsx`.
+
 Recommended fields:
 
 * `id`

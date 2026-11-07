@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { csrfFetch } from "@/lib/auth/csrf-client";
+import { CategorySuggestion } from "@/components/category-suggestion";
 import type { OcrResult } from "@/lib/ocr/types";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -1113,6 +1114,15 @@ export function ExpenseWizard({
                   placeholder="Who you paid"
                   type="text"
                   value={vendor}
+                />
+                <CategorySuggestion
+                  categories={categories}
+                  currentCategoryId={category?.id ?? ""}
+                  onUse={(id) => {
+                    const picked = categories.find((item) => item.id === id);
+                    if (picked) setCategory(picked);
+                  }}
+                  vendor={vendor.trim() || extracted?.merchant || ""}
                 />
               </div>
 

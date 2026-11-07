@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+umask 077
 # Back up the receipt files (the app's /app/uploads volume).
 #
 # The nightly pg_dump only stores file *paths*. Without this, a lost volume
@@ -34,7 +35,7 @@ fi
 
 mv "$TMP" "$OUT"
 trap - EXIT
-chmod 640 "$OUT"
+chmod 600 "$OUT"
 
 find "$BACKUP_ROOT" -type f -name 'uploads_*.tar.gz' -mtime +"$KEEP_DAYS" -delete
 

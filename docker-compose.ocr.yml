@@ -1,4 +1,4 @@
-# PaddleOCR sidecar override (experimental, opt-in).
+# PaddleOCR sidecar override (opt-in). PP-OCRv6 small on ONNX Runtime.
 #
 # This file is NOT part of the default deploy. The OCR service only starts when
 # you explicitly include it:
@@ -9,14 +9,16 @@
 # existing `app` service. With the base compose alone, the app defaults to
 # OCR_PROVIDER=tesseract and this service does not exist.
 #
-# Including this file does NOT switch the app to Paddle on its own. Paddle
-# measured slower and less accurate than Tesseract here, so the default stays
-# OCR_PROVIDER=tesseract / OCR_STRATEGY=single. To benchmark Paddle, set
-# OCR_PROVIDER=paddle (and optionally OCR_STRATEGY=ensemble) in the environment
-# file while this override is included.
+# Including this file defaults the app to OCR_PROVIDER=paddle with
+# OCR_STRATEGY=fallback: PP-OCRv6 reads first and Tesseract runs only when the
+# result is weak. Values in your environment file win over these defaults, so
+# an .env copied from .env.example (OCR_PROVIDER=tesseract) still needs editing.
+# Run `npm run ocr:bench:real` with these settings before switching production.
 #
-# Security: no public port mapping (internal Docker network only), no uploads
-# volume mounted here, no DB access, no app secrets.
+# Security: no public port mapping, no uploads volume mounted here, no DB access,
+# no app secrets. The `ocr` service sits only on the `ocr-internal` network,
+# which Docker marks internal: it has no route to the internet, so receipt
+# images cannot leave the machine even if a library tries to phone home.
 
 services:
   ocr:
@@ -28,11 +30,13 @@ services:
     # compose services via the service name `ocr`.
     expose:
       - "8000"
+    networks:
+      - ocr-internal
     environment:
-      OCR_LANG: ${OCR_LANG:-en}
-      OCR_MODEL_VERSION: ${OCR_MODEL_VERSION:-PP-OCRv4}
+      OCR_MODEL_SIZE: ${OCR_MODEL_SIZE:-small}
+      # Keep equal to the cpus limit below.
+      OCR_THREADS: ${OCR_THREADS:-2}
       OCR_MAX_UPLOAD_BYTES: ${OCR_MAX_UPLOAD_BYTES:-15728640}
-      OCR_USE_GPU: ${OCR_USE_GPU:-0}
     healthcheck:
       # Ready only once the model is loaded (see app.py /healthz).
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz').status==200 else 1)"]
@@ -49,11 +53,20 @@ services:
   # Inject Paddle wiring into the existing app container only when this override
   # is included. Base docker-compose.yml is unchanged for non-Paddle deploys.
   app:
+    # `default` keeps the app on the base network (database, internet for
+    # sign-in and email); `ocr-internal` lets it reach the sidecar.
+    networks:
+      - default
+      - ocr-internal
     environment:
-      OCR_PROVIDER: ${OCR_PROVIDER:-tesseract}
-      OCR_STRATEGY: ${OCR_STRATEGY:-single}
+      OCR_PROVIDER: ${OCR_PROVIDER:-paddle}
+      OCR_STRATEGY: ${OCR_STRATEGY:-fallback}
       OCR_SERVICE_URL: http://ocr:8000
       OCR_TIMEOUT_MS: ${OCR_TIMEOUT_MS:-7000}
     depends_on:
       ocr:
         condition: service_healthy
+
+networks:
+  ocr-internal:
+    internal: true

@@ -140,3 +140,53 @@ test("the database refuses money that contradicts itself", async () => {
     "negative tax must be rejected",
   );
 });
+
+test("vehicle columns default to null and round-trip", async () => {
+  const plain = await prisma.expense.create({
+    data: { ...baseExpense(`VEH0-${suffix}`), ...money(10) },
+  });
+  assert.equal(plain.vehicleLabel, null);
+  assert.equal(plain.odometerKm, null);
+
+  const created = await prisma.expense.create({
+    data: {
+      ...baseExpense(`VEH1-${suffix}`),
+      ...money(10),
+      vehicleLabel: "Test Civic",
+      odometerKm: 123456,
+    },
+  });
+  const read = await prisma.expense.findUniqueOrThrow({ where: { id: created.id } });
+  assert.equal(read.vehicleLabel, "Test Civic");
+  assert.equal(read.odometerKm, 123456);
+
+  const labelOnly = await prisma.expense.create({
+    data: { ...baseExpense(`VEH2-${suffix}`), ...money(10), vehicleLabel: "Test Truck" },
+  });
+  assert.equal(labelOnly.odometerKm, null);
+});
+
+test("the database refuses a negative odometer or one without a vehicle", async () => {
+  await assert.rejects(
+    () =>
+      prisma.expense.create({
+        data: {
+          ...baseExpense(`ODONEG-${suffix}`),
+          ...money(10),
+          vehicleLabel: "Test Civic",
+          odometerKm: -1,
+        },
+      }),
+    /odometer_km_nonnegative/,
+    "negative odometer must be rejected",
+  );
+
+  await assert.rejects(
+    () =>
+      prisma.expense.create({
+        data: { ...baseExpense(`ODONOV-${suffix}`), ...money(10), odometerKm: 500 },
+      }),
+    /odometer_needs_vehicle/,
+    "odometer without a vehicle must be rejected",
+  );
+});

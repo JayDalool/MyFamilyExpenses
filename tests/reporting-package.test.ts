@@ -26,6 +26,8 @@ function expense(overrides: Partial<Expense>): Expense {
     paymentMethod: "CREDIT",
     notes: null,
     isBusiness: true,
+    vehicleLabel: null,
+    odometerKm: null,
     categoryId: "category-id",
     categoryName: "Office supplies",
     userId: "user-id",
@@ -109,7 +111,7 @@ test("package ZIP holds receipts, index, summary and README, and lists missing f
 
     const plan = await planAccountantPackage(
       report([
-        expense({}),
+        expense({ vehicleLabel: "Test Civic", odometerKm: 123456 }),
         expense({
           id: "99999999-0000-0000-0000-000000000000",
           invoiceNumber: "INV-002",
@@ -137,6 +139,8 @@ test("package ZIP holds receipts, index, summary and README, and lists missing f
     assert.ok(csv.includes(receiptName), "index points at the file inside the package");
     assert.ok(csv.includes("INV-002"), "expense with a missing file stays in the index");
     assert.ok(csv.includes("(file missing)"));
+    assert.match(csv, /Receipt reference,Vehicle,Odometer \(km\)/);
+    assert.ok(csv.includes("Test Civic,123456"), "index carries vehicle and whole-km odometer");
     assert.ok(!csv.includes("uploads/"), "server storage paths do not leak into the index");
 
     const readme = entries.get("README.txt")!.toString("utf8");

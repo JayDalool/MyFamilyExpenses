@@ -207,6 +207,8 @@ export async function POST(request: Request) {
       paymentMethod: input.data.paymentMethod,
       notes: input.data.notes,
       isBusiness: input.data.isBusiness,
+      vehicleLabel: input.data.vehicleLabel,
+      odometerKm: input.data.odometerKm,
     });
 
     if (!finalized.success) {
@@ -251,6 +253,8 @@ export async function POST(request: Request) {
           paymentMethod: finalized.data.paymentMethod ?? null,
           notes: finalized.data.notes ?? null,
           isBusiness: finalized.data.isBusiness,
+          vehicleLabel: finalized.data.vehicleLabel ?? null,
+          odometerKm: finalized.data.odometerKm ?? null,
           filePath: storedFile.relativePath,
         },
         include: {
@@ -309,6 +313,8 @@ export async function POST(request: Request) {
         taxCents: expense.taxCents,
         currency: expense.currency,
         isBusiness: expense.isBusiness,
+        vehicleLabel: expense.vehicleLabel,
+        odometerKm: expense.odometerKm,
         fileSize: file.size,
         mimeType: detectedMimeType ?? file.type,
         // Deploy signal: whether a trusted extraction attempt was linked.

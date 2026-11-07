@@ -126,6 +126,8 @@ export async function PATCH(request: Request, context: RouteContext) {
       paymentMethod: parsed.data.paymentMethod ?? null,
       notes: parsed.data.notes ?? null,
       isBusiness: parsed.data.isBusiness,
+      vehicleLabel: parsed.data.vehicleLabel ?? null,
+      odometerKm: parsed.data.odometerKm ?? null,
       paidByUserId,
   });
 
@@ -152,6 +154,8 @@ export async function PATCH(request: Request, context: RouteContext) {
         vendor: existingExpense.vendor,
         paymentMethod: existingExpense.paymentMethod,
         isBusiness: existingExpense.isBusiness,
+        vehicleLabel: existingExpense.vehicleLabel,
+        odometerKm: existingExpense.odometerKm,
         paidByUserId: existingExpense.paidByUserId,
       },
       next: {
@@ -164,6 +168,8 @@ export async function PATCH(request: Request, context: RouteContext) {
         vendor: expense.vendor,
         paymentMethod: expense.paymentMethod,
         isBusiness: expense.isBusiness,
+        vehicleLabel: expense.vehicleLabel,
+        odometerKm: expense.odometerKm,
         paidByUserId: expense.paidByUserId,
       },
     },

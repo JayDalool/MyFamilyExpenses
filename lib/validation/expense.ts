@@ -100,6 +100,20 @@ const optionalBusinessField = z.preprocess((value) => {
   return value;
 }, z.boolean());
 
+const optionalVehicleLabelField = z.preprocess(
+  emptyStringToUndefined,
+  z.string().trim().min(1).max(80).optional(),
+);
+
+const MAX_ODOMETER_KM = 2_000_000;
+
+const optionalOdometerField = z.preprocess((value) => {
+  const normalized = emptyStringToUndefined(value);
+  if (normalized === undefined) return undefined;
+  if (typeof normalized === "string") return Number(normalized);
+  return normalized;
+}, z.number().int().min(0).max(MAX_ODOMETER_KM).optional());
+
 const optionalPaidByUserId = z.preprocess(
   emptyStringToUndefined,
   z.string().uuid("Select a valid household member").optional(),
@@ -112,16 +126,32 @@ const stepFourFields = {
   paymentMethod: optionalPaymentMethodField,
   notes: optionalNotesField,
   isBusiness: optionalBusinessField,
+  vehicleLabel: optionalVehicleLabelField,
+  odometerKm: optionalOdometerField,
 } as const;
 
-export const expenseInputSchema = z.object({
-  categoryId: z.string().uuid("Select a category"),
-  invoiceNumber: optionalTextField,
-  invoiceDate: optionalDateField,
-  amount: optionalAmountField,
-  paidByUserId: optionalPaidByUserId,
-  ...stepFourFields,
-});
+// An odometer reading only means something for a named vehicle. The database
+// carries the same rule as a CHECK constraint.
+const odometerNeedsVehicle = {
+  check: (value: { vehicleLabel?: string; odometerKm?: number }) =>
+    value.odometerKm === undefined || value.vehicleLabel !== undefined,
+  message: "Add a vehicle before entering an odometer reading",
+  path: ["odometerKm"],
+};
+
+export const expenseInputSchema = z
+  .object({
+    categoryId: z.string().uuid("Select a category"),
+    invoiceNumber: optionalTextField,
+    invoiceDate: optionalDateField,
+    amount: optionalAmountField,
+    paidByUserId: optionalPaidByUserId,
+    ...stepFourFields,
+  })
+  .refine(odometerNeedsVehicle.check, {
+    message: odometerNeedsVehicle.message,
+    path: odometerNeedsVehicle.path,
+  });
 
 export const finalExpenseSchema = z
   .object({
@@ -143,6 +173,10 @@ export const finalExpenseSchema = z
   .refine((value) => value.tax === undefined || value.tax <= value.amount, {
     message: "Tax cannot be more than the total amount",
     path: ["tax"],
+  })
+  .refine(odometerNeedsVehicle.check, {
+    message: odometerNeedsVehicle.message,
+    path: odometerNeedsVehicle.path,
   });
 
 // The create route receives a multipart form, so every value arrives as a
@@ -167,6 +201,8 @@ export function parseExpenseForm(formData: Pick<FormData, "get">) {
     // Raw, not text(): an unticked checkbox is absent from the form, and
     // optionalBusinessField resolves null to false. String(null) is "null".
     isBusiness: formData.get("isBusiness"),
+    vehicleLabel: text("vehicleLabel"),
+    odometerKm: text("odometerKm"),
   });
 }
 
@@ -188,6 +224,8 @@ const FRIENDLY_EXPENSE_FIELD_MESSAGES: Record<string, string> = {
   vendor: "Please shorten the vendor name (120 characters or fewer).",
   paymentMethod: "Please choose one of the listed payment methods.",
   notes: "Please shorten the note (500 characters or fewer).",
+  vehicleLabel: "Please shorten the vehicle name (80 characters or fewer).",
+  odometerKm: "Please enter the odometer as whole kilometres, 0 to 2,000,000, with a vehicle.",
   paidByUserId: "Please select a valid household member.",
 };
 

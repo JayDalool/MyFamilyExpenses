@@ -1,3 +1,7 @@
+- [ ] MFE-010 · Add another expense starts with blank vehicle fields
+- [ ] MFE-010 · Vehicle and odometer save, show, edit on a receipt
+- [ ] MFE-010 · Vehicle fields fit at phone width
+- [ ] MFE-010 · CSV and XLSX end with Vehicle, Odometer (km)
 - [ ] STEP-5 · Reports shows "ZIP with receipts" button, desktop and phone
 - [ ] STEP-5 · ZIP opens: README, summary.pdf, index.csv/xlsx, receipts folder
 - [ ] STEP-5 · index.csv receipt names match files in receipts/

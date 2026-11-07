@@ -587,6 +587,8 @@ export type AccountantReport = {
     paymentMethod: string | null;
     notes: string | null;
     isBusiness: boolean;
+    vehicleLabel: string | null;
+    odometerKm: number | null;
     categoryId: string;
     categoryName: string;
     // paid-by member (spending attribution)
@@ -717,6 +719,8 @@ export async function buildAccountantReport(
       paymentMethod: e.paymentMethod,
       notes: e.notes,
       isBusiness: e.isBusiness,
+      vehicleLabel: e.vehicleLabel,
+      odometerKm: e.odometerKm,
       categoryId: e.categoryId,
       categoryName: e.category.name,
       userId: e.paidByUserId,

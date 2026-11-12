@@ -111,7 +111,7 @@ normal deploy needs — copy it to `.env` and fill it in.
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `NODE_ENV` | App environment | set to `production` by `docker-compose.yml` |
-| `APP_TIME_ZONE` | Time zone for dashboard and report period labels | `UTC` |
+| `APP_TIME_ZONE` | Time zone for dashboard and report period labels. Resolved with Node's bundled ICU data, not the host's tzdata: `America/Winnipeg` needs Node 22.23.4+ (tzdata 2026e, permanent UTC-05). The Dockerfile build fails on older Node | `UTC` |
 | `SESSION_COOKIE_NAME` | Session cookie name | `mfe_session` |
 | `ACTIVE_HOUSEHOLD_COOKIE_NAME` | Active-household cookie name | `mfe_household` |
 | `SESSION_TTL_DAYS` | Session lifetime in days | `7` |

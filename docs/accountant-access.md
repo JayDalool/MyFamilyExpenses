@@ -22,7 +22,7 @@ Acceptance opens the client’s **Reports** page. Use **Clients** to open anothe
 ## Reports and exports
 
 - Filter by period, custom dates, vendor, category, paid-by member, and currency.
-- Sort by invoice date or amount. PDFs, CSV, XLSX, and **ZIP with receipts** use the applied report filters and order.
+- Sort by invoice date or amount. PDFs, CSV, XLSX, and **ZIP with receipts** use the dates shown on the report, its filters, and its sort order.
 - If the selection contains multiple currencies, choose one currency for totals and exports. Make separate exports for the other currencies.
 - The ZIP contains the receipt files, PDF summary, CSV and XLSX indexes, and a README. The README lists missing files.
 
@@ -53,5 +53,5 @@ The scenario in `tests/e2e/accountant.spec.ts` uses Mailpit to read the invitati
 - Opening the verification link shows a confirmation page. Only submitting the confirmation grants access. A different email and an unverified existing account are denied.
 - A new accountant sets a password and gains only the invited workspace. An existing accountant can add a second client and open both reports in different tabs.
 - Stale tabs keep their own client in report URLs and expense downloads. A revoked client is denied on fresh report, export, and receipt requests. Accountant membership permits reads and exports.
-- Expense JSON includes only the submitter’s public ID and name. Accountant access does not permit expense writes or role management.
+- Expense JSON includes only the submitter’s public ID and name. Accountants have read-only access and the membership email directory is restricted.
 - The report view and downloaded register match for dates, filters, currency, and sort. Mixed currencies require an explicit choice before totals are shown.

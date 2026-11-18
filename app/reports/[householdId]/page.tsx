@@ -76,9 +76,10 @@ export default async function ReportsPage({ params, searchParams }: ReportsPageP
   const report = parsedFilters.ok && !needsCurrency
     ? await getReportData(householdId, { ...filters, currency }, undefined, reference)
     : null;
-  const exportFilters = { ...filters, currency };
   const from = report?.range.from.toISOString().slice(0, 10);
   const to = report?.range.to.toISOString().slice(0, 10);
+  const exportFilters = { ...filters, currency, period: "custom" as const, fromDate: from, toDate: to };
+  const formatAmount = (cents: number) => formatCents(cents, currency, 2);
   const maxMonthly = Math.max(...(report?.monthlyTotals.map((row) => row.totalCents) ?? []), 1);
 
   const content = (
@@ -94,11 +95,12 @@ export default async function ReportsPage({ params, searchParams }: ReportsPageP
           </div>
           {report ? (
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-              <ButtonLink href={buildExportHref(path, exportFilters, "pdf")} variant="secondary">PDF</ButtonLink>
-              <ButtonLink href={buildExportHref(path, exportFilters, "csv")} variant="secondary">CSV</ButtonLink>
-              <ButtonLink href={buildExportHref(path, exportFilters, "xlsx")} variant="secondary">XLSX</ButtonLink>
+              <ButtonLink download href={buildExportHref(path, exportFilters, "pdf")} variant="secondary">PDF</ButtonLink>
+              <ButtonLink download href={buildExportHref(path, exportFilters, "csv")} variant="secondary">CSV</ButtonLink>
+              <ButtonLink download href={buildExportHref(path, exportFilters, "xlsx")} variant="secondary">XLSX</ButtonLink>
               {/* Receipt files plus the index and summary, for the accountant. */}
               <ButtonLink
+                download
                 href={buildExportHref(path, exportFilters, "zip")}
                 className="col-span-3 sm:col-span-1"
               >
@@ -128,7 +130,7 @@ export default async function ReportsPage({ params, searchParams }: ReportsPageP
           <Card>
             <p className="text-sm font-medium text-slate-500">Total spending</p>
             <p className="mt-2 text-2xl font-bold text-slate-900">
-              {formatCents(report.summary.totalCents ?? 0, currency)}
+              {formatAmount(report.summary.totalCents ?? 0)}
             </p>
           </Card>
           <Card>
@@ -138,7 +140,7 @@ export default async function ReportsPage({ params, searchParams }: ReportsPageP
           <Card>
             <p className="text-sm font-medium text-slate-500">Average expense</p>
             <p className="mt-2 text-2xl font-bold text-slate-900">
-              {formatCents(report.summary.averageCents ?? 0, currency)}
+              {formatAmount(report.summary.averageCents ?? 0)}
             </p>
           </Card>
         </section>
@@ -158,7 +160,7 @@ export default async function ReportsPage({ params, searchParams }: ReportsPageP
                     </p>
                   </div>
                   <p className="font-semibold text-slate-900">
-                    {formatCents(category.totalCents ?? 0, currency)}
+                    {formatAmount(category.totalCents ?? 0)}
                   </p>
                 </div>
               ))}
@@ -179,7 +181,7 @@ export default async function ReportsPage({ params, searchParams }: ReportsPageP
                     </p>
                   </div>
                   <p className="font-semibold text-slate-900">
-                    {formatCents(member.totalCents ?? 0, currency)}
+                    {formatAmount(member.totalCents ?? 0)}
                   </p>
                 </div>
               ))}
@@ -201,7 +203,7 @@ export default async function ReportsPage({ params, searchParams }: ReportsPageP
                     style={{ width: `${Math.max((month.totalCents / maxMonthly) * 100, 2)}%` }}
                   />
                 </div>
-                <p className="text-sm font-semibold text-slate-900">{formatCents(month.totalCents, currency)}</p>
+                <p className="text-sm font-semibold text-slate-900">{formatAmount(month.totalCents)}</p>
               </div>
             ))}
           </div>
@@ -243,7 +245,7 @@ export default async function ReportsPage({ params, searchParams }: ReportsPageP
                   <td className="px-2 py-3 text-slate-600">{expense.paidByUser.name}</td>
                   <td className="px-2 py-3 text-slate-500">{expense.user.name}</td>
                   <td className="whitespace-nowrap px-2 py-3 text-right font-semibold">
-                    {formatCents(expense.amountCents, expense.currency)}
+                    {formatAmount(expense.amountCents)}
                   </td>
                   <td className="whitespace-nowrap px-2 py-3">
                     <a className="font-medium text-brand-700" href={`/api/expenses/${expense.id}/file?workspace=${householdId}`} target="_blank" rel="noreferrer">Preview</a>

@@ -32,6 +32,7 @@ function TabIcon({ d }: { d: string }) {
 
 export function AppShell({ auth, children }: AppShellProps) {
   const showReports = canViewReports(auth);
+  const showHousehold = auth.householdRole !== "ACCOUNTANT";
   const showClients = auth.households.some((household) => household.role === "ACCOUNTANT");
   const reportsHref = workspaceReportsHref(auth.householdId);
   return (
@@ -96,14 +97,16 @@ export function AppShell({ auth, children }: AppShellProps) {
             >
               Categories
             </NavLink>
-            <NavLink
-              activeClassName={DESKTOP_ACTIVE}
-              className={DESKTOP_LINK}
-              href="/household"
-              inactiveClassName={DESKTOP_INACTIVE}
-            >
-              Household
-            </NavLink>
+            {showHousehold && (
+              <NavLink
+                activeClassName={DESKTOP_ACTIVE}
+                className={DESKTOP_LINK}
+                href="/household"
+                inactiveClassName={DESKTOP_INACTIVE}
+              >
+                Household
+              </NavLink>
+            )}
             <div className="ml-2 border-l border-slate-200 pl-3">
               <HouseholdSwitcher
                 currentHouseholdId={auth.householdId}
@@ -117,7 +120,7 @@ export function AppShell({ auth, children }: AppShellProps) {
           </div>
 
           <div className="flex flex-shrink-0 items-center gap-2 sm:hidden">
-            {showClients && <Link className="text-xs font-semibold text-brand-700" href="/clients">Clients</Link>}
+            {showClients && showHousehold && <Link className="text-xs font-semibold text-brand-700" href="/clients">Clients</Link>}
             <HouseholdSwitcher
               currentHouseholdId={auth.householdId}
               households={auth.households}
@@ -182,11 +185,11 @@ export function AppShell({ auth, children }: AppShellProps) {
           <NavLink
             activeClassName={TAB_ACTIVE}
             className={TAB_LINK}
-            href="/household"
+            href={showHousehold ? "/household" : "/clients"}
             inactiveClassName={TAB_INACTIVE}
           >
             <TabIcon d="M17 20h5v-2a4 4 0 00-4-4h-1m-10 6H2v-2a4 4 0 014-4h1m5 6v-2a4 4 0 00-4-4H6m6 6h5v-2a4 4 0 00-4-4h-1m1-7a3 3 0 11-6 0 3 3 0 016 0zm6 2a2.5 2.5 0 10-3.5-2.3" />
-            <span className="text-[11px] font-medium">Household</span>
+            <span className="text-[11px] font-medium">{showHousehold ? "Household" : "Clients"}</span>
           </NavLink>
         </div>
       </nav>

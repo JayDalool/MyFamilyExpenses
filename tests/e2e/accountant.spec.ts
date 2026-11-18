@@ -27,9 +27,9 @@ async function findMailLink(email: string, subject: string, pathname: string, or
   return link;
 }
 
-async function signIn(page: Page, email: string) {
+async function signIn(page: Page, email: string, credential = password) {
   await page.getByLabel("Email address").fill(email);
-  await page.getByLabel("Password", { exact: true }).fill(password);
+  await page.getByLabel("Password", { exact: true }).fill(credential);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
 }
 
@@ -110,6 +110,8 @@ test("accountant email, verified signup, two clients, filtered downloads, and re
     const accountant = await db.user.findUniqueOrThrow({ where: { email: accountantEmail } });
     expect(accountant.emailVerifiedAt).not.toBeNull();
 
+    // Exercise the path for a legacy account whose address has not been verified.
+    await db.user.update({ where: { id: accountant.id }, data: { emailVerifiedAt: null } });
     await sendInvite(beta);
     const secondInvite = await findMailLink(accountantEmail, "invited as an accountant", "/invite/", origin);
     expect(secondInvite).not.toEqual(firstInvite);
@@ -122,7 +124,25 @@ test("accountant email, verified signup, two clients, filtered downloads, and re
       await expect(returning.getByRole("button", { name: "Accept accountant invitation" })).toBeVisible();
       expect(await db.membership.count({ where: { userId: accountant.id, removedAt: null } })).toBe(1);
       await returning.getByRole("button", { name: "Accept accountant invitation" }).click();
+      await returning.getByRole("button", { name: "Sign out and reset password" }).click();
+      await expect(returning).toHaveURL(/\/auth\/forgot-password$/);
+      await returning.getByLabel("Email address").fill(accountantEmail);
+      await returning.getByRole("button", { name: "Send reset link" }).click();
+      const reset = await findMailLink(accountantEmail, "Reset your", "/auth/reset-password", origin);
+      await returning.goto(reset);
+      const updatedPassword = "AccountantReplacement2026";
+      await returning.getByLabel("New password", { exact: true }).fill(updatedPassword);
+      await returning.getByLabel("Confirm password").fill(updatedPassword);
+      await returning.getByRole("button", { name: "Update password" }).click();
+      await expect(returning).toHaveURL(/\/auth\/login\?status=password_reset$/);
+      await returning.goto(secondInvite);
+      await returning.getByRole("link", { name: "Sign in" }).click();
+      await signIn(returning, accountantEmail, updatedPassword);
+      await returning.getByRole("button", { name: "Accept accountant invitation" }).click();
       await expect(returning).toHaveURL(`${origin}/reports/${beta.id}`);
+      await returning.goto("/household");
+      await expect(returning).toHaveURL(`${origin}/reports/${beta.id}`);
+      await expect(returning.getByText(owner.email)).toHaveCount(0);
       await returning.getByRole("link", { name: "Clients" }).click();
       await expect(returning.getByRole("heading", { name: "Clients" })).toBeVisible();
       await expect(returning.getByRole("heading", { name: alpha.name })).toBeVisible();
@@ -137,8 +157,15 @@ test("accountant email, verified signup, two clients, filtered downloads, and re
       await alphaTab.getByLabel("Sort expenses").selectOption("amount-desc");
       await alphaTab.getByRole("button", { name: "Run report" }).click();
       await expect(alphaTab).toHaveURL(/vendor=Alpha/);
-      const exportLink = await alphaTab.getByRole("link", { name: "CSV", exact: true }).getAttribute("href");
+      const exportButton = alphaTab.getByRole("link", { name: "CSV", exact: true });
+      const exportLink = await exportButton.getAttribute("href");
+      expect(await exportButton.getAttribute("download")).not.toBeNull();
       expect(exportLink).toContain(`/api/reports/${alpha.id}/export`);
+      const exportQuery = new URL(exportLink!, origin).searchParams;
+      expect(exportQuery.get("period")).toBe("custom");
+      expect(exportQuery.get("fromDate")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(exportQuery.get("toDate")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(await db.auditLog.count({ where: { userId: accountant.id, action: "reports.export" } })).toBe(0);
       const csv = await alphaTab.request.get(exportLink!);
       expect(csv.ok()).toBeTruthy();
       expect(await csv.text()).toContain("Alpha-invoice");
@@ -152,8 +179,10 @@ test("accountant email, verified signup, two clients, filtered downloads, and re
       });
       expect((await alphaTab.request.get(exportLink!)).status()).toBe(404);
       expect((await alphaTab.request.get(fileLink!)).ok()).toBeFalsy();
+      await returning.setViewportSize({ width: 390, height: 844 });
       await returning.goto(`/reports/${beta.id}`);
       await expect(returning.getByText("Beta-invoice", { exact: true })).toBeVisible();
+      expect(await returning.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
     } finally {
       await returningContext.close();
     }

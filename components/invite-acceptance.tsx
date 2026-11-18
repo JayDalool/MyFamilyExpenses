@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import Link from "next/link";
 import { csrfFetch } from "@/lib/auth/csrf-client";
 import { Alert, Button } from "@/components/ui";
+import { LogoutButton } from "@/components/logout-button";
 
 export function InviteAcceptance({ token, accountant }: { token: string; accountant: boolean }) {
   const [error, setError] = useState<string | null>(null);
@@ -13,11 +13,7 @@ export function InviteAcceptance({ token, accountant }: { token: string; account
   return (
     <div className="space-y-3">
       {error ? <Alert variant="danger">{error}</Alert> : null}
-      {verifyEmail && (
-        <Link className="text-sm font-semibold text-brand-700" href="/auth/forgot-password">
-          Reset password and verify email
-        </Link>
-      )}
+      {verifyEmail && <LogoutButton resetPassword />}
       <Button
         className="w-full"
         disabled={isPending}

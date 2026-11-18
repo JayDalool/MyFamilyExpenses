@@ -1,4 +1,5 @@
 import { AppShell } from "@/components/app-shell";
+import { redirect } from "next/navigation";
 import { CreateCompanyForm } from "@/components/create-company-form";
 import { HouseholdManagement } from "@/components/household-management";
 import { AccountantInvitations } from "@/components/accountant-invitations";
@@ -7,11 +8,13 @@ import { requireHouseholdMember } from "@/lib/auth/session";
 import { roleLabel } from "@/lib/auth/role-labels";
 import { canInviteMembers, canManageMembers, canRevokeInviteRole } from "@/lib/auth/permissions";
 import { prisma } from "@/lib/db/prisma";
+import { workspaceReportsHref } from "@/lib/report-links";
 
 export const dynamic = "force-dynamic";
 
 export default async function HouseholdPage() {
   const auth = await requireHouseholdMember();
+  if (auth.householdRole === "ACCOUNTANT") redirect(workspaceReportsHref(auth.householdId));
   const inviteAccess = canInviteMembers(auth);
   const [members, invites, accountantInvites] = await Promise.all([
     prisma.membership.findMany({

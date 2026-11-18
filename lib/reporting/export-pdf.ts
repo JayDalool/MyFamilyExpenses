@@ -41,10 +41,10 @@ type Column<Row> = {
 // Takes CENTS, like everything else that reads amountCents.
 function formatCentsForPdf(cents: number): string {
   const safe = Number.isFinite(cents) ? cents / 100 : 0;
-  return `$${safe.toLocaleString("en-US", {
+  return safe.toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  })}`;
+  });
 }
 
 function formatDate(value: Date): string {
@@ -122,7 +122,7 @@ function drawHeader(doc: Doc, report: AccountantReport) {
     .font(FONT)
     .fontSize(9)
     .fillColor(MUTED)
-    .text(`${from} to ${to}${report.filters.currency ? ` · ${report.filters.currency}` : ""}`, rightX, top + 22, {
+    .text(`${from} to ${to} · ${report.filters.currency ?? "CAD"}`, rightX, top + 22, {
       width: rightW, align: "right", lineBreak: false,
     });
   doc

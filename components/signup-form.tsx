@@ -90,8 +90,7 @@ export function SignupForm({
           <div className="space-y-2">
             <p className="text-sm font-medium text-emerald-800">{successMessage}</p>
             <p className="text-sm text-emerald-700">
-              Once you verify your email, you&apos;ll be signed in automatically and taken to
-              your dashboard.
+              After you verify your email, we&apos;ll sign you in and open your workspace.
             </p>
             {previewUrl ? (
               <a

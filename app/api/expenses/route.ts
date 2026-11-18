@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getCurrentHousehold } from "@/lib/auth/session";
 import {
+  expenseRelationInclude,
   formatInternalInvoiceNumber,
   listExpensesPageForUser,
   nextInternalInvoiceNumber,
@@ -253,11 +254,7 @@ export async function POST(request: Request) {
           isBusiness: finalized.data.isBusiness,
           filePath: storedFile.relativePath,
         },
-        include: {
-          category: true,
-          user: true,
-          paidByUser: { select: { id: true, name: true } },
-        },
+        include: expenseRelationInclude,
       });
     });
 

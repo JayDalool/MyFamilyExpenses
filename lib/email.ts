@@ -44,7 +44,7 @@ function smtpConfig() {
   };
 }
 
-function canSendSmtpEmail() {
+export function canSendSmtpEmail() {
   const config = smtpConfig();
 
   return Boolean(
@@ -55,6 +55,56 @@ function canSendSmtpEmail() {
       config.from &&
       ((!config.user && !config.password) || (config.user && config.password)),
   );
+}
+
+export async function sendAccountantInvitationEmail({
+  email,
+  householdName,
+  inviteUrl,
+  expiresAt,
+}: {
+  email: string;
+  householdName: string;
+  inviteUrl: string;
+  expiresAt: Date;
+}) {
+  if (!canSendSmtpEmail()) {
+    throw new EmailDeliveryUnavailableError("Configure SMTP to send accountant invitations.");
+  }
+
+  const config = smtpConfig();
+  const transporter = nodemailer.createTransport({
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    auth: config.user ? { user: config.user, pass: config.password } : undefined,
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 15_000,
+  });
+  const expiresOn = expiresAt.toISOString().slice(0, 10);
+  const result = await transporter.sendMail({
+    from: config.from,
+    to: email,
+    subject: "You’re invited as an accountant on MyFamilyExpenses",
+    text: [
+      `${householdName} invited you to view their reports and receipts as an accountant.`,
+      "",
+      "Open the invitation and use the email address that received this message.",
+      inviteUrl,
+      "",
+      `The invitation expires on ${expiresOn} (UTC) and can be used once.`,
+    ].join("\n"),
+    html: [
+      `<p><strong>${escapeHtml(householdName)}</strong> invited you to view their reports and receipts as an accountant.</p>`,
+      "<p>Use the email address that received this message.</p>",
+      `<p><a href="${escapeHtml(inviteUrl)}">Open accountant invitation</a></p>`,
+      `<p>The invitation expires on ${expiresOn} (UTC) and can be used once.</p>`,
+    ].join(""),
+  });
+  if (!result.accepted.length) {
+    throw new EmailDeliveryUnavailableError("The mail server did not accept the invitation.");
+  }
 }
 
 /**

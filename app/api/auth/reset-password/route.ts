@@ -119,6 +119,13 @@ export async function POST(request: Request) {
           emailVerifiedAt: true,
         },
       });
+      // A valid reset token was delivered to this account's email address.
+      if (!user.emailVerifiedAt) {
+        await tx.user.updateMany({
+          where: { id: user.id, emailVerifiedAt: null },
+          data: { emailVerifiedAt: new Date() },
+        });
+      }
 
       await invalidateOtherActiveTokens(tx, user.id, consumed.id);
       await invalidateAllSessionsForUser(tx, user.id);

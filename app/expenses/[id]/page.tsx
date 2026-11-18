@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
+import { AccountantShell } from "@/components/accountant-shell";
 import { ExpenseActions } from "@/components/expense-actions";
 import { requireHouseholdMember } from "@/lib/auth/session";
 import { getExpenseForUser } from "@/lib/expenses";
@@ -12,11 +13,13 @@ import {
 } from "@/lib/expense-files";
 import { formatCents, fromCents } from "@/lib/money";
 import { canAssignExpenseToOthers, canManageExpense } from "@/lib/auth/permissions";
+import { workspaceReportsHref } from "@/lib/report-links";
 
 type ExpenseDetailsPageProps = {
   params: Promise<{
     id: string;
   }>;
+  searchParams: Promise<{ workspace?: string | string[] }>;
 };
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
@@ -29,8 +32,11 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
 
 export default async function ExpenseDetailsPage({
   params,
+  searchParams,
 }: ExpenseDetailsPageProps) {
-  const auth = await requireHouseholdMember();
+  const { workspace } = await searchParams;
+  if (Array.isArray(workspace)) notFound();
+  const auth = await requireHouseholdMember(workspace);
   const { id } = await params;
   const expense = await getExpenseForUser(auth, id);
 
@@ -63,21 +69,22 @@ export default async function ExpenseDetailsPage({
     members.push({ id: expense.paidByUser.id, name: `${expense.paidByUser.name} (removed)` });
   }
 
-  const previewUrl = `/api/expenses/${expense.id}/file`;
-  const downloadUrl = `${previewUrl}?download=1`;
+  const receiptPath = `/api/expenses/${expense.id}/file`;
+  const previewUrl = workspace ? `${receiptPath}?workspace=${encodeURIComponent(workspace)}` : receiptPath;
+  const downloadUrl = `${previewUrl}${workspace ? "&" : "?"}download=1`;
+  const backHref = workspace ? workspaceReportsHref(auth.householdId) : "/expenses";
   const mimeType = getStoredExpenseMimeType(expense.filePath);
   const canManage = canManageExpense(auth, expense.userId);
 
-  return (
-    <AppShell auth={auth}>
+  const content = (
       <div className="space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <Link
               className="text-sm font-medium text-brand-700 hover:text-brand-800"
-              href="/expenses"
+              href={backHref}
             >
-              Back to expenses
+              {workspace ? "Back to reports" : "Back to expenses"}
             </Link>
             <h1 className="mt-2 text-3xl font-semibold text-slate-900">
               {expense.invoiceNumber}
@@ -208,6 +215,7 @@ export default async function ExpenseDetailsPage({
 
             {canManage ? (
               <ExpenseActions
+                workspace={workspace}
                 categories={categories}
                 members={members}
                 canAssignToOthers={canAssignExpenseToOthers(auth)}
@@ -261,6 +269,8 @@ export default async function ExpenseDetailsPage({
           </section>
         </div>
       </div>
-    </AppShell>
   );
+  return auth.householdRole === "ACCOUNTANT"
+    ? <AccountantShell>{content}</AccountantShell>
+    : <AppShell auth={auth}>{content}</AppShell>;
 }

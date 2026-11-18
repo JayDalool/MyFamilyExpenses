@@ -117,12 +117,14 @@ function drawHeader(doc: Doc, report: AccountantReport) {
     .font(FONT_BOLD)
     .fontSize(18)
     .fillColor(TEXT)
-    .text("Monthly Expense Report", rightX, top, { width: rightW, align: "right", lineBreak: false });
+    .text("Expense Report", rightX, top, { width: rightW, align: "right", lineBreak: false });
   doc
     .font(FONT)
     .fontSize(9)
     .fillColor(MUTED)
-    .text(`Period: ${from} to ${to}`, rightX, top + 22, { width: rightW, align: "right", lineBreak: false });
+    .text(`${from} to ${to}${report.filters.currency ? ` · ${report.filters.currency}` : ""}`, rightX, top + 22, {
+      width: rightW, align: "right", lineBreak: false,
+    });
   doc
     .font(FONT)
     .fontSize(8)

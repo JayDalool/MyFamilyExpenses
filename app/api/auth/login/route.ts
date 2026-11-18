@@ -105,6 +105,7 @@ export async function POST(request: Request) {
         inviteToken,
         user,
         getInviteRequestActorKeys(request, { userId: user.id, email: user.email }),
+        { deferAccountant: true },
       )
     : null;
 
@@ -134,10 +135,9 @@ export async function POST(request: Request) {
         action: "auth.login.no_household",
         metadata: { email, ip, reason: "missing_household" },
       });
-      if (isNativeFormRequest(request)) {
-        return redirectNativeForm(request, "/no-household");
-      }
-      return NextResponse.json({ data: { redirectTo: "/no-household" } });
+      const redirectTo = inviteToken ? `/invite/${encodeURIComponent(inviteToken)}` : "/no-household";
+      if (isNativeFormRequest(request)) return redirectNativeForm(request, redirectTo);
+      return NextResponse.json({ data: { redirectTo } });
     }
   }
 

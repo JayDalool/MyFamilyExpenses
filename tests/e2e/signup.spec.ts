@@ -716,7 +716,7 @@ test("multi-household users only see the selected household on dashboard and rep
 
     await expect(page.getByLabel("Current household")).toHaveValue(fixture.household.id);
     await expect(
-      page.getByText(`Spending analytics for ${fixture.household.name}`),
+      page.locator("main").getByText(`${fixture.household.name} ·`),
     ).toBeVisible();
     await expect(page.getByText("$10.00").first()).toBeVisible();
     const firstExport = await page.request.get("/api/reports/export?period=today&format=csv");
@@ -752,7 +752,7 @@ test("multi-household users only see the selected household on dashboard and rep
     await page.waitForLoadState("networkidle");
     await expect(page.getByLabel("Current household")).toHaveValue(secondHousehold.id);
     await expect(
-      page.getByText(`Spending analytics for ${secondHousehold.name}`),
+      page.locator("main").getByText(`${secondHousehold.name} ·`),
     ).toBeVisible();
     await expect(page.getByText("$100.00").first()).toBeVisible();
 
@@ -844,7 +844,7 @@ test("signup through an invite joins only the invited household after verificati
     await page.getByRole("button", { name: "Create account" }).click();
     await page.getByRole("link", { name: "Open the local verification link" }).click();
     await page.waitForURL("**/dashboard");
-    await expect(page.getByText(`Spending analytics for ${owner.household.name}`)).toBeVisible();
+    await expect(page.locator("main").getByText(`${owner.household.name} ·`)).toBeVisible();
 
     const invitedUser = await db.user.findUniqueOrThrow({ where: { email: invitedEmail } });
     const memberships = await db.membership.findMany({
@@ -975,7 +975,7 @@ test("removed signed-in users see no-household page and can accept a new invite"
     await page.goto(`/invite/${inviteToken}`);
     await page.getByRole("button", { name: "Join household" }).click();
     await page.waitForURL("**/dashboard");
-    await expect(page.getByText(`Spending analytics for ${inviter.household.name}`)).toBeVisible();
+    await expect(page.locator("main").getByText(`${inviter.household.name} ·`)).toBeVisible();
     expect(
       await db.membership.count({
         where: {

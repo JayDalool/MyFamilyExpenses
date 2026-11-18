@@ -49,6 +49,8 @@ export function reportToCsv(report: AccountantReport): string {
   lines.push(toRow(["Household", report.household.name]));
   lines.push(toRow(["Reporting period", `${from} to ${to}`]));
   lines.push(toRow(["Generated at", report.generatedAt.toISOString()]));
+  if (report.filters.currency) lines.push(toRow(["Currency", report.filters.currency]));
+  if (report.filters.vendor) lines.push(toRow(["Vendor filter", report.filters.vendor]));
   lines.push(toRow(["Total spending", fromCents(report.totals.totalCents)]));
   lines.push(toRow(["Expense count", report.totals.count]));
   lines.push(toRow(["Average expense", fromCents(report.totals.averageCents)]));

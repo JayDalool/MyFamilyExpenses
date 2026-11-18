@@ -1,6 +1,7 @@
 import { AppShell } from "@/components/app-shell";
 import { CreateCompanyForm } from "@/components/create-company-form";
 import { HouseholdManagement } from "@/components/household-management";
+import { AccountantInvitations } from "@/components/accountant-invitations";
 import { Badge } from "@/components/ui";
 import { requireHouseholdMember } from "@/lib/auth/session";
 import { roleLabel } from "@/lib/auth/role-labels";
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
 export default async function HouseholdPage() {
   const auth = await requireHouseholdMember();
   const inviteAccess = canInviteMembers(auth);
-  const [members, invites] = await Promise.all([
+  const [members, invites, accountantInvites] = await Promise.all([
     prisma.membership.findMany({
       where: { householdId: auth.householdId, removedAt: null },
       include: { user: { select: { id: true, name: true, email: true } } },
@@ -22,6 +23,7 @@ export default async function HouseholdPage() {
       ? prisma.householdInvite.findMany({
           where: {
             householdId: auth.householdId,
+            role: { not: "ACCOUNTANT" },
             revokedAt: null,
             expiresAt: { gt: new Date() },
           },
@@ -34,6 +36,21 @@ export default async function HouseholdPage() {
             expiresAt: true,
           },
           orderBy: { createdAt: "desc" },
+        })
+      : [],
+    inviteAccess
+      ? prisma.householdInvite.findMany({
+          where: { householdId: auth.householdId, role: "ACCOUNTANT", email: { not: null } },
+          distinct: ["email"],
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          select: {
+            id: true,
+            email: true,
+            emailStatus: true,
+            expiresAt: true,
+            revokedAt: true,
+            usedCount: true,
+          },
         })
       : [],
   ]);
@@ -51,6 +68,26 @@ export default async function HouseholdPage() {
             <Badge variant="brand">{roleLabel(auth.householdRole, auth.householdKind)}</Badge>
           </div>
         </header>
+
+        {inviteAccess && (
+          <AccountantInvitations
+            householdId={auth.householdId}
+            invites={accountantInvites.map((invite) => {
+              const status = invite.usedCount > 0 ? "Accepted"
+                : invite.revokedAt ? "Revoked"
+                  : invite.expiresAt <= new Date() ? "Expired"
+                    : invite.emailStatus === "PENDING" ? "Sending"
+                      : invite.emailStatus === "FAILED" ? "Delivery failed"
+                        : invite.emailStatus === "SENT" ? "Sent" : "Link created";
+              return {
+                id: invite.id,
+                email: invite.email ?? "",
+                status,
+                expiresOn: invite.expiresAt.toISOString().slice(0, 10),
+              };
+            })}
+          />
+        )}
 
         <HouseholdManagement
           householdKind={auth.householdKind}

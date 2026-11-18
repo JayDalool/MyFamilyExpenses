@@ -19,8 +19,8 @@ type RouteContext = {
   }>;
 };
 
-export async function GET(_: Request, context: RouteContext) {
-  const auth = await getCurrentHousehold();
+export async function GET(request: Request, context: RouteContext) {
+  const auth = await getCurrentHousehold(new URL(request.url).searchParams.get("workspace") ?? undefined);
 
   if (!auth) {
     return NextResponse.json(
@@ -43,7 +43,7 @@ export async function GET(_: Request, context: RouteContext) {
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
-  const auth = await getCurrentHousehold();
+  const auth = await getCurrentHousehold(new URL(request.url).searchParams.get("workspace") ?? undefined);
 
   if (!auth) {
     return NextResponse.json(
@@ -173,8 +173,8 @@ export async function PATCH(request: Request, context: RouteContext) {
   return NextResponse.json({ data: expense });
 }
 
-export async function DELETE(_: Request, context: RouteContext) {
-  const auth = await getCurrentHousehold();
+export async function DELETE(request: Request, context: RouteContext) {
+  const auth = await getCurrentHousehold(new URL(request.url).searchParams.get("workspace") ?? undefined);
 
   if (!auth) {
     return NextResponse.json(

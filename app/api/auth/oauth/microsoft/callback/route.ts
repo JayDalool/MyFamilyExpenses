@@ -101,7 +101,7 @@ export async function GET(request: Request) {
       ? await acceptHouseholdInviteForUser(storedInviteToken, {
           id: existingAccount.userId,
           email: userInfo.email,
-        }, inviteActorKeys)
+        }, inviteActorKeys, { deferAccountant: true })
       : null;
 
     const acceptedHouseholdId = inviteAcceptance?.ok
@@ -127,7 +127,7 @@ export async function GET(request: Request) {
     const inviteHandled =
       inviteAcceptance?.ok || inviteAcceptance?.reason === "duplicate_membership";
     const response = NextResponse.redirect(
-      membership
+      membership || storedInviteToken
         ? redirectAfterInvite(request.url, storedInviteToken, Boolean(inviteHandled))
         : buildInternalUrl("/no-household", request.url),
     );

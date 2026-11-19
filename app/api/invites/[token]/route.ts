@@ -6,6 +6,7 @@ import {
 } from "@/lib/auth/session";
 import { acceptHouseholdInviteForUser } from "@/lib/household-invites";
 import { getInviteRequestActorKeys } from "@/lib/invite-rate-limit";
+import { workspaceReportsHref } from "@/lib/report-links";
 
 type RouteContext = { params: Promise<{ token: string }> };
 
@@ -15,6 +16,9 @@ const FAILURE_MESSAGES = {
   revoked: "This invite is unavailable.",
   used_up: "This invite is unavailable.",
   email_mismatch: "This invite is unavailable.",
+  email_unverified: "Verify your email to accept this invitation. You can do that by resetting your password, then reopening this link.",
+  email_in_progress: "This invite is unavailable.",
+  confirmation_required: "Confirm this invitation to continue.",
   duplicate_membership: "You already belong to this household.",
   inviter_not_authorized: "This invite is unavailable.",
   rate_limited: "Too many invite acceptance attempts. Please try again later.",
@@ -34,7 +38,7 @@ export async function POST(request: Request, context: RouteContext) {
   );
   if (!result.ok) {
     return NextResponse.json(
-      { error: { message: FAILURE_MESSAGES[result.reason] } },
+      { error: { message: FAILURE_MESSAGES[result.reason], code: result.reason } },
       {
         status:
           result.reason === "rate_limited"
@@ -49,5 +53,6 @@ export async function POST(request: Request, context: RouteContext) {
   await setActiveHouseholdCookie(result.householdId);
   revalidatePath("/dashboard");
   revalidatePath("/household");
-  return NextResponse.json({ data: result });
+  const redirectTo = result.role === "ACCOUNTANT" ? workspaceReportsHref(result.householdId) : "/dashboard";
+  return NextResponse.json({ data: { ...result, redirectTo } });
 }

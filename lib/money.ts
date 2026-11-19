@@ -42,9 +42,11 @@ export function centsToDecimalString(cents: number): string {
   return `${sign}${Math.trunc(absolute / 100)}.${String(absolute % 100).padStart(2, "0")}`;
 }
 
-export function formatCents(cents: number, currency = "CAD"): string {
+export function formatCents(cents: number, currency = "CAD", fractionDigits?: number): string {
   return new Intl.NumberFormat("en-CA", {
     style: "currency",
     currency: currency.trim() || "CAD",
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
   }).format(fromCents(cents));
 }

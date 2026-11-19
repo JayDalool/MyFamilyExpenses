@@ -6,6 +6,7 @@ import { LogoutButton } from "@/components/logout-button";
 import { HouseholdSwitcher } from "@/components/household-switcher";
 import { NavLink } from "@/components/nav-link";
 import { canViewReports } from "@/lib/auth/permissions";
+import { workspaceReportsHref } from "@/lib/report-links";
 
 type AppShellProps = {
   auth: AuthContext;
@@ -31,10 +32,12 @@ function TabIcon({ d }: { d: string }) {
 
 export function AppShell({ auth, children }: AppShellProps) {
   const showReports = canViewReports(auth);
+  const showHousehold = auth.householdRole !== "ACCOUNTANT";
+  const showClients = auth.households.some((household) => household.role === "ACCOUNTANT");
+  const reportsHref = workspaceReportsHref(auth.householdId);
   return (
     <div className="min-h-screen bg-slate-100">
-      {/* pt-[env(...)] keeps the header clear of the iPhone notch in standalone
-          (Add to Home Screen) mode; px-[max(...)] handles landscape rounded corners. */}
+      {/* Safe-area padding keeps the header clear of the notch and rounded corners. */}
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 pt-[env(safe-area-inset-top)] backdrop-blur supports-[backdrop-filter]:bg-white/80">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-[max(1rem,env(safe-area-inset-left))] py-3 pr-[max(1rem,env(safe-area-inset-right))]">
           <Link className="flex min-w-0 items-center gap-2.5" href="/dashboard">
@@ -49,7 +52,7 @@ export function AppShell({ auth, children }: AppShellProps) {
             <span className="truncate font-semibold text-slate-900">My Expenses</span>
           </Link>
 
-          <div className="hidden items-center gap-1 sm:flex">
+          <div className="hidden flex-wrap items-center justify-end gap-1 sm:flex">
             <NavLink
               activeClassName={DESKTOP_ACTIVE}
               className={DESKTOP_LINK}
@@ -70,12 +73,22 @@ export function AppShell({ auth, children }: AppShellProps) {
               <NavLink
                 activeClassName={DESKTOP_ACTIVE}
                 className={DESKTOP_LINK}
-                href="/reports"
+                href={reportsHref}
                 inactiveClassName={DESKTOP_INACTIVE}
               >
                 Reports
               </NavLink>
             ) : null}
+            {showClients && (
+              <NavLink
+                activeClassName={DESKTOP_ACTIVE}
+                className={DESKTOP_LINK}
+                href="/clients"
+                inactiveClassName={DESKTOP_INACTIVE}
+              >
+                Clients
+              </NavLink>
+            )}
             <NavLink
               activeClassName={DESKTOP_ACTIVE}
               className={DESKTOP_LINK}
@@ -84,14 +97,16 @@ export function AppShell({ auth, children }: AppShellProps) {
             >
               Categories
             </NavLink>
-            <NavLink
-              activeClassName={DESKTOP_ACTIVE}
-              className={DESKTOP_LINK}
-              href="/household"
-              inactiveClassName={DESKTOP_INACTIVE}
-            >
-              Household
-            </NavLink>
+            {showHousehold && (
+              <NavLink
+                activeClassName={DESKTOP_ACTIVE}
+                className={DESKTOP_LINK}
+                href="/household"
+                inactiveClassName={DESKTOP_INACTIVE}
+              >
+                Household
+              </NavLink>
+            )}
             <div className="ml-2 border-l border-slate-200 pl-3">
               <HouseholdSwitcher
                 currentHouseholdId={auth.householdId}
@@ -105,6 +120,7 @@ export function AppShell({ auth, children }: AppShellProps) {
           </div>
 
           <div className="flex flex-shrink-0 items-center gap-2 sm:hidden">
+            {showClients && showHousehold && <Link className="text-xs font-semibold text-brand-700" href="/clients">Clients</Link>}
             <HouseholdSwitcher
               currentHouseholdId={auth.householdId}
               households={auth.households}
@@ -118,7 +134,7 @@ export function AppShell({ auth, children }: AppShellProps) {
         {children}
       </main>
 
-      {/* Mobile tab bar. pb-[env(...)] keeps taps clear of the iPhone home indicator. */}
+      {/* Safe-area padding keeps the tab bar clear of the home indicator. */}
       <nav
         aria-label="Primary"
         className="fixed bottom-0 left-0 right-0 z-30 border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] sm:hidden"
@@ -148,7 +164,7 @@ export function AppShell({ auth, children }: AppShellProps) {
             <NavLink
               activeClassName={TAB_ACTIVE}
               className={TAB_LINK}
-              href="/reports"
+              href={reportsHref}
               inactiveClassName={TAB_INACTIVE}
             >
               <TabIcon d="M9 17v-6m6 6V7m4 14H5a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2z" />
@@ -169,11 +185,11 @@ export function AppShell({ auth, children }: AppShellProps) {
           <NavLink
             activeClassName={TAB_ACTIVE}
             className={TAB_LINK}
-            href="/household"
+            href={showHousehold ? "/household" : "/clients"}
             inactiveClassName={TAB_INACTIVE}
           >
             <TabIcon d="M17 20h5v-2a4 4 0 00-4-4h-1m-10 6H2v-2a4 4 0 014-4h1m5 6v-2a4 4 0 00-4-4H6m6 6h5v-2a4 4 0 00-4-4h-1m1-7a3 3 0 11-6 0 3 3 0 016 0zm6 2a2.5 2.5 0 10-3.5-2.3" />
-            <span className="text-[11px] font-medium">Household</span>
+            <span className="text-[11px] font-medium">{showHousehold ? "Household" : "Clients"}</span>
           </NavLink>
         </div>
       </nav>

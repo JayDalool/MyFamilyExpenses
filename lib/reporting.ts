@@ -8,6 +8,7 @@ type ReportingStore = Pick<typeof prisma, "category" | "expense" | "user"> & {
 type AccountantStore = ReportingStore;
 
 export type ReportPeriod = "today" | "week" | "month" | "year" | "custom";
+export type ReportSort = "date-desc" | "date-asc" | "amount-desc" | "amount-asc";
 
 export type ReportFilters = {
   period: ReportPeriod;
@@ -15,6 +16,9 @@ export type ReportFilters = {
   toDate?: string;
   categoryId?: string;
   memberUserId?: string;
+  vendor?: string;
+  currency?: string;
+  sort?: ReportSort;
   page: number;
   pageSize: number;
 };
@@ -25,6 +29,7 @@ export type ReportFilterParseResult =
 
 export const MAX_SYNC_EXPORT_ROWS = 5000;
 export const INVALID_CUSTOM_DATE_RANGE_MESSAGE = "Invalid custom date range.";
+export const MIXED_REPORT_CURRENCIES_MESSAGE = "Choose a currency to report on expenses in this range.";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -83,6 +88,9 @@ export function parseReportFilters(searchParams: RawSearchParams = {}): ReportFi
 
   const requestedCategoryId = single(searchParams.categoryId);
   const requestedMemberUserId = single(searchParams.memberUserId);
+  const vendor = single(searchParams.vendor)?.trim().slice(0, 120);
+  const currency = single(searchParams.currency)?.trim().toUpperCase();
+  const sort = single(searchParams.sort);
   const categoryId =
     requestedCategoryId && UUID_PATTERN.test(requestedCategoryId)
       ? requestedCategoryId
@@ -98,6 +106,11 @@ export function parseReportFilters(searchParams: RawSearchParams = {}): ReportFi
     toDate: period === "custom" ? requestedToDate : undefined,
     categoryId,
     memberUserId,
+    ...(vendor ? { vendor } : {}),
+    ...(currency && /^[A-Z]{3}$/.test(currency) ? { currency } : {}),
+    ...(sort && ["date-desc", "date-asc", "amount-desc", "amount-asc"].includes(sort)
+      ? { sort: sort as ReportSort }
+      : {}),
     page: positiveInteger(single(searchParams.page), 1, 9999),
     pageSize: positiveInteger(
       single(searchParams.pageSize),
@@ -181,7 +194,7 @@ export function getReportDateRange(
 function activeExpenseWhere(
   householdId: string,
   range?: { from: Date; to: Date },
-  extras?: { categoryId?: string; memberUserId?: string },
+  extras?: Pick<ReportFilters, "categoryId" | "memberUserId" | "vendor" | "currency">,
 ): Prisma.ExpenseWhereInput {
   return {
     householdId,
@@ -190,7 +203,64 @@ function activeExpenseWhere(
     ...(extras?.categoryId ? { categoryId: extras.categoryId } : {}),
     // Member spending is attributed to the paid-by member, not the uploader.
     ...(extras?.memberUserId ? { paidByUserId: extras.memberUserId } : {}),
+    ...(extras?.vendor ? { vendor: { contains: escapeVendorSearch(extras.vendor), mode: "insensitive" } } : {}),
+    ...(extras?.currency ? { currency: extras.currency } : {}),
   };
+}
+
+function escapeVendorSearch(vendor: string) {
+  return vendor.replace(/[\\%_]/g, "\\$&");
+}
+
+function reportOrderBy(sort: ReportSort): Prisma.ExpenseOrderByWithRelationInput[] {
+  const direction = sort.endsWith("asc") ? "asc" : "desc";
+  const byDate: Prisma.ExpenseOrderByWithRelationInput[] = [
+    { invoiceDate: direction },
+    { createdAt: direction },
+    { id: direction },
+  ];
+  return sort.startsWith("amount") ? [{ amountCents: direction }, ...byDate] : byDate;
+}
+
+export async function getReportCurrencies(
+  householdId: string,
+  filters: ReportFilters,
+  db: Pick<typeof prisma, "expense"> = prisma,
+  reference = new Date(),
+) {
+  const range = getReportDateRange(filters, reference);
+  const currencies = await db.expense.groupBy({
+    by: ["currency"],
+    where: activeExpenseWhere(householdId, range, { ...filters, currency: undefined }),
+    orderBy: { currency: "asc" },
+  });
+  return currencies.map(({ currency }) => currency.trim());
+}
+
+function getReportMonthlyRows(
+  householdId: string,
+  range: { from: Date; to: Date },
+  filters: ReportFilters,
+  db: ReportingStore,
+) {
+  const vendor = filters.vendor ? `%${escapeVendorSearch(filters.vendor)}%` : undefined;
+  return db.$queryRaw<Array<{ bucket: Date; totalCents: string; count: bigint }>>`
+    SELECT
+      DATE_TRUNC('month', "invoice_date")::date AS "bucket",
+      COALESCE(SUM("amount_cents"), 0)::text AS "totalCents",
+      COUNT(*)::bigint AS "count"
+    FROM "expenses"
+    WHERE "household_id" = CAST(${householdId} AS uuid)
+      AND "deleted_at" IS NULL
+      AND "invoice_date" >= ${range.from}
+      AND "invoice_date" <= ${range.to}
+      ${filters.categoryId ? Prisma.sql`AND "category_id" = CAST(${filters.categoryId} AS uuid)` : Prisma.empty}
+      ${filters.memberUserId ? Prisma.sql`AND "paid_by_user_id" = CAST(${filters.memberUserId} AS uuid)` : Prisma.empty}
+      ${filters.currency ? Prisma.sql`AND "currency" = ${filters.currency}` : Prisma.empty}
+      ${vendor ? Prisma.sql`AND "vendor" ILIKE ${vendor}` : Prisma.empty}
+    GROUP BY "bucket"
+    ORDER BY "bucket" ASC
+  `;
 }
 
 export async function getDashboardSummary(
@@ -220,7 +290,7 @@ export async function getDashboardSummary(
       where: activeExpenseWhere(householdId),
       include: {
         category: true,
-        user: true,
+        user: { select: { id: true, name: true } },
         paidByUser: { select: { id: true, name: true } },
       },
       orderBy: [{ invoiceDate: "desc" }, { createdAt: "desc" }],
@@ -561,6 +631,8 @@ export type AccountantReport = {
     period: ReportPeriod;
     categoryId?: string;
     memberUserId?: string;
+    currency?: string;
+    vendor?: string;
   };
   totals: { totalCents: number; count: number; averageCents: number };
   categoryBreakdown: Array<{
@@ -587,6 +659,8 @@ export type AccountantReport = {
     paymentMethod: string | null;
     notes: string | null;
     isBusiness: boolean;
+    vehicleLabel: string | null;
+    odometerKm: number | null;
     categoryId: string;
     categoryName: string;
     // paid-by member (spending attribution)
@@ -615,10 +689,7 @@ export async function buildAccountantReport(
   reference = new Date(),
 ): Promise<AccountantReport> {
   const range = getReportDateRange(filters, reference);
-  const where = activeExpenseWhere(household.id, range, {
-    categoryId: filters.categoryId,
-    memberUserId: filters.memberUserId,
-  });
+  const where = activeExpenseWhere(household.id, range, filters);
 
   const [summary, categoryGroups, memberGroups, monthlyRows, expenses] = await Promise.all([
     db.expense.aggregate({
@@ -639,21 +710,7 @@ export async function buildAccountantReport(
       _sum: { amountCents: true },
       _count: { _all: true },
     }),
-    db.$queryRaw<Array<{ bucket: Date; totalCents: string; count: bigint }>>`
-      SELECT
-        DATE_TRUNC('month', "invoice_date")::date AS "bucket",
-        COALESCE(SUM("amount_cents"), 0)::text         AS "totalCents",
-        COUNT(*)::bigint                          AS "count"
-      FROM "expenses"
-      WHERE "household_id" = CAST(${household.id} AS uuid)
-        AND "deleted_at" IS NULL
-        AND "invoice_date" >= ${range.from}
-        AND "invoice_date" <= ${range.to}
-        ${filters.categoryId ? Prisma.sql`AND "category_id" = CAST(${filters.categoryId} AS uuid)` : Prisma.empty}
-        ${filters.memberUserId ? Prisma.sql`AND "paid_by_user_id" = CAST(${filters.memberUserId} AS uuid)` : Prisma.empty}
-      GROUP BY "bucket"
-      ORDER BY "bucket" ASC
-    `,
+    getReportMonthlyRows(household.id, range, filters, db),
     db.expense.findMany({
       where,
       include: {
@@ -661,7 +718,7 @@ export async function buildAccountantReport(
         user: { select: { id: true, name: true } },
         paidByUser: { select: { id: true, name: true } },
       },
-      orderBy: [{ invoiceDate: "asc" }, { createdAt: "asc" }],
+      orderBy: reportOrderBy(filters.sort ?? "date-asc"),
     }),
   ]);
 
@@ -679,6 +736,8 @@ export async function buildAccountantReport(
       period: filters.period,
       categoryId: filters.categoryId,
       memberUserId: filters.memberUserId,
+      currency: filters.currency,
+      vendor: filters.vendor,
     },
     totals: {
       totalCents: Number(summary._sum.amountCents ?? 0),
@@ -717,6 +776,8 @@ export async function buildAccountantReport(
       paymentMethod: e.paymentMethod,
       notes: e.notes,
       isBusiness: e.isBusiness,
+      vehicleLabel: e.vehicleLabel,
+      odometerKm: e.odometerKm,
       categoryId: e.categoryId,
       categoryName: e.category.name,
       userId: e.paidByUserId,
@@ -736,10 +797,7 @@ export async function countAccountantReportExpenses(
 ) {
   const range = getReportDateRange(filters, reference);
   return db.expense.count({
-    where: activeExpenseWhere(householdId, range, {
-      categoryId: filters.categoryId,
-      memberUserId: filters.memberUserId,
-    }),
+    where: activeExpenseWhere(householdId, range, filters),
   });
 }
 
@@ -750,10 +808,7 @@ export async function getReportData(
   reference = new Date(),
 ) {
   const range = getReportDateRange(filters, reference);
-  const where = activeExpenseWhere(householdId, range, {
-    categoryId: filters.categoryId,
-    memberUserId: filters.memberUserId,
-  });
+  const where = activeExpenseWhere(householdId, range, filters);
   const [summary, categoryGroups, memberGroups, monthlyRows, total] = await Promise.all([
     db.expense.aggregate({
       where,
@@ -773,21 +828,7 @@ export async function getReportData(
       _sum: { amountCents: true },
       _count: { _all: true },
     }),
-    db.$queryRaw<Array<{ bucket: Date; totalCents: string; count: bigint }>>`
-      SELECT
-        DATE_TRUNC('month', "invoice_date")::date AS "bucket",
-        COALESCE(SUM("amount_cents"), 0)::text         AS "totalCents",
-        COUNT(*)::bigint                          AS "count"
-      FROM "expenses"
-      WHERE "household_id" = CAST(${householdId} AS uuid)
-        AND "deleted_at" IS NULL
-        AND "invoice_date" >= ${range.from}
-        AND "invoice_date" <= ${range.to}
-        ${filters.categoryId ? Prisma.sql`AND "category_id" = CAST(${filters.categoryId} AS uuid)` : Prisma.empty}
-        ${filters.memberUserId ? Prisma.sql`AND "paid_by_user_id" = CAST(${filters.memberUserId} AS uuid)` : Prisma.empty}
-      GROUP BY "bucket"
-      ORDER BY "bucket" ASC
-    `,
+    getReportMonthlyRows(householdId, range, filters, db),
     db.expense.count({ where }),
   ]);
   const totalPages = Math.max(1, Math.ceil(total / filters.pageSize));
@@ -797,10 +838,10 @@ export async function getReportData(
       where,
       include: {
         category: true,
-        user: true,
+        user: { select: { id: true, name: true } },
         paidByUser: { select: { id: true, name: true } },
       },
-      orderBy: [{ invoiceDate: "desc" }, { createdAt: "desc" }],
+      orderBy: reportOrderBy(filters.sort ?? "date-desc"),
       skip: (page - 1) * filters.pageSize,
       take: filters.pageSize,
     }),

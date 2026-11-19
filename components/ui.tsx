@@ -40,23 +40,25 @@ export function Button({
 export function ButtonLink({
   children,
   className,
+  download,
   href,
   variant = "primary",
 }: {
   children: ReactNode;
   className?: string;
+  download?: boolean;
   href: string;
   variant?: keyof typeof buttonVariants;
 }) {
+  const linkClassName = classes(
+    "inline-flex min-h-11 items-center justify-center rounded-lg border px-4 py-2 text-sm font-semibold transition sm:min-h-10",
+    buttonVariants[variant],
+    className,
+  );
+  if (download) return <a className={linkClassName} download href={href}>{children}</a>;
+
   return (
-    <Link
-      className={classes(
-        "inline-flex min-h-11 items-center justify-center rounded-lg border px-4 py-2 text-sm font-semibold transition sm:min-h-10",
-        buttonVariants[variant],
-        className,
-      )}
-      href={href}
-    >
+    <Link className={linkClassName} href={href}>
       {children}
     </Link>
   );

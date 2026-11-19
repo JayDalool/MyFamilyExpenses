@@ -29,6 +29,8 @@ type EditableExpense = {
   paymentMethod: string;
   notes: string;
   isBusiness: boolean;
+  vehicleLabel: string;
+  odometerKm: string;
   paidByUserId: string;
 };
 
@@ -46,6 +48,7 @@ type ExpenseActionsProps = {
   categories: CategoryOption[];
   members: MemberOption[];
   canAssignToOthers: boolean;
+  workspace?: string;
 };
 
 export function ExpenseActions({
@@ -53,6 +56,7 @@ export function ExpenseActions({
   categories,
   members,
   canAssignToOthers,
+  workspace,
 }: ExpenseActionsProps) {
   const router = useRouter();
   const isHydrated = useIsHydrated();
@@ -70,7 +74,10 @@ export function ExpenseActions({
   const [paymentMethod, setPaymentMethod] = useState(expense.paymentMethod);
   const [notes, setNotes] = useState(expense.notes);
   const [isBusiness, setIsBusiness] = useState(expense.isBusiness);
+  const [vehicleLabel, setVehicleLabel] = useState(expense.vehicleLabel);
+  const [odometerKm, setOdometerKm] = useState(expense.odometerKm);
   const [paidByUserId, setPaidByUserId] = useState(expense.paidByUserId);
+  const expenseUrl = `/api/expenses/${expense.id}${workspace ? `?workspace=${encodeURIComponent(workspace)}` : ""}`;
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -80,7 +87,7 @@ export function ExpenseActions({
         setError(null);
         setSuccess(null);
 
-        const response = await csrfFetch(`/api/expenses/${expense.id}`, {
+        const response = await csrfFetch(expenseUrl, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -94,6 +101,10 @@ export function ExpenseActions({
             paymentMethod,
             notes,
             isBusiness,
+            // PATCH replaces these, so they are always sent: leaving them out
+            // would erase the vehicle on every unrelated edit.
+            vehicleLabel,
+            odometerKm,
             paidByUserId,
           }),
         });
@@ -123,7 +134,7 @@ export function ExpenseActions({
     setSuccess(null);
 
     try {
-      const response = await csrfFetch(`/api/expenses/${expense.id}`, {
+      const response = await csrfFetch(expenseUrl, {
         method: "DELETE",
       });
       const data = (await response.json().catch(() => null)) as
@@ -301,6 +312,38 @@ export function ExpenseActions({
           <label className="text-sm font-medium text-slate-700" htmlFor="editIsBusiness">
             Business expense
           </label>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="editVehicle">
+              Vehicle (optional)
+            </label>
+            <input
+              className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-brand-500"
+              id="editVehicle"
+              maxLength={80}
+              onChange={(event) => setVehicleLabel(event.target.value)}
+              type="text"
+              value={vehicleLabel}
+            />
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="editOdometer">
+              Odometer (km)
+            </label>
+            <input
+              className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-brand-500"
+              id="editOdometer"
+              inputMode="numeric"
+              max={2000000}
+              min={0}
+              onChange={(event) => setOdometerKm(event.target.value)}
+              step={1}
+              type="number"
+              value={odometerKm}
+            />
+          </div>
         </div>
 
         <div>

@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/db/prisma";
 import type { HouseholdKind, HouseholdRole } from "@prisma/client";
 import { getValidatedSessionSecret } from "@/lib/auth/session-secret";
@@ -137,19 +137,23 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   };
 }
 
-export async function getCurrentHousehold(): Promise<AuthContext | null> {
+export async function getCurrentHousehold(workspaceId?: string): Promise<AuthContext | null> {
   const user = await getCurrentUser();
   if (!user) return null;
+  return getUserHousehold(user, workspaceId);
+}
 
-  const cookieStore = await cookies();
-  const requestedHouseholdId = cookieStore.get(ACTIVE_HOUSEHOLD_COOKIE_NAME)?.value;
+export async function getUserHousehold(user: CurrentUser, workspaceId?: string): Promise<AuthContext | null> {
+  const requestedHouseholdId = workspaceId ??
+    (await cookies()).get(ACTIVE_HOUSEHOLD_COOKIE_NAME)?.value;
   const memberships = await prisma.membership.findMany({
     where: { userId: user.id, removedAt: null },
     include: { household: { select: { id: true, name: true, kind: true } } },
     orderBy: { createdAt: "asc" },
   });
   const membership =
-    memberships.find((item) => item.householdId === requestedHouseholdId) ?? memberships[0];
+    memberships.find((item) => item.householdId === requestedHouseholdId) ??
+    (workspaceId === undefined ? memberships[0] : undefined);
   if (!membership) return null;
 
   return {
@@ -181,11 +185,12 @@ export async function requireUser() {
   return user;
 }
 
-export async function requireHouseholdMember(): Promise<AuthContext> {
-  const auth = await getCurrentHousehold();
+export async function requireHouseholdMember(workspaceId?: string): Promise<AuthContext> {
+  const auth = await getCurrentHousehold(workspaceId);
 
   if (!auth) {
     const user = await getCurrentUser();
+    if (user && workspaceId !== undefined) notFound();
     redirect(user ? "/no-household" : "/auth/login");
   }
 

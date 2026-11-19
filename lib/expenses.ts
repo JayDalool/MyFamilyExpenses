@@ -11,9 +11,9 @@ import {
   type ExpenseHistoryFilters,
 } from "@/lib/validation/expense";
 
-const expenseRelationInclude = {
+export const expenseRelationInclude = {
   category: true,
-  user: true,
+  user: { select: { id: true, name: true } },
   paidByUser: { select: { id: true, name: true } },
 } satisfies Prisma.ExpenseInclude;
 

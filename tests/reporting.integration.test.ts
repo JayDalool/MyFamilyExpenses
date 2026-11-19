@@ -16,6 +16,7 @@ import {
   getDashboardAnalytics,
   getDashboardSummary,
   getReportData,
+  getReportCurrencies,
   normalizeReportFilters,
 } from "../lib/reporting";
 import type { AuthContext } from "../lib/auth/session";
@@ -302,6 +303,38 @@ integrationTest("accountant report applies category, member, and custom date fil
   }
 });
 
+integrationTest("vendor, currency, and amount order match across report rows, totals and exports", async () => {
+  const fixture = await createFixture();
+  try {
+    const invoices = ["A-TODAY", "A-WEEK", "A-MONTH"];
+    await db.expense.updateMany({
+      where: { householdId: fixture.householdA.id, invoiceNumber: { in: invoices } },
+      data: { vendor: "Corner Market 100%" },
+    });
+    await db.expense.updateMany({
+      where: { householdId: fixture.householdA.id, invoiceNumber: "A-MONTH" },
+      data: { currency: "USD" },
+    });
+    await db.expense.updateMany({
+      where: { householdId: fixture.householdA.id, invoiceNumber: "A-YEAR" },
+      data: { vendor: "Corner Market 100X" },
+    });
+    const filter = normalizeReportFilters({ period: "year", vendor: "100%", sort: "amount-desc" });
+    const householdId = fixture.householdA.id;
+    assert.deepEqual(await getReportCurrencies(householdId, filter, db, referenceDate), ["CAD", "USD"]);
+    const cad = { ...filter, currency: "CAD" };
+    const view = await getReportData(householdId, cad, db, referenceDate);
+    const exportReport = await buildAccountantReport(fixture.householdA, cad, db, referenceDate);
+    assert.deepEqual(view.expenses.map(({ invoiceNumber }) => invoiceNumber), ["A-WEEK", "A-TODAY"]);
+    assert.deepEqual(exportReport.expenses.map(({ invoiceNumber }) => invoiceNumber), ["A-WEEK", "A-TODAY"]);
+    assert.equal(view.summary.totalCents, 3000);
+    assert.equal(exportReport.totals.totalCents, 3000);
+    assert.deepEqual(view.monthlyTotals, exportReport.monthlyTotals);
+    assert.equal(view.monthlyTotals[0]?.totalCents, 3000);
+  } finally {
+    await cleanupFixture(fixture);
+  }
+});
 integrationTest("dashboard analytics totals and breakdowns are active-only and household-scoped", async () => {
   const fixture = await createFixture();
   try {

@@ -340,7 +340,12 @@ Because a user can belong to multiple households, the app needs an active househ
 Rules:
 
 * User has one active household at a time.
-* Dashboard, expenses, reports, categories, uploads, and OCR all use the active household.
+* Dashboard, expenses, categories, uploads, and OCR use the active household.
+* Reports have two entry points. `/reports` uses the active household.
+  `/reports/[householdId]` (and its export route) names the household in the URL, so an
+  accountant with several clients can keep one tab per client; each request re-checks
+  membership with `getUserHousehold(user, householdId)` and never falls back to another
+  household.
 * The active household can be stored in:
 
   * session metadata, or
@@ -377,6 +382,8 @@ the step-7 file exchange needs no conversion.
 | `payment_method` | `PaymentMethod NULL` | `CASH`, `DEBIT`, `CREDIT`, `ETRANSFER`, `OTHER` |
 | `notes` | `TEXT NULL` | 500 characters in validation |
 | `is_business` | `BOOLEAN NOT NULL` | Default `false`; the form pre-ticks it in a COMPANY |
+| `vehicle_label` | `TEXT NULL` | Optional car name, 80 characters in validation (MFE-010) |
+| `odometer_km` | `INTEGER NULL` | Whole km, 0 to 2,000,000. CHECK >= 0 and requires `vehicle_label` |
 | `amount` | `DECIMAL(12,2) NOT NULL` | **Deprecated.** Still written, never read. Dropped next |
 
 Every conversion lives in `lib/money.ts` — `toCents`, `fromCents`,
@@ -733,8 +740,13 @@ Dashboard should show:
 
 ### 8.1 Exports and the accountant package
 
-`GET /api/reports/export?format=…` takes the same filters as `/reports` and needs
-`canViewReports` (owner, admin, accountant; not a company employee).
+`GET /api/reports/export?format=…` (active household) and
+`GET /api/reports/[householdId]/export?format=…` (one named client, used by accountants)
+share `lib/reporting/report-download.ts`. Both take the same filters as `/reports` and need
+`canViewReports` (owner, admin, accountant; not a company employee). A household that is not
+the user's gives 404. When the range holds more than one currency the request must pick one
+(`currency=`), otherwise 400. Accountant invitations and signup are in
+[accountant-access.md](accountant-access.md).
 
 | Format | Built by | Limit |
 | --- | --- | --- |
@@ -779,6 +791,8 @@ Rules:
 * Existing expenses can retain a disabled category while editing other fields.
 * Categories with expenses should not be hard-deleted.
 * Categories with no expenses may be deleted if safe.
+
+Category suggestion (MFE-008): on the review step, `POST /api/expenses/category-suggestion` looks up the typed vendor (or the OCR merchant guess) in the household's saved, non-deleted expenses with an ACTIVE category and returns the most frequent category (a tie goes to the most recent). It is a lookup, not training. The result is limited by `expenseReadScope`, so a company employee only learns from their own expenses. The wizard shows a "Use X" button; nothing is applied until the user taps it. The vendor is sent in a POST body and is never logged or audited. Code: `lib/category-suggestion.ts`, `components/category-suggestion.tsx`.
 
 Recommended fields:
 

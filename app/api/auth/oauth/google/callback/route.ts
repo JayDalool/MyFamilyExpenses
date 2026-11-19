@@ -26,6 +26,7 @@ import {
   reserveInviteLookupOrThrow,
 } from "@/lib/household-invites";
 import { getInviteRequestActorKeys } from "@/lib/invite-rate-limit";
+import { workspaceReportsHref } from "@/lib/report-links";
 
 function errRedirect(requestUrl: string, code: string): NextResponse {
   const response = NextResponse.redirect(buildInternalUrl(`/auth/login?error=${code}`, requestUrl));
@@ -101,7 +102,7 @@ export async function GET(request: Request) {
       ? await acceptHouseholdInviteForUser(storedInviteToken, {
           id: existingAccount.userId,
           email: userInfo.email,
-        }, inviteActorKeys)
+        }, inviteActorKeys, { deferAccountant: true })
       : null;
 
     const acceptedHouseholdId = inviteAcceptance?.ok
@@ -127,7 +128,7 @@ export async function GET(request: Request) {
     const inviteHandled =
       inviteAcceptance?.ok || inviteAcceptance?.reason === "duplicate_membership";
     const response = NextResponse.redirect(
-      membership
+      membership || storedInviteToken
         ? redirectAfterInvite(request.url, storedInviteToken, Boolean(inviteHandled))
         : buildInternalUrl("/no-household", request.url),
     );
@@ -164,7 +165,13 @@ export async function GET(request: Request) {
         : null;
 
       if (invite) {
-        await consumeInviteUse(invite.invite, tx);
+        // Accountant invitations only open for an email the provider vouches
+        // for; consumeInviteUse rejects anything else with email_unverified.
+        await consumeInviteUse(
+          invite.invite,
+          tx,
+          userInfo.emailVerified ? userInfo.email : null,
+        );
       }
 
       const newUser = await onboardNewUserInTransaction(tx, {
@@ -187,10 +194,14 @@ export async function GET(request: Request) {
           : {}),
       });
 
-      return { newUser, inviteId: invite?.invite.id ?? null };
+      return {
+        newUser,
+        inviteId: invite?.invite.id ?? null,
+        inviteRole: invite?.invite.role ?? null,
+      };
     });
 
-    const { newUser, inviteId } = result;
+    const { newUser, inviteId, inviteRole } = result;
     await createSession(newUser.id);
     await setActiveHouseholdCookie(newUser.householdId);
     await writeAuditLog({
@@ -208,10 +219,32 @@ export async function GET(request: Request) {
       });
     }
 
-    const response = NextResponse.redirect(buildInternalUrl("/dashboard", request.url));
+    const response = NextResponse.redirect(
+      buildInternalUrl(
+        inviteRole === "ACCOUNTANT" ? workspaceReportsHref(newUser.householdId) : "/dashboard",
+        request.url,
+      ),
+    );
     clearOAuthFlowCookies(response, "google");
     return response;
   } catch (err) {
+    if (err instanceof InviteAcceptanceError && err.reason === "email_unverified" && storedInviteToken) {
+      await auditInviteFailure({
+        householdId: err.householdId,
+        reason: err.reason,
+        tokenHash: storedInviteTokenHash,
+        source: "oauth_google",
+      });
+      // Send them to email signup for this invite, which verifies the inbox.
+      const response = NextResponse.redirect(
+        buildInternalUrl(
+          `/auth/login?error=oauth_accountant_unverified&invite=${encodeURIComponent(storedInviteToken)}`,
+          request.url,
+        ),
+      );
+      clearOAuthFlowCookies(response, "google");
+      return response;
+    }
     if (err instanceof InviteAcceptanceError) {
       await auditInviteFailure({
         householdId: err.householdId,

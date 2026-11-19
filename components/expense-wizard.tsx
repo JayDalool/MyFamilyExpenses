@@ -715,7 +715,10 @@ export function ExpenseWizard({
                     onClick={() => {
                       setCategory(currentCategory);
                       setOcrWarning(null);
-                      goToStep("upload");
+                      // Not goToStep("upload"): it would still see the category from
+                      // before this tap (state updates land on the next render) and
+                      // send the first tap back to this step.
+                      setStep("upload");
                     }}
                     type="button"
                   >

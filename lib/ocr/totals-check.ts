@@ -231,9 +231,15 @@ export function checkReceiptTotals(lines: string[]): ReceiptTotals {
       0,
       ...rows.filter((row) => row.kind === "total" || isDue(row)).map((row) => row.cents),
     );
+    // A paid amount above the total stands only as total + the tip printed;
+    // otherwise part was paid another way ("Total 42.00 / Gift card 5.00 /
+    // Tip 8.00 / Amount paid 45.00").
+    const partPayment = (row: Row) =>
+      row.kind === "paid" &&
+      (row.cents < largestTotal ||
+        (tip > 0 && row.cents > largestTotal && !near(row.cents, largestTotal + tip)));
     const printedTotal = totalRows.some(
-      (row) =>
-        row.cents === total && !isDue(row) && !(row.kind === "paid" && row.cents < largestTotal),
+      (row) => row.cents === total && !isDue(row) && !partPayment(row),
     );
     if (printedTotal && cards.includes(total)) {
       passed.push("card payment");

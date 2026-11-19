@@ -48,6 +48,7 @@ type ExpenseActionsProps = {
   categories: CategoryOption[];
   members: MemberOption[];
   canAssignToOthers: boolean;
+  workspace?: string;
 };
 
 export function ExpenseActions({
@@ -55,6 +56,7 @@ export function ExpenseActions({
   categories,
   members,
   canAssignToOthers,
+  workspace,
 }: ExpenseActionsProps) {
   const router = useRouter();
   const isHydrated = useIsHydrated();
@@ -75,6 +77,7 @@ export function ExpenseActions({
   const [vehicleLabel, setVehicleLabel] = useState(expense.vehicleLabel);
   const [odometerKm, setOdometerKm] = useState(expense.odometerKm);
   const [paidByUserId, setPaidByUserId] = useState(expense.paidByUserId);
+  const expenseUrl = `/api/expenses/${expense.id}${workspace ? `?workspace=${encodeURIComponent(workspace)}` : ""}`;
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -84,7 +87,7 @@ export function ExpenseActions({
         setError(null);
         setSuccess(null);
 
-        const response = await csrfFetch(`/api/expenses/${expense.id}`, {
+        const response = await csrfFetch(expenseUrl, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -131,7 +134,7 @@ export function ExpenseActions({
     setSuccess(null);
 
     try {
-      const response = await csrfFetch(`/api/expenses/${expense.id}`, {
+      const response = await csrfFetch(expenseUrl, {
         method: "DELETE",
       });
       const data = (await response.json().catch(() => null)) as

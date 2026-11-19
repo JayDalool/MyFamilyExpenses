@@ -173,7 +173,12 @@ export function validateUserInfoResponse(
   return {
     providerAccountId: d.sub,
     email: email.toLowerCase().trim(),
-    emailVerified: d.email_verified !== false,
+    // Microsoft's `common` tenant lets any directory owner put any address in
+    // `email`/`preferred_username` and never sends `email_verified`, so a
+    // Microsoft email is unverified unless the provider says otherwise.
+    // Google always sends the claim; absent there keeps the old behaviour.
+    emailVerified:
+      provider === "microsoft" ? d.email_verified === true : d.email_verified !== false,
     name: name as string,
     imageUrl: typeof d.picture === "string" ? d.picture : undefined,
   };

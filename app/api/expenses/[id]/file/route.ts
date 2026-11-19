@@ -15,7 +15,8 @@ type RouteContext = {
 };
 
 export async function GET(request: Request, context: RouteContext) {
-  const auth = await getCurrentHousehold();
+  const { searchParams } = new URL(request.url);
+  const auth = await getCurrentHousehold(searchParams.get("workspace") ?? undefined);
 
   if (!auth) {
     return NextResponse.json(
@@ -36,7 +37,6 @@ export async function GET(request: Request, context: RouteContext) {
 
   try {
     const file = await readFile(getStoredExpenseAbsolutePath(expense.filePath));
-    const { searchParams } = new URL(request.url);
     const download = searchParams.get("download") === "1";
     const fileName = path.basename(expense.filePath);
 

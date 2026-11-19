@@ -407,3 +407,59 @@ test("audit logs never contain raw reset tokens", async () => {
     restoreEnv(snapshot);
   }
 });
+
+test("reset-password verifies the email and drops sign-ins linked before anyone proved the inbox", async () => {
+  const snapshot = snapshotEnv();
+  try {
+    env.NODE_ENV = "development";
+    env.SMTP_ENABLED = "false";
+    env.DEV_SHOW_VERIFICATION_LINKS = "true";
+    env.APP_BASE_URL = APP_BASE;
+
+    // One account created through an unverified Microsoft login, one through
+    // a verified one. Only the unverified account loses its linked login.
+    const users = await Promise.all([null, new Date()].map(async (emailVerifiedAt) => {
+      const email = `linked-${crypto.randomUUID()}@example.com`;
+      return prisma.user.create({
+        data: {
+          name: "Linked",
+          email,
+          passwordHash: null,
+          emailVerifiedAt,
+          authAccounts: {
+            create: { provider: "MICROSOFT", providerAccountId: crypto.randomUUID(), providerEmail: email },
+          },
+        },
+      });
+    }));
+
+    try {
+      for (const user of users) {
+        const forgotJson = await readJson(
+          await forgotPasswordHandler(makeJsonRequest(FORGOT_URL, { email: user.email })),
+        );
+        const token = new URL(forgotJson.data.previewUrl as string).searchParams.get("token");
+        const resetResp = await resetPasswordHandler(
+          makeJsonRequest(RESET_URL, { token, password: "Owner1Pass!", confirmPassword: "Owner1Pass!" }),
+        );
+        assert.equal(resetResp.status, 200);
+      }
+
+      const [unverified, verified] = await Promise.all(users.map((user) =>
+        prisma.user.findUniqueOrThrow({ where: { id: user.id }, include: { authAccounts: true } }),
+      ));
+      assert.ok(unverified.emailVerifiedAt, "reset proves the inbox");
+      assert.equal(unverified.authAccounts.length, 0);
+      assert.equal(verified.authAccounts.length, 1);
+    } finally {
+      const ids = users.map((user) => user.id);
+      await prisma.passwordResetToken.deleteMany({ where: { userId: { in: ids } } });
+      await prisma.auditLog.deleteMany({ where: { userId: { in: ids } } });
+      await prisma.session.deleteMany({ where: { userId: { in: ids } } });
+      await prisma.user.deleteMany({ where: { id: { in: ids } } });
+      await prisma.passwordResetRateLimitAttempt.deleteMany({});
+    }
+  } finally {
+    restoreEnv(snapshot);
+  }
+});

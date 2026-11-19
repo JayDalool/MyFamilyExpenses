@@ -11,6 +11,7 @@ import {
   getReportDateRange,
 } from "@/lib/reporting";
 import { formatCents } from "@/lib/money";
+import { workspaceReportsHref } from "@/lib/report-links";
 
 export const dynamic = "force-dynamic";
 
@@ -195,10 +196,12 @@ export default async function DashboardPage() {
         {/* Quiet secondary links — hidden on mobile where the bottom nav already covers them */}
         <div className="hidden flex-wrap gap-3 sm:flex">
           {showHouseholdTotals ? (
-            <ButtonLink href="/reports" variant="secondary">Reports</ButtonLink>
+            <ButtonLink href={workspaceReportsHref(auth.householdId)} variant="secondary">Reports</ButtonLink>
           ) : null}
           <ButtonLink href="/categories" variant="secondary">Categories</ButtonLink>
-          <ButtonLink href="/household" variant="secondary">Household</ButtonLink>
+          {auth.householdRole === "ACCOUNTANT"
+            ? <ButtonLink href="/clients" variant="secondary">Clients</ButtonLink>
+            : <ButtonLink href="/household" variant="secondary">Household</ButtonLink>}
         </div>
       </div>
     </AppShell>

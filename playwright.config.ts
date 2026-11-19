@@ -9,7 +9,7 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   webServer: {
-    command: "\"C:\\Program Files\\nodejs\\npm.cmd\" run dev -- --port 3001",
+    command: "npm run dev -- --port 3001",
     url: "http://localhost:3001",
     reuseExistingServer: !process.env.CI,
     env: {

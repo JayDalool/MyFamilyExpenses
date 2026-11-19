@@ -18,6 +18,8 @@ This MVP includes:
 
 ## Tech stack
 
+For accountant invitations, client reports, and SMTP setup, see [Accountant access](./docs/accountant-access.md).
+
 - Frontend and backend: Next.js App Router
 - Language: TypeScript
 - Database: PostgreSQL

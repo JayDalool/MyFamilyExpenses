@@ -108,8 +108,8 @@ export async function POST(request: Request) {
         token,
       );
       // Update password. For OAuth-only users (passwordHash was null), this is
-      // an explicit opt-in to also having a password — they keep their OAuth
-      // accounts and can sign in either way going forward.
+      // an explicit opt-in to also having a password. They keep their OAuth
+      // logins only if the account's email was already verified (see below).
       const user = await tx.user.update({
         where: { id: consumed.userId },
         data: { passwordHash },
@@ -119,6 +119,19 @@ export async function POST(request: Request) {
           emailVerifiedAt: true,
         },
       });
+      // A valid reset token was delivered to this account's email address.
+      if (!user.emailVerifiedAt) {
+        await tx.user.updateMany({
+          where: { id: user.id, emailVerifiedAt: null },
+          data: { emailVerifiedAt: new Date() },
+        });
+        // Nobody had proved this inbox before, so any sign-in linked to the
+        // account (e.g. a Microsoft login carrying an unverified email) may
+        // belong to someone else. Drop them now that the real owner has
+        // shown up; otherwise that login would keep access after the owner
+        // verifies the account and accepts an accountant invitation.
+        await tx.authAccount.deleteMany({ where: { userId: user.id } });
+      }
 
       await invalidateOtherActiveTokens(tx, user.id, consumed.id);
       await invalidateAllSessionsForUser(tx, user.id);

@@ -222,6 +222,27 @@ test("validateUserInfoResponse accepts Microsoft preferred_username as email fal
   assert.equal(info.name, "Microsoft User");
 });
 
+test("validateUserInfoResponse does not trust a Microsoft email without email_verified", () => {
+  // Any Entra tenant owner can put any address in these claims.
+  const fromPreferred = validateUserInfoResponse(
+    { sub: "abc", preferred_username: "accountant@example.com" },
+    "microsoft",
+  );
+  const fromEmail = validateUserInfoResponse(
+    { sub: "abc", email: "accountant@example.com" },
+    "microsoft",
+  );
+  assert.equal(fromPreferred.emailVerified, false);
+  assert.equal(fromEmail.emailVerified, false);
+  assert.equal(
+    validateUserInfoResponse(
+      { sub: "abc", email: "accountant@example.com", email_verified: true },
+      "microsoft",
+    ).emailVerified,
+    true,
+  );
+});
+
 // ── Error classes ─────────────────────────────────────────────────────────────
 
 test("OAuthError is an instance of Error", () => {

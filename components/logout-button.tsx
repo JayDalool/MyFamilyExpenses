@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { csrfFetch } from "@/lib/auth/csrf-client";
 
-export function LogoutButton() {
+export function LogoutButton({ resetPassword = false }: { resetPassword?: boolean } = {}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +27,7 @@ export function LogoutButton() {
             return;
           }
 
-          router.push("/auth/login");
+          router.push(resetPassword ? "/auth/forgot-password" : "/auth/login");
           router.refresh();
         } catch {
           setError("Unable to sign out. Check your connection and try again.");
@@ -44,7 +44,7 @@ export function LogoutButton() {
         onClick={handleLogout}
         type="button"
       >
-        {isPending ? "Signing out..." : "Logout"}
+        {isPending ? "Signing out..." : resetPassword ? "Sign out and reset password" : "Logout"}
       </button>
       {error ? <p className="max-w-56 text-right text-xs text-rose-600">{error}</p> : null}
     </div>

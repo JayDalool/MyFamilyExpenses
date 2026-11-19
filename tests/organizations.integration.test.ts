@@ -141,6 +141,18 @@ test("company accountant and owner see every expense", async () => {
   }
 });
 
+test("expense readers receive only the public author fields", async () => {
+  const id = fixture.expenses.companyA.id;
+  const author = { id: fixture.users.empA.id, name: fixture.users.empA.name };
+
+  const list = await listExpensesForUser(fixture.accountant);
+  assert.deepEqual(list.find((expense) => expense.id === id)?.user, author);
+  assert.deepEqual((await getExpenseForUser(fixture.accountant, id))?.user, author);
+
+  const updated = await updateExpenseForUser(fixture.owner, id, { notes: "Reviewed" });
+  assert.deepEqual(updated?.user, author);
+});
+
 test("accountant cannot edit or delete expenses", async () => {
   const id = fixture.expenses.companyA.id;
   assert.equal(await updateExpenseForUser(fixture.accountant, id, { amount: 99 }), null);

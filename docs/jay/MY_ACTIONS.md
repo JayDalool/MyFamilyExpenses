@@ -1,3 +1,4 @@
+- [ ] MFE-010 · After merge run prisma migrate deploy on app container
 - [ ] MFE-TZ · Confirm tz rebuild deploy in the MFE pane · https://github.com/JayDalool/MyFamilyExpenses/pull/19
 - [ ] MFE-TZ · Upgrade host Node to 22.23.4+ (local npm test) · https://github.com/JayDalool/MyFamilyExpenses/pull/19
 - [ ] STEP-6a · Run ocr:bench:real for your household and Osama · docs/architecture.md

@@ -179,6 +179,22 @@ export default async function ExpenseDetailsPage({
                   <dd className="mt-1 text-slate-900">{expense.user.name}</dd>
                 </div>
 
+                {expense.vehicleLabel ? (
+                  <div>
+                    <dt className="text-sm font-medium text-slate-500">Vehicle</dt>
+                    <dd className="mt-1 break-words text-slate-900">{expense.vehicleLabel}</dd>
+                  </div>
+                ) : null}
+
+                {expense.vehicleLabel && expense.odometerKm !== null ? (
+                  <div>
+                    <dt className="text-sm font-medium text-slate-500">Odometer</dt>
+                    <dd className="mt-1 text-slate-900">
+                      {expense.odometerKm.toLocaleString("en-CA")} km
+                    </dd>
+                  </div>
+                ) : null}
+
                 {expense.notes ? (
                   <div>
                     <dt className="text-sm font-medium text-slate-500">Notes</dt>
@@ -224,6 +240,8 @@ export default async function ExpenseDetailsPage({
                   paymentMethod: expense.paymentMethod ?? "",
                   notes: expense.notes ?? "",
                   isBusiness: expense.isBusiness,
+                  vehicleLabel: expense.vehicleLabel ?? "",
+                  odometerKm: expense.odometerKm === null ? "" : String(expense.odometerKm),
                   paidByUserId: expense.paidByUserId,
                 }}
               />

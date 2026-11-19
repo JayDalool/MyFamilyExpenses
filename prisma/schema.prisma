@@ -199,6 +199,8 @@ model Expense {
   paymentMethod   PaymentMethod? @map("payment_method")
   notes           String?
   isBusiness      Boolean   @default(false) @map("is_business")
+  vehicleLabel    String?   @map("vehicle_label")
+  odometerKm      Int?      @map("odometer_km")
   filePath        String    @map("file_path")
   deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
   deletedByUserId String?   @map("deleted_by_user_id") @db.Uuid

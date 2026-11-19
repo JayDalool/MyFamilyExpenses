@@ -34,6 +34,8 @@ const report: AccountantReport = {
       paymentMethod: "CREDIT",
       notes: null,
       isBusiness: true,
+      vehicleLabel: "Test Civic",
+      odometerKm: 123456,
       categoryId: "category-id",
       categoryName: "Office supplies",
       userId: "user-id",
@@ -66,9 +68,10 @@ test("CSV expense register includes both paid-by and entered-by", () => {
   // total, tax, currency, payment method, business flag, notes, receipt.
   assert.match(
     csv,
-    /INV-001,2026-06-02,Office supplies,Taylor User,Jordan Uploader,Paper Depot,123\.45,16\.05,CAD,CREDIT,Yes,,uploads\/invoice\.pdf/,
+    /INV-001,2026-06-02,Office supplies,Taylor User,Jordan Uploader,Paper Depot,123\.45,16\.05,CAD,CREDIT,Yes,,uploads\/invoice\.pdf,Test Civic,123456\r?\n/,
   );
-  assert.match(csv, /Vendor,Amount,Tax,Currency,Payment method,Business,Notes,Receipt reference/);
+  assert.match(csv, /Vendor,Amount,Tax,Currency,Payment method,Business,Notes,Receipt reference,Vehicle,Odometer \(km\)\r?\n/);
+  assert.ok(!csv.includes("123456.00"), "odometer is a whole number");
 });
 
 test("CSV export neutralizes spreadsheet formula injection", () => {
@@ -168,6 +171,8 @@ test("XLSX expense register carries the step-4 fields", () => {
     "Business",
     "Notes",
     "Receipt reference",
+    "Vehicle",
+    "Odometer (km)",
   ]) {
     assert.ok(sheet.includes(header), `header missing from the XLSX sheet: ${header}`);
   }
@@ -177,4 +182,14 @@ test("XLSX expense register carries the step-4 fields", () => {
   // Money is written as a number in dollars, not a formatted string.
   assert.ok(sheet.includes(">123.45<"), "amount should be a numeric 123.45");
   assert.ok(sheet.includes(">16.05<"), "tax should be a numeric 16.05");
+  assert.ok(sheet.includes("Test Civic"), "vehicle missing");
+  assert.ok(sheet.includes(">123456<"), "odometer should be a numeric 123456");
+});
+
+test("CSV neutralizes a formula-like vehicle label and blanks a missing odometer", () => {
+  const csv = reportToCsv({
+    ...report,
+    expenses: [{ ...report.expenses[0]!, vehicleLabel: "=CMD()", odometerKm: null }],
+  });
+  assert.match(csv, /uploads\/invoice\.pdf,'=CMD\(\),\r?\n/);
 });

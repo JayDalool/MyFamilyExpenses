@@ -111,7 +111,7 @@ normal deploy needs — copy it to `.env` and fill it in.
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `NODE_ENV` | App environment | set to `production` by `docker-compose.yml` |
-| `APP_TIME_ZONE` | Time zone for dashboard and report period labels | `UTC` |
+| `APP_TIME_ZONE` | Time zone for dashboard and report period labels. Resolved with Node's bundled ICU data, not the host's tzdata: `America/Winnipeg` needs Node 22.23.4+ (tzdata 2026e, permanent UTC-05). The Dockerfile build fails on older Node | `UTC` |
 | `SESSION_COOKIE_NAME` | Session cookie name | `mfe_session` |
 | `ACTIVE_HOUSEHOLD_COOKIE_NAME` | Active-household cookie name | `mfe_household` |
 | `SESSION_TTL_DAYS` | Session lifetime in days | `7` |
@@ -189,7 +189,8 @@ rather than environment variables, so there is nothing to configure.
   `lib/ocr/paddle-ocr-engine.ts`. On the 40 generated scorecard receipts it read
   the amount on 97.5%, or 100% with `OCR_STRATEGY=fallback`, against Tesseract's
   72.5%. Run `npm run ocr:bench:real` with `OCR_PROVIDER=paddle` +
-  `OCR_STRATEGY=fallback` on the server before switching production.
+  `OCR_STRATEGY=fallback` on the server before switching production. Loading
+  `docker-compose.ocr.yml` alone does not switch the engine.
 
 #### Enabling the PaddleOCR sidecar (opt-in)
 
@@ -204,10 +205,15 @@ Including `docker-compose.ocr.yml` starts the internal `ocr` service and sets
 `OCR_SERVICE_URL=http://ocr:8000` and `OCR_TIMEOUT_MS` on the `app` container.
 With the base `docker-compose.yml` alone, none of this exists.
 
-The override defaults the app to `OCR_PROVIDER=paddle` /
-`OCR_STRATEGY=fallback`, but values in the environment file win
-(`${OCR_PROVIDER:-paddle}`), so an `.env` copied from `.env.example` keeps
-Tesseract until you change those two lines. The earlier "Paddle is slower and
+The override does **not** change the app's OCR engine: it defaults to
+`OCR_PROVIDER=tesseract` / `OCR_STRATEGY=single` (`${OCR_PROVIDER:-tesseract}`),
+the same as the base file. Paddle is opt-in: set `OCR_PROVIDER=paddle` and
+`OCR_STRATEGY=fallback` in the environment file only after
+`npm run ocr:bench:real` has been run with those settings and Jay has decided
+(ADR 0003). The app has no `depends_on` on the sidecar, so a missing, loading or
+unhealthy sidecar never blocks `up`; with `fallback` the app reads with
+Tesseract when the sidecar cannot be reached, with `single` it returns the
+controlled OCR error and the user types the fields. The earlier "Paddle is slower and
 less accurate" result was PaddleOCR 2.9 (PP-OCRv4) limited to 2 CPUs with a 7 s
 timeout; PP-OCRv6 replaced it.
 

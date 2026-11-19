@@ -99,6 +99,7 @@ export function packageReadme(plan: PackagePlan) {
     ``,
     `Household: ${report.household.name}`,
     `Invoice dates: ${from} to ${to}`,
+    ...(report.filters.currency ? [`Currency: ${report.filters.currency}`] : []),
     `Generated at: ${report.generatedAt.toISOString()}`,
     `Expenses: ${report.totals.count}`,
     `Total (tax included): ${fromCents(report.totals.totalCents).toFixed(2)}`,

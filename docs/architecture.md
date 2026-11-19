@@ -340,7 +340,12 @@ Because a user can belong to multiple households, the app needs an active househ
 Rules:
 
 * User has one active household at a time.
-* Dashboard, expenses, reports, categories, uploads, and OCR all use the active household.
+* Dashboard, expenses, categories, uploads, and OCR use the active household.
+* Reports have two entry points. `/reports` uses the active household.
+  `/reports/[householdId]` (and its export route) names the household in the URL, so an
+  accountant with several clients can keep one tab per client; each request re-checks
+  membership with `getUserHousehold(user, householdId)` and never falls back to another
+  household.
 * The active household can be stored in:
 
   * session metadata, or
@@ -377,6 +382,8 @@ the step-7 file exchange needs no conversion.
 | `payment_method` | `PaymentMethod NULL` | `CASH`, `DEBIT`, `CREDIT`, `ETRANSFER`, `OTHER` |
 | `notes` | `TEXT NULL` | 500 characters in validation |
 | `is_business` | `BOOLEAN NOT NULL` | Default `false`; the form pre-ticks it in a COMPANY |
+| `vehicle_label` | `TEXT NULL` | Optional car name, 80 characters in validation (MFE-010) |
+| `odometer_km` | `INTEGER NULL` | Whole km, 0 to 2,000,000. CHECK >= 0 and requires `vehicle_label` |
 | `amount` | `DECIMAL(12,2) NOT NULL` | **Deprecated.** Still written, never read. Dropped next |
 
 Every conversion lives in `lib/money.ts` — `toCents`, `fromCents`,
@@ -473,6 +480,13 @@ Initial self-hosted stack:
 * invoice2data for known recurring invoice templates
 
 Paid cloud OCR should remain optional and only be added later for low-confidence scans or paid plans.
+
+Current state (MFE-016, [ADR 0003](adr/0003-ppocrv6-opt-in-sidecar.md)): the default engine is
+in-process Tesseract with the `single` strategy. An internal PP-OCRv6 small sidecar
+(`services/paddle-ocr`, ONNX Runtime, no internet, models bundled) is available
+through `docker-compose.ocr.yml` but is opt-in (`OCR_PROVIDER=paddle`,
+`OCR_STRATEGY=fallback`). The app does not depend on the sidecar being healthy; with
+`fallback` an unreachable sidecar means Tesseract reads the receipt.
 
 ---
 
@@ -678,6 +692,10 @@ Baseline, 2026-10-06, Tesseract single strategy, generated receipts:
 | vendor | 90% | 90% | 90% | 20% | 72.5% |
 | tax | not read | not read | not read | not read | 0% |
 
+PP-OCRv6 small with `fallback`, same 40 generated receipts: amount 100%, date 97.5%
+(Tesseract alone: 72.5% / 72.5%). Generated receipts are an easy set, so this does not
+change the default; `ocr:bench:real` with Paddle on saved receipts does, and Jay runs it.
+
 `npm run ocr:bench:generate` re-renders the images with sharp. Run it only when the
 receipt list changes, and commit the images, so every machine scores the same pixels.
 
@@ -733,8 +751,13 @@ Dashboard should show:
 
 ### 8.1 Exports and the accountant package
 
-`GET /api/reports/export?format=…` takes the same filters as `/reports` and needs
-`canViewReports` (owner, admin, accountant; not a company employee).
+`GET /api/reports/export?format=…` (active household) and
+`GET /api/reports/[householdId]/export?format=…` (one named client, used by accountants)
+share `lib/reporting/report-download.ts`. Both take the same filters as `/reports` and need
+`canViewReports` (owner, admin, accountant; not a company employee). A household that is not
+the user's gives 404. When the range holds more than one currency the request must pick one
+(`currency=`), otherwise 400. Accountant invitations and signup are in
+[accountant-access.md](accountant-access.md).
 
 | Format | Built by | Limit |
 | --- | --- | --- |
@@ -779,6 +802,8 @@ Rules:
 * Existing expenses can retain a disabled category while editing other fields.
 * Categories with expenses should not be hard-deleted.
 * Categories with no expenses may be deleted if safe.
+
+Category suggestion (MFE-008): on the review step, `POST /api/expenses/category-suggestion` looks up the typed vendor (or the OCR merchant guess) in the household's saved, non-deleted expenses with an ACTIVE category and returns the most frequent category (a tie goes to the most recent). It is a lookup, not training. The result is limited by `expenseReadScope`, so a company employee only learns from their own expenses. The wizard shows a "Use X" button; nothing is applied until the user taps it. The vendor is sent in a POST body and is never logged or audited. Code: `lib/category-suggestion.ts`, `components/category-suggestion.tsx`.
 
 Recommended fields:
 

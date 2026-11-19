@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
 import { InviteAcceptance } from "@/components/invite-acceptance";
+import { LogoutButton } from "@/components/logout-button";
 import { Alert, Badge, ButtonLink, Card } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth/session";
 import {
@@ -21,6 +22,7 @@ import { CSRF_REQUEST_HEADER_NAME } from "@/lib/auth/csrf";
 type InvitePageProps = { params: Promise<{ token: string }> };
 
 export const dynamic = "force-dynamic";
+export const metadata = { referrer: "no-referrer" as const };
 
 export default async function InvitePage({ params }: InvitePageProps) {
   const { token } = await params;
@@ -72,20 +74,26 @@ export default async function InvitePage({ params }: InvitePageProps) {
     notFound();
   }
 
+  const accountant = invite.role === "ACCOUNTANT";
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-12">
       <Card className="w-full max-w-lg">
         <div className="space-y-5">
           <div>
-            <p className="text-sm font-semibold text-brand-700">Household invitation</p>
+            <p className="text-sm font-semibold text-brand-700">{accountant ? "Accountant invitation" : "Household invitation"}</p>
             <h1 className="mt-1 text-2xl font-bold text-slate-900">{invite.householdName}</h1>
             <p className="mt-2 text-sm text-slate-600">
-              You have been invited to join with the <Badge variant="brand">{invite.role}</Badge> role.
+              {accountant
+                ? "Accept the invitation for read-only access to this client’s expenses, reports, and receipts."
+                : <>You have been invited to join with the <Badge variant="brand">{invite.role}</Badge> role.</>}
             </p>
           </div>
 
           {invite.emailRestricted ? (
-            <Alert>This invite can only be accepted by its designated email address.</Alert>
+            <Alert>{accountant
+              ? "Use the email address where you received the invitation."
+              : "This invite can only be accepted by its designated email address."}</Alert>
           ) : null}
 
           {user ? (
@@ -93,7 +101,13 @@ export default async function InvitePage({ params }: InvitePageProps) {
               <p className="text-sm text-slate-600">
                 Signed in as <span className="font-medium text-slate-900">{user.email}</span>
               </p>
-              <InviteAcceptance token={token} />
+              <InviteAcceptance accountant={accountant} token={token} />
+              {accountant && (
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                  <p>Using a different email? Sign out and reopen the invitation.</p>
+                  <LogoutButton />
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-3">
@@ -101,7 +115,7 @@ export default async function InvitePage({ params }: InvitePageProps) {
               <div className="grid gap-3 sm:grid-cols-2">
                 <ButtonLink href={`/auth/login?invite=${encodeURIComponent(token)}`}>Sign in</ButtonLink>
                 <ButtonLink href={`/auth/signup?invite=${encodeURIComponent(token)}`} variant="secondary">
-                  Create account
+                  {accountant ? "Create accountant account" : "Create account"}
                 </ButtonLink>
               </div>
             </div>

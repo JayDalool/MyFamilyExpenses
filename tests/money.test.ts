@@ -57,3 +57,8 @@ test("formatCents formats cents, not dollars", () => {
   assert.doesNotMatch(formatCents(12345), /12,345/);
   assert.match(formatCents(0), /0\.00/);
 });
+
+test("reports can preserve the stored cents for currencies with different display precision", () => {
+  assert.match(formatCents(123, "JPY", 2), /1\.23/);
+  assert.match(formatCents(120, "BHD", 2), /1\.20\b/);
+});

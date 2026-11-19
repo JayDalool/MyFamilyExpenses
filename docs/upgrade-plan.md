@@ -38,7 +38,7 @@ workflow; this section describes what is merged, not what is in flight.
 | --- | --- |
 | Roles | Admin, Accountant, Employee. All employees are equal. Accountant is read and export only. |
 | Expense data | Add vendor, tax, currency, payment method, notes, business flag. Money in cents, total includes tax (same as SamVision). |
-| OCR default | Tesseract, single strategy. Paddle was too slow and inaccurate. Measure before changing again. |
+| OCR default | Tesseract, single strategy. PP-OCRv6 small sidecar is built and opt-in (6f, [ADR 0003](adr/0003-ppocrv6-opt-in-sidecar.md)); it becomes the default only after `ocr:bench:real` on real receipts and Jay's decision. The old PaddleOCR 2.9 result (slow, inaccurate) no longer applies. |
 | Vehicles and mileage | Stay in SamVision. MFE does not rebuild them. |
 | SamVision link | File exchange in both directions. No live API for now. |
 
@@ -62,10 +62,16 @@ workflow; this section describes what is merged, not what is in flight.
    - **6c Image cleanup.** Grayscale, contrast, deskew before OCR. Keep only what
      the scorecard shows helps.
    - **6d Vendor to category.** Suggest a category from saved corrections.
+   - **6f PP-OCRv6 sidecar (MFE-016).** `services/paddle-ocr` on ONNX Runtime,
+     opt-in through `docker-compose.ocr.yml`. Off by default: the app stays on
+     Tesseract/single and starts even if the sidecar is missing or unhealthy.
    - **6e Utility and electric PDF bills.** Read the PDF's text layer (OCR rejects
      PDFs today). Pick "Amount due", not the previous balance; read the billing period
      and due date; never store full account numbers.
 7. **Vehicle receipts and SamVision file exchange.** See below.
+   - **7a (MFE-010, PR 1 of 3).** Optional `vehicle_label` and `odometer_km` on an
+     expense: create/edit/detail, audit, CSV/XLSX trailing columns. Export (7b) and
+     import (7c) come next.
 
 ## SamVision file exchange
 

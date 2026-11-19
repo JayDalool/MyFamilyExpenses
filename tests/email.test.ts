@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { EmailDeliveryUnavailableError, sendSignupVerificationEmail } from "../lib/email";
+import {
+  EmailDeliveryUnavailableError,
+  formatInviteExpiry,
+  sendSignupVerificationEmail,
+} from "../lib/email";
 
 const env = process.env as Record<string, string | undefined>;
 const ENV_KEYS = ["NODE_ENV", "SMTP_ENABLED", "DEV_SHOW_VERIFICATION_LINKS"] as const;
@@ -123,4 +127,13 @@ test("production NEVER returns previewUrl, even when DEV_SHOW_VERIFICATION_LINKS
   } finally {
     restoreEnv(snapshot);
   }
+});
+
+test("invite expiry is shown in the app time zone, not as a UTC date", () => {
+  // 03:30 UTC on 2 July is still the evening of 1 July in Winnipeg.
+  const expiresAt = new Date("2026-07-02T03:30:00.000Z");
+  const local = formatInviteExpiry(expiresAt, "America/Winnipeg");
+  assert.match(local, /^2026-07-01/);
+  assert.match(local, /10:30/);
+  assert.match(formatInviteExpiry(expiresAt, "UTC"), /^2026-07-02/);
 });

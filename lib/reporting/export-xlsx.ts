@@ -190,6 +190,8 @@ export function reportToXlsx(report: AccountantReport): Buffer {
   rows.push([s("Household"), s(report.household.name)]);
   rows.push([s("Reporting period"), s(`${from} to ${to}`)]);
   rows.push([s("Generated at"), s(report.generatedAt.toISOString())]);
+  if (report.filters.currency) rows.push([s("Currency"), s(report.filters.currency)]);
+  if (report.filters.vendor) rows.push([s("Vendor filter"), s(report.filters.vendor)]);
   rows.push([s("Total spending"), n(fromCents(report.totals.totalCents))]);
   rows.push([s("Expense count"), n(report.totals.count)]);
   rows.push([s("Average expense"), n(fromCents(report.totals.averageCents))]);
@@ -227,6 +229,8 @@ export function reportToXlsx(report: AccountantReport): Buffer {
     s("Business"),
     s("Notes"),
     s("Receipt reference"),
+    s("Vehicle"),
+    s("Odometer (km)"),
   ]);
   for (const expense of report.expenses) {
     rows.push([
@@ -244,6 +248,8 @@ export function reportToXlsx(report: AccountantReport): Buffer {
       s(expense.isBusiness ? "Yes" : "No"),
       s(expense.notes ?? ""),
       s(expense.filePath),
+      s(expense.vehicleLabel ?? ""),
+      expense.odometerKm === null ? s("") : n(expense.odometerKm),
     ]);
   }
 

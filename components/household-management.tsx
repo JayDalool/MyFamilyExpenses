@@ -50,7 +50,8 @@ export function HouseholdManagement({
     ["OWNER", "ADMIN", "MEMBER", "ACCOUNTANT", "VIEWER"] as Member["role"][]
   ).filter((role) => householdKind !== "COMPANY" || role !== "VIEWER");
   const allowedInviteRoles = assignableRoles.filter(
-    (role) => role !== "OWNER" && (currentRole === "OWNER" || role !== "ADMIN"),
+    (role) => role !== "OWNER" && role !== "ACCOUNTANT" &&
+      (currentRole === "OWNER" || role !== "ADMIN"),
   );
   // A member who already holds a role no longer on offer (a VIEWER from before
   // this household became a company) still needs it in their own dropdown, or

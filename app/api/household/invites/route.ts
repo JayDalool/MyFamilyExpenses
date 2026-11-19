@@ -2,9 +2,12 @@ import { NextResponse } from "next/server";
 import { getCurrentHousehold } from "@/lib/auth/session";
 import { canInviteMembers } from "@/lib/auth/permissions";
 import { prisma } from "@/lib/db/prisma";
+import { getAppBaseUrl } from "@/lib/auth/app-url";
+import { canSendSmtpEmail } from "@/lib/email";
 import {
   buildInviteUrl,
   createHouseholdInvite,
+  deliverAccountantInvite,
   InviteAcceptanceError,
 } from "@/lib/household-invites";
 import { createHouseholdInviteSchema } from "@/lib/validation/household";
@@ -26,6 +29,7 @@ export async function GET() {
       role: true,
       maxUses: true,
       usedCount: true,
+      emailStatus: true,
       expiresAt: true,
       createdAt: true,
     },
@@ -51,9 +55,50 @@ export async function POST(request: Request) {
     );
   }
 
+  const accountant = parsed.data.role === "ACCOUNTANT";
+  let inviteBaseUrl = request.url;
+  if (accountant) {
+    if (!canInviteMembers(auth)) {
+      return NextResponse.json({ error: { message: "Invite access required." } }, { status: 403 });
+    }
+    if (parsed.data.householdId !== auth.householdId) {
+      return NextResponse.json(
+        { error: { message: "The active workspace changed. Reopen the workspace before sending." } },
+        { status: 409 },
+      );
+    }
+    try {
+      inviteBaseUrl = getAppBaseUrl();
+    } catch {
+      return NextResponse.json(
+        { error: { message: "Configure the app’s public URL before sending accountant invitations." } },
+        { status: 503 },
+      );
+    }
+    if (!canSendSmtpEmail()) {
+      return NextResponse.json(
+        { error: { message: "Email delivery is unavailable. Ask the app administrator to configure SMTP." } },
+        { status: 503 },
+      );
+    }
+  }
+
   try {
     // TODO: enforce plan-based member and invite limits here when entitlements exist.
     const { invite, token } = await createHouseholdInvite(auth, parsed.data);
+    const inviteUrl = buildInviteUrl(token, inviteBaseUrl);
+    if (accountant) {
+      const emailStatus = await deliverAccountantInvite(auth, invite, inviteUrl);
+      if (emailStatus !== "SENT") {
+        return NextResponse.json(
+          { error: { message: emailStatus === "FAILED"
+            ? "The invitation email could not be sent. Try resending it."
+            : "The invitation was revoked before delivery finished." } },
+          { status: emailStatus === "FAILED" ? 502 : 409 },
+        );
+      }
+      return NextResponse.json({ data: { emailStatus } }, { status: 201 });
+    }
     return NextResponse.json(
       {
         data: {
@@ -65,7 +110,7 @@ export async function POST(request: Request) {
             usedCount: invite.usedCount,
             expiresAt: invite.expiresAt,
           },
-          inviteUrl: buildInviteUrl(token, request.url),
+          inviteUrl,
         },
       },
       { status: 201 },
@@ -76,6 +121,14 @@ export async function POST(request: Request) {
         return NextResponse.json(
           { error: { message: "Too many invite creation attempts. Please try again later." } },
           { status: 429 },
+        );
+      }
+      if (error.reason === "duplicate_membership" || error.reason === "email_in_progress") {
+        return NextResponse.json(
+          { error: { message: error.reason === "duplicate_membership"
+            ? "This email already has access. A workspace owner can change their role in Members."
+            : "An invitation is already being sent to this email." } },
+          { status: 409 },
         );
       }
       return NextResponse.json(

@@ -224,9 +224,13 @@ export function checkReceiptTotals(lines: string[]): ReceiptTotals {
     // The same goes for an "Amount paid" smaller than a printed "Total": the
     // rest was paid another way ("Total 42.00 / Gift card 20.00 / Amount paid
     // 22.00 / Visa 22.00"). A paid amount above the total is total + tip.
-    // Every printed Total counts here, including ones a due line pushed out of
-    // the candidates.
-    const largestTotal = Math.max(0, ...of("total").map((row) => row.cents));
+    // Every printed Total or amount due counts here, including Totals a due
+    // line pushed out of the candidates and a full amount printed as "Amount
+    // due 42.00" above the part-payments.
+    const largestTotal = Math.max(
+      0,
+      ...rows.filter((row) => row.kind === "total" || isDue(row)).map((row) => row.cents),
+    );
     const printedTotal = totalRows.some(
       (row) =>
         row.cents === total && !isDue(row) && !(row.kind === "paid" && row.cents < largestTotal),

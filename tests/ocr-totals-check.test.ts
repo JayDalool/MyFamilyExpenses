@@ -290,8 +290,17 @@ for (const lines of [
   ["Total 42.00", "Gift card 20.00", "Amount paid 22.00", "Visa 22.00"],
   ["Total 42.00", "Gift card 20.00", "Amount due 22.00", "Amount paid 22.00", "Visa 22.00"],
   ["Total 42.00", "Gift card 20.00", "Balance due 22.00", "Total paid 22.00", "Visa 22.00"],
+  ["Amount due 42.00", "Gift card 20.00", "Amount paid 22.00", "Visa 22.00"],
+  ["Balance due 42.00", "Gift card 20.00", "Amount paid 22.00", "Debit 22.00"],
+  ["Please pay 42.00", "Gift card 20.00", "Amount paid 22.00", "Cash 22.00"],
 ]) {
   test(`a part-payment's remaining amount is never proven by the payment alone: ${lines.join(" / ")}`, () => {
     assert.equal(checkReceiptTotals(lines).verifiedTotalCents, null);
   });
 }
+
+test("with subtotal and tax printed, a split payment proves the full amount, not the card's part", () => {
+  const totals = checkReceiptTotals(["Subtotal 40.00", "GST 2.00", "Total due 42.00", "Gift card 20.00", "Amount paid 22.00", "Visa 22.00"]);
+  assert.equal(totals.verifiedTotalCents, 4200);
+  assert.equal(totals.taxVerified, true);
+});

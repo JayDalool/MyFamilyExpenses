@@ -228,10 +228,30 @@ test("unpaid previous balance: an Amount due the arithmetic does not back is not
   assert.ok(result.confidence.amount <= UNVERIFIED_CONFIDENCE_CAP);
 });
 
-test("current charges only stand as the total when no Amount due is printed", () => {
+test("with an unpaid balance carried, current charges are never the amount owed", () => {
+  // No due line we recognise: 84.00 is only this period's part of what is owed.
   const without = UNPAID_BALANCE_BILL.lines.filter((line) => !line.startsWith("Amount due"));
-  assert.equal(checkReceiptTotals(without).verifiedTotalCents, 8400);
+  assert.equal(checkReceiptTotals(without).verifiedTotalCents, null);
   assert.notEqual(checkReceiptTotals(UNPAID_BALANCE_BILL.lines).verifiedTotalCents, 8400);
+});
+
+for (const label of ["Amount owing", "Balance owing", "Total owing", "New balance"]) {
+  test(`unpaid previous balance: "${label}" wins over Total current charges`, () => {
+    const lines = UNPAID_BALANCE_BILL.lines.map((line) => line.replace("Amount due", label));
+    const totals = checkReceiptTotals(lines);
+    assert.equal(totals.verifiedTotalCents, 12400);
+
+    const result = parseInvoiceFieldsFromText(lines.join("\n"), "test", 0.9);
+    assert.equal(result.amount, 124);
+    assert.equal(result.amountVerified, true);
+  });
+}
+
+test("a Balance due of 0.00 after paying cash does not hide the real total", () => {
+  const totals = checkReceiptTotals(["Subtotal 10.00", "GST 0.50", "Total 10.50", "Cash 10.50", "Balance due 0.00"]);
+  assert.equal(totals.verifiedTotalCents, 1050);
+  assert.equal(totals.taxCents, 50);
+  assert.equal(totals.taxVerified, true);
 });
 
 test("a paid-off previous balance still leaves the amount due equal to this period's charges", () => {

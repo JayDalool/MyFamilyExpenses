@@ -267,3 +267,18 @@ test("a gift card's New balance does not replace the receipt's total", () => {
   assert.equal(totals.taxCents, 25);
   assert.equal(totals.taxVerified, true);
 });
+
+for (const lines of [
+  ["Basic charge 50.00", "Usage 30.00", "GST 4.00", "Total 84.00", "Past due 40.00", "Amount due 124.00"],
+  ["Basic charge 50.00", "Usage 30.00", "GST 4.00", "Total 84.00", "Unpaid balance 40.00", "Total amount due 124.00"],
+  ["Basic charge 50.00", "Usage 30.00", "GST 4.00", "Total 84.00", "Overdue amount 40.00", "Please pay 124.00"],
+]) {
+  test(`an old balance under an unread label never lets this period's total go green: ${lines[4]}`, () => {
+    const totals = checkReceiptTotals(lines);
+    assert.notEqual(totals.verifiedTotalCents, 8400);
+    // Whatever the parser fills in, it must stay amber for the person to check.
+    const result = parseInvoiceFieldsFromText(lines.join("\n"), "test", 0.9);
+    assert.equal(result.amountVerified, false);
+    assert.ok(result.confidence.amount <= UNVERIFIED_CONFIDENCE_CAP);
+  });
+}

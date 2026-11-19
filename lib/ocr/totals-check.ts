@@ -33,6 +33,7 @@ type Kind =
   | "tip"
   | "paid"
   | "due"
+  | "newBalance"
   | "current"
   | "total"
   | "change"
@@ -62,7 +63,11 @@ const KIND_PATTERNS: [Kind, RegExp][] = [
   ["taxTotal", /\b(?:total\s+tax(?:es)?|tax\s+total|taxes)\b/i],
   // What the customer must pay now. It outranks "current charges", which is only
   // this period's subtotal when an old balance is still owing.
-  ["due", /\b(?:amount|balance|total)\s+(?:due|owing)\b|\bnew\s+balance\b|\bplease\s+pay\b|\bpay\s+this\s+amount\b/i],
+  ["due", /\b(?:amount|balance|total)\s+(?:due|owing)\b|\bplease\s+pay\b|\bpay\s+this\s+amount\b/i],
+  // "New balance" is the amount owed on a bill that carries a previous balance,
+  // but on a gift card or loyalty slip it is what is left on the card. It only
+  // counts as due when a previous balance is read.
+  ["newBalance", /\bnew\s+balance\b/i],
   ["current", /\b(?:total\s+)?(?:current|new)\s+(?:charges|bill|period)\b/i],
   ["tax", /\b(?:gst|pst|hst|qst|rst|tps|tvq|tvh|tax)\b/i],
   ["tip", /\b(?:tip|gratuity|pourboire)\b/i],
@@ -176,24 +181,21 @@ export function checkReceiptTotals(lines: string[]): ReceiptTotals {
   const cards = of("card").map((row) => row.cents);
   const carry = carriedBalanceCents(lines);
   // The amount payable wins: when an "Amount due" line exists, "Total current
-  // charges" and a plain "Total" are subtotals and never candidates. A due line
-  // of 0.00 ("Balance due 0.00" after paying cash) says nothing is owed now, so
-  // it does not count. With an unpaid balance carried, "current charges" is only
-  // this period's part and never the amount owed, whatever the due line is called.
-  // With no balance carried, a due-style line can be something else entirely
-  // (a gift card's "New balance 14.75"), so the receipt's own totals stay
-  // candidates beside it and the arithmetic picks between them.
-  const dueRows = of("due").filter((row) => row.cents > 0);
-  const isDue = (row: Row) => row.kind === "due" && row.cents > 0;
+  // charges" and a plain "Total" are subtotals and never candidates, because a
+  // bill can carry an old balance under a label we do not read ("Past due").
+  // A due line of 0.00 ("Balance due 0.00" after paying cash) says nothing is
+  // owed now, so it does not count. With an unpaid balance carried, "current
+  // charges" is only this period's part and never the amount owed.
+  const isDue = (row: Row) =>
+    row.cents > 0 && (row.kind === "due" || (row.kind === "newBalance" && carry > 0));
+  const dueRows = rows.filter(isDue);
   const totalRows =
-    dueRows.length > 0 && carry > 0
+    dueRows.length > 0
       ? rows.filter((row) => isDue(row) || row.kind === "paid")
-      : dueRows.length > 0
-        ? rows.filter((row) => isDue(row) || row.kind === "total" || row.kind === "paid")
-        : rows.filter(
-            (row) =>
-              row.kind === "total" || row.kind === "paid" || (row.kind === "current" && carry === 0),
-          );
+      : rows.filter(
+          (row) =>
+            row.kind === "total" || row.kind === "paid" || (row.kind === "current" && carry === 0),
+        );
 
   // Items: unlabelled amounts above the first subtotal/tax/total line.
   const firstAnchor = rows.findIndex((row) => row.kind !== null);

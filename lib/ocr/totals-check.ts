@@ -221,7 +221,14 @@ export function checkReceiptTotals(lines: string[]): ReceiptTotals {
     // A payment only proves a printed total. An amount due can be what is left
     // after a gift card or cash part-payment ("Total 42.00 / Gift card 20.00 /
     // Balance due 22.00 / Visa 22.00"), so it is proven by arithmetic alone.
-    const printedTotal = totalRows.some((row) => row.cents === total && !isDue(row));
+    // The same goes for an "Amount paid" smaller than a printed "Total": the
+    // rest was paid another way ("Total 42.00 / Gift card 20.00 / Amount paid
+    // 22.00 / Visa 22.00"). A paid amount above the total is total + tip.
+    const largestTotal = Math.max(0, ...totalRows.filter((row) => row.kind === "total").map((row) => row.cents));
+    const printedTotal = totalRows.some(
+      (row) =>
+        row.cents === total && !isDue(row) && !(row.kind === "paid" && row.cents < largestTotal),
+    );
     if (printedTotal && cards.includes(total)) {
       passed.push("card payment");
     }

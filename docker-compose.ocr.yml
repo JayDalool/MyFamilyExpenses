@@ -9,11 +9,12 @@
 # existing `app` service. With the base compose alone, the app defaults to
 # OCR_PROVIDER=tesseract and this service does not exist.
 #
-# Including this file defaults the app to OCR_PROVIDER=paddle with
-# OCR_STRATEGY=fallback: PP-OCRv6 reads first and Tesseract runs only when the
-# result is weak. Values in your environment file win over these defaults, so
-# an .env copied from .env.example (OCR_PROVIDER=tesseract) still needs editing.
-# Run `npm run ocr:bench:real` with these settings before switching production.
+# Including this file does NOT switch the app's OCR engine. The app keeps
+# OCR_PROVIDER=tesseract / OCR_STRATEGY=single unless your environment file says
+# otherwise (MFE-016: production must not change engine just because this file
+# is loaded). To use the sidecar set OCR_PROVIDER=paddle and
+# OCR_STRATEGY=fallback, after `npm run ocr:bench:real` has been run with those
+# settings on real receipts and Jay has decided. See docs/adr/0003.
 #
 # Security: no public port mapping, no uploads volume mounted here, no DB access,
 # no app secrets. The `ocr` service sits only on the `ocr-internal` network,
@@ -59,13 +60,16 @@ services:
       - default
       - ocr-internal
     environment:
-      OCR_PROVIDER: ${OCR_PROVIDER:-paddle}
-      OCR_STRATEGY: ${OCR_STRATEGY:-fallback}
+      OCR_PROVIDER: ${OCR_PROVIDER:-tesseract}
+      OCR_STRATEGY: ${OCR_STRATEGY:-single}
       OCR_SERVICE_URL: http://ocr:8000
       OCR_TIMEOUT_MS: ${OCR_TIMEOUT_MS:-7000}
-    depends_on:
-      ocr:
-        condition: service_healthy
+    # Deliberately NO depends_on on `ocr`. A missing, still-loading or unhealthy
+    # sidecar must not stop the app from starting (MFE-016). With
+    # OCR_PROVIDER=paddle + OCR_STRATEGY=fallback the app tries the sidecar and
+    # reads with Tesseract when it is unreachable (connection error, timeout or
+    # 5xx); with OCR_STRATEGY=single a down sidecar returns the controlled OCR
+    # error and the user types the fields.
 
 networks:
   ocr-internal:

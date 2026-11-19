@@ -21,8 +21,16 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py preprocess.py ./
 
 # Run as a non-root user (no app secrets, no DB, no mounted uploads here).
+#
+# onnxocr 4.0.0 runs mkdir() on its own site-packages/.../rapid_table/models
+# directory when it is imported (table recognition, which we never use). As a
+# non-root user that raised PermissionError, the model never loaded and
+# /healthz stayed 503 (found building the image for MFE-016). Pre-create it,
+# owned by the service user; nothing is downloaded into it.
 RUN useradd --create-home --uid 10001 ocr \
-    && chown -R ocr:ocr /app
+    && chown -R ocr:ocr /app \
+    && mkdir -p /usr/local/lib/python3.11/site-packages/onnxocr/rapid_table/models \
+    && chown ocr:ocr /usr/local/lib/python3.11/site-packages/onnxocr/rapid_table/models
 USER ocr
 
 # The PP-OCRv6 model files ship inside the onnxocr wheel, so the image needs no

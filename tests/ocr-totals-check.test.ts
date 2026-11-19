@@ -259,3 +259,11 @@ test("a paid-off previous balance still leaves the amount due equal to this peri
   assert.ok(bill);
   assert.equal(checkReceiptTotals(bill.lines).verifiedTotalCents, 8062);
 });
+
+test("a gift card's New balance does not replace the receipt's total", () => {
+  const lines = ["Latte 4.00", "Muffin 1.00", "Subtotal 5.00", "GST 0.25", "Total 5.25", "Gift card 5.25", "New balance 14.75"];
+  const totals = checkReceiptTotals(lines);
+  assert.equal(totals.verifiedTotalCents, 525);
+  assert.equal(totals.taxCents, 25);
+  assert.equal(totals.taxVerified, true);
+});

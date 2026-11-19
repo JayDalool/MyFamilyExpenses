@@ -180,14 +180,20 @@ export function checkReceiptTotals(lines: string[]): ReceiptTotals {
   // of 0.00 ("Balance due 0.00" after paying cash) says nothing is owed now, so
   // it does not count. With an unpaid balance carried, "current charges" is only
   // this period's part and never the amount owed, whatever the due line is called.
+  // With no balance carried, a due-style line can be something else entirely
+  // (a gift card's "New balance 14.75"), so the receipt's own totals stay
+  // candidates beside it and the arithmetic picks between them.
   const dueRows = of("due").filter((row) => row.cents > 0);
+  const isDue = (row: Row) => row.kind === "due" && row.cents > 0;
   const totalRows =
-    dueRows.length > 0
-      ? rows.filter((row) => (row.kind === "due" && row.cents > 0) || row.kind === "paid")
-      : rows.filter(
-          (row) =>
-            row.kind === "total" || row.kind === "paid" || (row.kind === "current" && carry === 0),
-        );
+    dueRows.length > 0 && carry > 0
+      ? rows.filter((row) => isDue(row) || row.kind === "paid")
+      : dueRows.length > 0
+        ? rows.filter((row) => isDue(row) || row.kind === "total" || row.kind === "paid")
+        : rows.filter(
+            (row) =>
+              row.kind === "total" || row.kind === "paid" || (row.kind === "current" && carry === 0),
+          );
 
   // Items: unlabelled amounts above the first subtotal/tax/total line.
   const firstAnchor = rows.findIndex((row) => row.kind !== null);

@@ -692,6 +692,12 @@ Baseline, 2026-10-06, Tesseract single strategy, generated receipts:
 | vendor | 90% | 90% | 90% | 20% | 72.5% |
 | tax | not read | not read | not read | not read | 0% |
 
+Amount and tax checks (MFE-016, `lib/ocr/totals-check.ts`): a total is green only when the
+receipt's own numbers back it. "Total (HST included)" is a total, not a tax line. Tax is
+dropped unless it is below the total and within 15.5% of the pre-tax amount. On a bill,
+"Amount due" outranks "Total current charges", and an unpaid previous balance counts
+toward it (items + tax + balance); an amount due the sum does not back stays amber.
+
 PP-OCRv6 small with `fallback`, same 40 generated receipts: amount 100%, date 97.5%
 (Tesseract alone: 72.5% / 72.5%). Generated receipts are an easy set, so this does not
 change the default; `ocr:bench:real` with Paddle on saved receipts does, and Jay runs it.

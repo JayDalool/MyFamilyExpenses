@@ -1,3 +1,7 @@
+- [ ] MFE-016 · Review step: Tax field fills from receipt, shows confidence colour · https://github.com/JayDalool/MyFamilyExpenses/pull/13
+- [ ] MFE-016 · Receipt with only 'Total (HST included)': Tax stays blank · https://github.com/JayDalool/MyFamilyExpenses/pull/13
+- [ ] MFE-016 · Old-balance bill: Amount due shows, green only if summed · https://github.com/JayDalool/MyFamilyExpenses/pull/13
+- [ ] MFE-016 · Tax field and amber/green colours fit at phone width · https://github.com/JayDalool/MyFamilyExpenses/pull/13
 - [ ] MFE-018 · After deploy: login, add expense, reports, ZIP export still work · https://github.com/JayDalool/MyFamilyExpenses/pull/22
 - [ ] MFE-014 · Household → Invite accountant: send, resend, revoke · https://github.com/JayDalool/MyFamilyExpenses/pull/21
 - [ ] MFE-014 · New accountant: email link, set password, see reports · https://github.com/JayDalool/MyFamilyExpenses/pull/21

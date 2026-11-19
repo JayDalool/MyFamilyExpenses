@@ -10,6 +10,9 @@ const AGREEMENT_BOOST = 0.12;
 const DISAGREEMENT_FACTOR = 0.8;
 const MAX_CONFIDENCE = 0.97;
 const MAX_CANDIDATES = 4;
+// Step 6b: agreement still raises an amount the receipt's arithmetic did not
+// back, but never to the review step's green line (0.7). Only arithmetic does.
+const UNVERIFIED_AGREEMENT_CAP = 0.69;
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, Number(value.toFixed(2))));
@@ -185,6 +188,17 @@ export function mergeExtractions(
     "",
   );
 
+  // Results from producers that never ran the check (amountVerified undefined)
+  // keep the old behaviour.
+  const checked = primary.amountVerified !== undefined || secondary.amountVerified !== undefined;
+  const amountVerified = [primary, secondary].some(
+    (result) => result.amountVerified === true && amountKey(result.amount) === amountKey(amount.value),
+  );
+  const amountConfidence =
+    checked && !amountVerified ? Math.min(amount.confidence, UNVERIFIED_AGREEMENT_CAP) : amount.confidence;
+  const tax =
+    [primary.tax, secondary.tax].find((reading) => reading?.verified) ?? primary.tax ?? secondary.tax;
+
   const merged: OcrResult = {
     invoiceNumber: invoice.value,
     invoiceDate: date.value,
@@ -193,7 +207,7 @@ export function mergeExtractions(
     confidence: {
       invoiceNumber: invoice.confidence,
       invoiceDate: date.confidence,
-      amount: amount.confidence,
+      amount: amountConfidence,
     },
     // A real engine with geometry (Paddle) drives type/multi-receipt; the
     // fallback only fills in when the primary missed something.
@@ -224,6 +238,8 @@ export function mergeExtractions(
       ),
     },
     merchant: merchant.value,
+    ...(checked ? { amountVerified } : {}),
+    ...(tax ? { tax } : {}),
   };
 
   // Recompute warnings from the merged fields so a fallback that filled a missing

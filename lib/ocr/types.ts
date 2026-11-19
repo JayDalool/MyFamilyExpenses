@@ -83,6 +83,21 @@ export type OcrResult = {
   merchant: string;
   // ── Stage A.2 provenance (set by the orchestrator, optional) ──
   meta?: OcrExtractionMeta;
+  // ── Step 6b arithmetic checks (set by the parser, optional) ──
+  // True when the receipt's own numbers back `amount`: subtotal + tax (+ tip),
+  // a card line equal to the total, or cash minus change. Only a checked amount
+  // can show as green in the review step.
+  amountVerified?: boolean;
+  // Tax read from GST/PST/HST/QST/RST lines, in dollars. Absent when the receipt
+  // shows none. `verified` means the tax lines are part of a passing sum check.
+  tax?: OcrTaxReading;
+};
+
+export type OcrTaxReading = {
+  value: number;
+  // Normalized 0–1, same scale and colour thresholds as `OcrConfidence`.
+  confidence: number;
+  verified: boolean;
 };
 
 // ── Engine boundary (recognition only) ───────────────────────────────────────

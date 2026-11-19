@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  GREEN_CONFIDENCE,
   scoreReceipt,
   totalScores,
   vendorMatches,
@@ -31,20 +32,43 @@ test("vendor matching tolerates store numbers and case, not unrelated names", ()
   assert.ok(!vendorMatches("", "Costco"));
 });
 
-test("a receipt read correctly scores correct; tax is unsupported until 6b", () => {
+test("a receipt read correctly scores correct, tax included", () => {
   const score = scoreReceipt(
-    result({ amount: 20.97, invoiceDate: "2026-03-14", merchant: "NORTHGATE FRESH MARKET" }),
+    result({
+      amount: 20.97,
+      invoiceDate: "2026-03-14",
+      merchant: "NORTHGATE FRESH MARKET",
+      tax: { value: 0.58, confidence: 0.95, verified: true },
+    }),
     expected,
   );
-  assert.deepEqual(score, { amount: "correct", date: "correct", vendor: "correct", tax: "unsupported" });
+  assert.deepEqual(score, { amount: "correct", date: "correct", vendor: "correct", tax: "correct" });
 });
 
-test("wrong, missing and skipped are told apart", () => {
-  const score = scoreReceipt(
-    result({ amount: 20.39, invoiceDate: "", merchant: "" }),
+test("wrong, flagged, missing and skipped are told apart", () => {
+  const confident = { invoiceNumber: 0, invoiceDate: 0.9, amount: 0.95 };
+  const shownGreen = scoreReceipt(
+    result({ amount: 20.39, invoiceDate: "2026-03-15", confidence: confident, merchant: "" }),
     { ...expected, taxCents: null },
   );
-  assert.deepEqual(score, { amount: "wrong", date: "missing", vendor: "missing", tax: "skipped" });
+  assert.deepEqual(shownGreen, { amount: "wrong", date: "wrong", vendor: "missing", tax: "skipped" });
+
+  // Under GREEN_CONFIDENCE the review step shows amber, so a wrong value is flagged.
+  const shownAmber = scoreReceipt(
+    result({
+      amount: 20.39,
+      invoiceDate: "2026-03-15",
+      confidence: { invoiceNumber: 0, invoiceDate: 0.5, amount: GREEN_CONFIDENCE - 0.01 },
+      tax: { value: 0.24, confidence: 0.6, verified: false },
+    }),
+    expected,
+  );
+  assert.equal(shownAmber.amount, "flagged");
+  assert.equal(shownAmber.date, "flagged");
+  assert.equal(shownAmber.tax, "flagged");
+
+  const noTaxRead = scoreReceipt(result({}), expected);
+  assert.equal(noTaxRead.tax, "missing");
 
   const noVendorAnswer = scoreReceipt(result({ merchant: "Anything" }), { ...expected, vendor: null });
   assert.equal(noVendorAnswer.vendor, "skipped");
@@ -53,14 +77,15 @@ test("wrong, missing and skipped are told apart", () => {
 test("totals exclude skipped fields from accuracy and count OCR failures", () => {
   const totals = totalScores(
     [
-      { amount: "correct", date: "correct", vendor: "skipped", tax: "unsupported" },
-      { amount: "wrong", date: "missing", vendor: "correct", tax: "skipped" },
+      { amount: "correct", date: "correct", vendor: "skipped", tax: "missing" },
+      { amount: "flagged", date: "missing", vendor: "correct", tax: "skipped" },
     ],
     1,
   );
   assert.equal(totals.receipts, 3);
   assert.equal(totals.failed, 1);
   assert.equal(totals.fields.amount.accuracy, 0.5);
+  assert.equal(totals.fields.amount.flagged, 1);
   assert.equal(totals.fields.vendor.scored, 1);
   assert.equal(totals.fields.vendor.accuracy, 1);
   assert.equal(totals.fields.tax.accuracy, 0);

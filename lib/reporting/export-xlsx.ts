@@ -229,6 +229,8 @@ export function reportToXlsx(report: AccountantReport): Buffer {
     s("Business"),
     s("Notes"),
     s("Receipt reference"),
+    s("Vehicle"),
+    s("Odometer (km)"),
   ]);
   for (const expense of report.expenses) {
     rows.push([
@@ -246,6 +248,8 @@ export function reportToXlsx(report: AccountantReport): Buffer {
       s(expense.isBusiness ? "Yes" : "No"),
       s(expense.notes ?? ""),
       s(expense.filePath),
+      s(expense.vehicleLabel ?? ""),
+      expense.odometerKm === null ? s("") : n(expense.odometerKm),
     ]);
   }
 

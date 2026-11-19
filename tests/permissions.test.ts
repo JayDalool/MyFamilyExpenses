@@ -37,6 +37,7 @@ test("household role permission matrix is enforced", () => {
   assert.equal(canCreateExpense(admin), true);
   assert.equal(canCreateExpense(member), true);
   assert.equal(canCreateExpense(viewer), false);
+  assert.equal(canCreateExpense(auth("ACCOUNTANT", "user-a", "COMPANY")), false);
 
   assert.equal(canManageExpense(owner, "another-user"), true);
   assert.equal(canManageExpense(admin, "another-user"), true);

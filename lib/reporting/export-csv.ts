@@ -93,6 +93,8 @@ export function reportToCsv(report: AccountantReport): string {
       "Business",
       "Notes",
       "Receipt reference",
+      "Vehicle",
+      "Odometer (km)",
     ]),
   );
   for (const expense of report.expenses) {
@@ -111,6 +113,9 @@ export function reportToCsv(report: AccountantReport): string {
         expense.isBusiness ? "Yes" : "No",
         expense.notes ?? "",
         expense.filePath,
+        expense.vehicleLabel ?? "",
+        // A string so escapeCell does not print 123456 as 123456.00.
+        expense.odometerKm === null ? "" : String(expense.odometerKm),
       ]),
     );
   }

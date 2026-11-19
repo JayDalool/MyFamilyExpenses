@@ -7,7 +7,7 @@ import {
   VERIFIED_CONFIDENCE,
 } from "../lib/ocr/ocr-parsing";
 import { checkReceiptTotals } from "../lib/ocr/totals-check";
-import { SYNTHETIC_RECEIPTS } from "./fixtures/receipt-images/receipts";
+import { SYNTHETIC_RECEIPTS, UNPAID_BALANCE_BILL } from "./fixtures/receipt-images/receipts";
 
 test("every generated receipt's total and tax are proven by its own arithmetic", () => {
   for (const receipt of SYNTHETIC_RECEIPTS) {
@@ -164,4 +164,78 @@ test("a verified engine result and its tax survive the merge", () => {
   assert.ok(merged.confidence.amount >= 0.7);
   assert.equal(merged.tax?.value, 0.58);
   assert.equal(merged.tax?.verified, true);
+});
+
+// ── MFE-016 review fixes ─────────────────────────────────────────────────────
+
+test("a total that says HST is included is the total, never the tax", () => {
+  const totals = checkReceiptTotals(["Coffee 7.00", "Total (HST included) 7.91"]);
+  assert.equal(totals.taxCents, null);
+  assert.equal(totals.taxVerified, false);
+
+  const result = parseInvoiceFieldsFromText(
+    ["CORNER CAFE", "2026-03-14", "Coffee 7.00", "Total (HST included) 7.91"].join("\n"),
+    "test",
+    0.9,
+  );
+  assert.equal(result.amount, 7.91);
+  assert.equal(result.tax, undefined, "no tax is filled in from the total line");
+  assert.equal(result.amountVerified, false);
+  assert.ok(result.confidence.amount <= UNVERIFIED_CONFIDENCE_CAP, "an unchecked total is not green");
+});
+
+test("'Total incl. GST' is also a total", () => {
+  assert.equal(checkReceiptTotals(["Item 10.00", "Total incl. GST 10.50"]).taxCents, null);
+});
+
+test("tax equal to or above the total, or with no total to compare to, is dropped", () => {
+  assert.equal(checkReceiptTotals(["GST 7.91"]).taxCents, null, "no total to check against");
+  assert.equal(checkReceiptTotals(["GST 7.91", "Total 7.91"]).taxCents, null, "tax is not below the total");
+  // Rate check: 4.00 on a 14.00 total is 40%.
+  assert.equal(checkReceiptTotals(["Item 10.00", "GST 4.00", "Total 14.00"]).taxCents, null);
+  // A plausible 5% tax on an unchecked total is still read, but never verified.
+  const plain = checkReceiptTotals(["GST 0.50", "Total 10.50"]);
+  assert.equal(plain.taxCents, 50);
+  assert.equal(plain.taxVerified, false);
+});
+
+test("parser drops a tax that is not smaller than the amount it picked", () => {
+  const result = parseInvoiceFieldsFromText(["STORE", "2026-03-14", "GST 12.00", "TOTAL 12.00"].join("\n"), "test", 0.9);
+  assert.equal(result.tax, undefined);
+});
+
+test("unpaid previous balance: Amount due wins over Total current charges and is backed by the sum", () => {
+  const totals = checkReceiptTotals(UNPAID_BALANCE_BILL.lines);
+  assert.equal(totals.verifiedTotalCents, 12400);
+  assert.deepEqual(totals.totalChecks, ["items + tax + balance"]);
+  assert.equal(totals.taxCents, 400);
+
+  const result = parseInvoiceFieldsFromText(UNPAID_BALANCE_BILL.lines.join("\n"), "test", 0.9);
+  assert.equal(result.amount, 124);
+  assert.equal(result.amountVerified, true);
+  assert.ok(result.confidence.amount >= VERIFIED_CONFIDENCE);
+});
+
+test("unpaid previous balance: an Amount due the arithmetic does not back is not green", () => {
+  // Late fee or misread digit: 40.00 + 84.00 is not 130.00.
+  const lines = UNPAID_BALANCE_BILL.lines.map((line) => line.replace("124.00", "130.00"));
+  const totals = checkReceiptTotals(lines);
+  assert.equal(totals.verifiedTotalCents, null, "84.00 current charges must not stand in for the amount due");
+
+  const result = parseInvoiceFieldsFromText(lines.join("\n"), "test", 0.9);
+  assert.equal(result.amount, 130);
+  assert.equal(result.amountVerified, false);
+  assert.ok(result.confidence.amount <= UNVERIFIED_CONFIDENCE_CAP);
+});
+
+test("current charges only stand as the total when no Amount due is printed", () => {
+  const without = UNPAID_BALANCE_BILL.lines.filter((line) => !line.startsWith("Amount due"));
+  assert.equal(checkReceiptTotals(without).verifiedTotalCents, 8400);
+  assert.notEqual(checkReceiptTotals(UNPAID_BALANCE_BILL.lines).verifiedTotalCents, 8400);
+});
+
+test("a paid-off previous balance still leaves the amount due equal to this period's charges", () => {
+  const bill = SYNTHETIC_RECEIPTS.find((r) => r.name === "utility-electric-bill");
+  assert.ok(bill);
+  assert.equal(checkReceiptTotals(bill.lines).verifiedTotalCents, 8062);
 });

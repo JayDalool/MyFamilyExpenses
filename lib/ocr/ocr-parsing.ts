@@ -1767,7 +1767,7 @@ export function parseInvoiceFieldsFromText(
   const bestAmount = pickBestAmount(amountCandidates, receiptType);
   const totals = checkReceiptTotals(lines);
   const amount = checkAmount(bestAmount, totals, receiptType);
-  const tax = readTax(totals, scale);
+  const tax = readTax(totals, scale, amount.value);
 
   const result: OcrResult = {
     invoiceNumber: bestInvoice?.value ?? "",
@@ -1821,8 +1821,11 @@ function checkAmount(
   return { value: proven / 100, confidence: VERIFIED_CONFIDENCE, verified: true };
 }
 
-function readTax(totals: ReceiptTotals, scale: number): OcrTaxReading | null {
+function readTax(totals: ReceiptTotals, scale: number, amount: number): OcrTaxReading | null {
   if (totals.taxCents === null) return null;
+  // Tax is part of the total, so it is always smaller. Equal or larger means a
+  // total line was read as tax; never fill it in (MFE-016).
+  if (amount > 0 && totals.taxCents >= Math.round(amount * 100)) return null;
   return {
     value: totals.taxCents / 100,
     confidence: clampConfidence((totals.taxVerified ? VERIFIED_CONFIDENCE : UNVERIFIED_CONFIDENCE_CAP) * scale),

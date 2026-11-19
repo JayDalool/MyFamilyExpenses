@@ -214,6 +214,30 @@ export const SYNTHETIC_RECEIPTS: SyntheticReceipt[] = [
   },
 ];
 
+// MFE-016: a bill whose previous balance was NOT paid. Text-only on purpose: it
+// is not in SYNTHETIC_RECEIPTS, so the scorecard and the committed images are
+// unchanged. "Total current charges" (84.00) is a subtotal; the amount payable
+// is "Amount due" (124.00 = 40.00 owing + 84.00 this month).
+export const UNPAID_BALANCE_BILL: SyntheticReceipt = {
+  name: "utility-bill-unpaid-previous-balance",
+  lines: [
+    "PRAIRIE HYDRO",
+    "Electricity Statement",
+    "",
+    "Bill date: 2026-09-05",
+    "",
+    "Previous balance          40.00",
+    "Basic monthly charge      15.00",
+    "Energy 650 kWh            65.00",
+    "GST                        4.00",
+    "Total current charges     84.00",
+    "",
+    "Amount due               124.00",
+    "Due date: 2026-09-26",
+  ],
+  expected: { amountCents: 12400, invoiceDate: "2026-09-05", vendor: "Prairie Hydro", taxCents: 400 },
+};
+
 /** Image conditions the generator renders for every receipt. */
 export const IMAGE_VARIANTS = ["clean", "blur", "tilt", "faded-noisy"] as const;
 export type ImageVariant = (typeof IMAGE_VARIANTS)[number];

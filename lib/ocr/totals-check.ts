@@ -32,6 +32,8 @@ type Kind =
   | "tax"
   | "tip"
   | "paid"
+  | "due"
+  | "current"
   | "total"
   | "change"
   | "cash"
@@ -49,14 +51,23 @@ const MONEY_PATTERN = /(?<![\d.,])-?\$?\s?(\d{1,3}(?:,\d{3})+\.\d{2}|\d{1,6}[.,]
 const SKIP_PATTERN =
   /\b(?:previous\s+balance|balance\s+forward|payments?\s+received|last\s+payment|you\s+saved|savings|points|rewards|cash\s*back|suggest(?:ed|ion)?|tip\s+guide)\b|\bRT\s?\d{4}\b|\b(?:gst|hst|qst|tps|tvq|tvh)(?:\s*\/\s*hst)?\s*(?:#|no\b|number|reg)/i;
 
+// Bill history is skipped as a row but still read for the carried balance: a
+// previous balance that was not paid off is part of "Amount due" (MFE-016).
+const PREVIOUS_BALANCE_PATTERN = /\b(?:previous\s+balance|balance\s+forward)\b/i;
+const PAYMENT_PATTERN = /\b(?:payments?\s+received|last\s+payment)\b/i;
+
 // First match wins, so the specific labels come before the generic ones.
 const KIND_PATTERNS: [Kind, RegExp][] = [
   ["subtotal", /\bsub[\s-]?total\b/i],
   ["taxTotal", /\b(?:total\s+tax(?:es)?|tax\s+total|taxes)\b/i],
+  // What the customer must pay now. It outranks "current charges", which is only
+  // this period's subtotal when an old balance is still owing.
+  ["due", /\b(?:amount|balance|total)\s+due\b|\bplease\s+pay\b|\bpay\s+this\s+amount\b/i],
+  ["current", /\b(?:total\s+)?(?:current|new)\s+(?:charges|bill|period)\b/i],
   ["tax", /\b(?:gst|pst|hst|qst|rst|tps|tvq|tvh|tax)\b/i],
   ["tip", /\b(?:tip|gratuity|pourboire)\b/i],
   ["paid", /\b(?:amount|total)\s+paid\b/i],
-  ["total", /\b(?:grand\s+|net\s+)?total\b|\b(?:amount|balance|total)\s+due\b/i],
+  ["total", /\b(?:grand\s+|net\s+)?total\b/i],
   ["change", /\bchange\b/i],
   ["cash", /\bcash\b/i],
   ["card", /\b(?:visa|master\s?card|debit|credit|amex|american\s+express|interac|tap|flash|discover)\b/i],
@@ -92,10 +103,37 @@ function isMoneyOnly(line: string) {
 }
 
 function kindOf(label: string): Kind | null {
+  // "Total (HST included) 7.91" is the total with tax inside it, not a tax line.
+  // Without this the tax pattern below claims it and the whole total becomes
+  // "tax" (MFE-016). "Total GST 3.00" has no "included" and stays a tax line.
+  if (INCLUDED_PATTERN.test(label) && /\btotal\b/i.test(label) && !/\bsub[\s-]?total\b/i.test(label)) {
+    return "total";
+  }
   for (const [kind, pattern] of KIND_PATTERNS) {
     if (pattern.test(label)) return kind;
   }
   return null;
+}
+
+// Unpaid balance carried onto this bill: previous balance minus payments made.
+function carriedBalanceCents(lines: string[]) {
+  let previous = 0;
+  let paid = 0;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const isPrevious = PREVIOUS_BALANCE_PATTERN.test(line);
+    const isPayment = PAYMENT_PATTERN.test(line);
+    if (!isPrevious && !isPayment) continue;
+    let money = moneyIn(line);
+    if (money.length === 0 && index + 1 < lines.length && isMoneyOnly(lines[index + 1])) {
+      money = moneyIn(lines[index + 1]);
+    }
+    if (money.length === 0) continue;
+    const cents = money[money.length - 1];
+    if (isPrevious) previous = Math.max(previous, Math.abs(cents));
+    else paid += Math.abs(cents);
+  }
+  return Math.max(previous - paid, 0);
 }
 
 function readRows(lines: string[]): Row[] {
@@ -136,7 +174,14 @@ export function checkReceiptTotals(lines: string[]): ReceiptTotals {
   const cash = of("cash").map((row) => row.cents);
   const change = of("change").map((row) => row.cents);
   const cards = of("card").map((row) => row.cents);
-  const totalRows = rows.filter((row) => row.kind === "total" || row.kind === "paid");
+  const carry = carriedBalanceCents(lines);
+  // The amount payable wins: when an "Amount due" line exists, "Total current
+  // charges" and a plain "Total" are subtotals and never candidates.
+  const dueRows = of("due");
+  const totalRows =
+    dueRows.length > 0
+      ? rows.filter((row) => row.kind === "due" || row.kind === "paid")
+      : rows.filter((row) => row.kind === "total" || row.kind === "paid" || row.kind === "current");
 
   // Items: unlabelled amounts above the first subtotal/tax/total line.
   const firstAnchor = rows.findIndex((row) => row.kind !== null);
@@ -153,6 +198,11 @@ export function checkReceiptTotals(lines: string[]): ReceiptTotals {
     }
     if (items.length >= 2 && sums.some((tax) => near(itemSum + tax, total) || (tip > 0 && near(itemSum + tax + tip, total)))) {
       passed.push("items + tax");
+    }
+    // An amount due that adds this period's charges to an unpaid balance is
+    // backed only when the printed balance and charges really sum to it.
+    if (carry > 0 && items.length >= 2 && sums.some((tax) => near(itemSum + tax + carry, total))) {
+      passed.push("items + tax + balance");
     }
     if (cards.includes(total) && totalRows.some((row) => row.cents === total)) {
       passed.push("card payment");
@@ -193,14 +243,19 @@ export function checkReceiptTotals(lines: string[]): ReceiptTotals {
 
   const taxSum = addedTax + includedTax;
   const totalForRate = verifiedTotalCents ?? (totalRows.length > 0 ? totalRows[totalRows.length - 1].cents : null);
+  // A tax is only trusted against a total: it must be smaller than the total and
+  // within the highest Canadian combined rate. With no total to compare to it is
+  // dropped rather than guessed (MFE-016).
   const plausible =
     taxRows.length > 0 &&
     taxSum >= 0 &&
-    (totalForRate === null || taxSum <= MAX_TAX_RATE * Math.max(totalForRate - taxSum, 0));
+    totalForRate !== null &&
+    taxSum < totalForRate &&
+    taxSum <= MAX_TAX_RATE * (totalForRate - taxSum);
   const taxVerified =
     plausible &&
     addedTax > 0 &&
-    totalChecks.some((check) => check === "subtotal + tax" || check === "items + tax");
+    totalChecks.some((check) => ["subtotal + tax", "items + tax", "items + tax + balance"].includes(check));
 
   return {
     verifiedTotalCents,

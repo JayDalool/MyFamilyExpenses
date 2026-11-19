@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { prisma } from "../lib/db/prisma";
@@ -158,6 +159,44 @@ test("emailed invitations stop after the daily cap for one recipient", async () 
   assert.equal(reasons[0], "created");
   assert.equal(reasons.at(-1), "rate_limited");
   assert.equal(reasons.filter((reason) => reason === "rate_limited").length, 1);
+
+  // The cap is per workspace: another client can still invite the same person.
+  const other = await createHouseholdInvite(fixture.first, { ...inviteFields, email });
+  assert.equal(other.invite.emailStatus, "PENDING");
+});
+
+test("the migration un-verifies passwordless accounts whose only proof was a Microsoft login", async () => {
+  const sql = readFileSync(
+    new URL("../prisma/migrations/20261119000001_unverify_microsoft_only_users/migration.sql", import.meta.url),
+    "utf8",
+  );
+  const make = (passwordHash: string | null, providers: Array<"MICROSOFT" | "GOOGLE">) => {
+    const email = `mig-${crypto.randomUUID()}@example.com`;
+    return prisma.user.create({
+      data: {
+        name: "Migration",
+        email,
+        passwordHash,
+        emailVerifiedAt: new Date(),
+        authAccounts: {
+          create: providers.map((provider) => ({ provider, providerAccountId: crypto.randomUUID(), providerEmail: email })),
+        },
+      },
+    });
+  };
+  const users = await Promise.all([
+    make(null, ["MICROSOFT"]),
+    make(null, ["MICROSOFT", "GOOGLE"]),
+    make("hash", ["MICROSOFT"]),
+    make(null, ["GOOGLE"]),
+  ]);
+  try {
+    await prisma.$executeRawUnsafe(sql);
+    const after = await Promise.all(users.map((user) => prisma.user.findUniqueOrThrow({ where: { id: user.id } })));
+    assert.deepEqual(after.map((user) => user.emailVerifiedAt === null), [true, false, false, false]);
+  } finally {
+    await prisma.user.deleteMany({ where: { id: { in: users.map((user) => user.id) } } });
+  }
 });
 
 test("client report downloads are scoped to members and need one currency", async () => {

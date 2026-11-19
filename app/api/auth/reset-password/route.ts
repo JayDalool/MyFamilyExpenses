@@ -108,8 +108,8 @@ export async function POST(request: Request) {
         token,
       );
       // Update password. For OAuth-only users (passwordHash was null), this is
-      // an explicit opt-in to also having a password — they keep their OAuth
-      // accounts and can sign in either way going forward.
+      // an explicit opt-in to also having a password. They keep their OAuth
+      // logins only if the account's email was already verified (see below).
       const user = await tx.user.update({
         where: { id: consumed.userId },
         data: { passwordHash },

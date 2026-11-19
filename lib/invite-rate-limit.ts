@@ -11,7 +11,9 @@ export const INVITE_RATE_LIMIT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 export const INVITE_CREATION_LIMIT = 10;
 // Emailed invitations go out through the app's own mail server, so any owner
 // could otherwise use them to mail arbitrary addresses. Cap them per sender
-// per day and per recipient per day (resends count, since each one mails).
+// per day and per recipient per household per day (resends count, since
+// each one mails). The recipient cap is per household so one owner cannot
+// use up an accountant's allowance and block other clients from inviting.
 export const INVITE_EMAIL_SENDER_DAILY_LIMIT = 30;
 export const INVITE_EMAIL_RECIPIENT_DAILY_LIMIT = 5;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -145,7 +147,7 @@ export async function reserveInviteCreationAttempt(
     ...(emailedTo
       ? [
           reservation(ACTION.emailSender, [userId], INVITE_EMAIL_SENDER_DAILY_LIMIT, DAY_MS),
-          reservation(ACTION.emailRecipient, [emailedTo], INVITE_EMAIL_RECIPIENT_DAILY_LIMIT, DAY_MS),
+          reservation(ACTION.emailRecipient, [householdId, emailedTo], INVITE_EMAIL_RECIPIENT_DAILY_LIMIT, DAY_MS),
         ]
       : []),
   ]);

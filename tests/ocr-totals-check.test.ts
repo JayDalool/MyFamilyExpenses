@@ -282,3 +282,13 @@ for (const lines of [
     assert.ok(result.confidence.amount <= UNVERIFIED_CONFIDENCE_CAP);
   });
 }
+
+for (const lines of [
+  ["Total 42.00", "Gift card 20.00", "Balance due 22.00", "Visa 22.00"],
+  ["Cash 20.00", "Amount due 22.00", "Debit 22.00"],
+  ["Total 42.00", "Gift card 20.00", "Amount due 22.00", "Cash 25.00", "Change 3.00"],
+]) {
+  test(`a part-payment's remaining amount is never proven by the payment alone: ${lines.join(" / ")}`, () => {
+    assert.equal(checkReceiptTotals(lines).verifiedTotalCents, null);
+  });
+}

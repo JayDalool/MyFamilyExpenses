@@ -218,12 +218,16 @@ export function checkReceiptTotals(lines: string[]): ReceiptTotals {
     if (carry > 0 && items.length >= 2 && sums.some((tax) => near(itemSum + tax + carry, total))) {
       passed.push("items + tax + balance");
     }
-    if (cards.includes(total) && totalRows.some((row) => row.cents === total)) {
+    // A payment only proves a printed total. An amount due can be what is left
+    // after a gift card or cash part-payment ("Total 42.00 / Gift card 20.00 /
+    // Balance due 22.00 / Visa 22.00"), so it is proven by arithmetic alone.
+    const printedTotal = totalRows.some((row) => row.cents === total && !isDue(row));
+    if (printedTotal && cards.includes(total)) {
       passed.push("card payment");
     }
-    if (cash.some((given) => change.some((back) => near(given - back, total)))) {
+    if (printedTotal && cash.some((given) => change.some((back) => near(given - back, total)))) {
       passed.push("cash - change");
-    } else if (change.length === 0 && cash.includes(total) && totalRows.some((row) => row.cents === total)) {
+    } else if (printedTotal && change.length === 0 && cash.includes(total)) {
       passed.push("cash payment");
     }
     return passed;

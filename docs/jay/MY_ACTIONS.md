@@ -1,3 +1,4 @@
+- [ ] MFE-016 · Run ocr:bench:real with paddle+fallback before switching OCR · https://github.com/JayDalool/MyFamilyExpenses/blob/main/docs/adr/0003-ppocrv6-opt-in-sidecar.md
 - [ ] MFE-014 · After merge run prisma migrate deploy (2 migrations) · https://github.com/JayDalool/MyFamilyExpenses/blob/main/docs/accountant-access.md
 - [ ] MFE-014 · Set APP_BASE_URL and SMTP_* in the live env file · https://github.com/JayDalool/MyFamilyExpenses/blob/main/docs/accountant-access.md
 - [ ] MFE-014 · Send yourself a test invite; confirm it arrives · https://github.com/JayDalool/MyFamilyExpenses/blob/main/docs/accountant-access.md

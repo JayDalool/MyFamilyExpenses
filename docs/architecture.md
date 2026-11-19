@@ -481,6 +481,13 @@ Initial self-hosted stack:
 
 Paid cloud OCR should remain optional and only be added later for low-confidence scans or paid plans.
 
+Current state (MFE-016, [ADR 0003](adr/0003-ppocrv6-opt-in-sidecar.md)): the default engine is
+in-process Tesseract with the `single` strategy. An internal PP-OCRv6 small sidecar
+(`services/paddle-ocr`, ONNX Runtime, no internet, models bundled) is available
+through `docker-compose.ocr.yml` but is opt-in (`OCR_PROVIDER=paddle`,
+`OCR_STRATEGY=fallback`). The app does not depend on the sidecar being healthy; with
+`fallback` an unreachable sidecar means Tesseract reads the receipt.
+
 ---
 
 ### 7.3 OCR Job Flow
@@ -684,6 +691,10 @@ Baseline, 2026-10-06, Tesseract single strategy, generated receipts:
 | date | 100% | 100% | 90% | 0% | 72.5% |
 | vendor | 90% | 90% | 90% | 20% | 72.5% |
 | tax | not read | not read | not read | not read | 0% |
+
+PP-OCRv6 small with `fallback`, same 40 generated receipts: amount 100%, date 97.5%
+(Tesseract alone: 72.5% / 72.5%). Generated receipts are an easy set, so this does not
+change the default; `ocr:bench:real` with Paddle on saved receipts does, and Jay runs it.
 
 `npm run ocr:bench:generate` re-renders the images with sharp. Run it only when the
 receipt list changes, and commit the images, so every machine scores the same pixels.

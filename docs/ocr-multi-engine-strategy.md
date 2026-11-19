@@ -37,15 +37,26 @@ external AI — everything runs in-process.
 
 ### Recommended production configuration
 
-**Until Paddle is validated in production, use:**
+**Production stays on Tesseract until Jay decides** (ADR 0003), with or
+without the sidecar container running:
 
 ```dotenv
 OCR_PROVIDER=tesseract
 OCR_STRATEGY=single
 ```
 
-This is the only configuration that runs one known-good local engine with a
-predictable latency profile and no dependency on the Paddle sidecar.
+**Opt-in PP-OCRv6 sidecar (`docker-compose.ocr.yml`):**
+
+```dotenv
+OCR_PROVIDER=paddle
+OCR_STRATEGY=fallback
+```
+
+On the 40 generated scorecard receipts this read the amount on 100% (date
+97.5%), against 72.5% for Tesseract alone. Switch production to it only after
+`npm run ocr:bench:real` confirms the gain on saved receipts and Jay decides.
+`fallback` is required for a safe switch: if the sidecar is down the app reads
+with Tesseract; `single` + paddle would return an OCR error instead.
 
 **Do not use `ensemble` (or `parallel`) as the production default while the
 engines run sequentially.** In the current orchestrator the primary engine is

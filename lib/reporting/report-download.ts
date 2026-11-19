@@ -61,6 +61,15 @@ export async function downloadReport(request: Request, workspaceId?: string) {
       { status: 401 },
     );
   }
+  return downloadReportForUser(request, user, workspaceId);
+}
+
+/** Everything after the session lookup; split out so tests can call it without a request scope. */
+export async function downloadReportForUser(
+  request: Request,
+  user: NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>,
+  workspaceId?: string,
+) {
   const auth = await getUserHousehold(user, workspaceId);
   if (!auth) {
     return NextResponse.json(

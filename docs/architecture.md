@@ -340,7 +340,12 @@ Because a user can belong to multiple households, the app needs an active househ
 Rules:
 
 * User has one active household at a time.
-* Dashboard, expenses, reports, categories, uploads, and OCR all use the active household.
+* Dashboard, expenses, categories, uploads, and OCR use the active household.
+* Reports have two entry points. `/reports` uses the active household.
+  `/reports/[householdId]` (and its export route) names the household in the URL, so an
+  accountant with several clients can keep one tab per client; each request re-checks
+  membership with `getUserHousehold(user, householdId)` and never falls back to another
+  household.
 * The active household can be stored in:
 
   * session metadata, or
@@ -735,8 +740,13 @@ Dashboard should show:
 
 ### 8.1 Exports and the accountant package
 
-`GET /api/reports/export?format=…` takes the same filters as `/reports` and needs
-`canViewReports` (owner, admin, accountant; not a company employee).
+`GET /api/reports/export?format=…` (active household) and
+`GET /api/reports/[householdId]/export?format=…` (one named client, used by accountants)
+share `lib/reporting/report-download.ts`. Both take the same filters as `/reports` and need
+`canViewReports` (owner, admin, accountant; not a company employee). A household that is not
+the user's gives 404. When the range holds more than one currency the request must pick one
+(`currency=`), otherwise 400. Accountant invitations and signup are in
+[accountant-access.md](accountant-access.md).
 
 | Format | Built by | Limit |
 | --- | --- | --- |

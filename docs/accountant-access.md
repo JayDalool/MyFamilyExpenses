@@ -7,7 +7,8 @@ Owners and admins can invite an accountant to a family or company workspace. An 
 1. Open the correct workspace and go to **Household**.
 2. Under **Invite accountant**, enter the accountant’s email and select **Send invitation**. The invitation is for one use and expires in seven days when sent from this form.
 3. Check the status under the form. **Sent** means the mail server accepted the message. **Delivery failed** means the app could not send it. **Resend** issues a fresh link and revokes the previous unused link for that address and workspace.
-4. Revoke an unused invitation from the invitation list. To end an accepted accountant’s access, a workspace owner removes their membership under **Members**.
+4. Each person can send at most 30 accountant invitation emails a day, and one address can receive at most 5 a day; resends count. The list shows expiry in the app's time zone (`APP_TIME_ZONE`).
+5. Revoke an unused invitation from the invitation list. To end an accepted accountant’s access, a workspace owner removes their membership under **Members**.
 
 The email contains the workspace name, the role, and the invitation link. Reports and receipts are available inside the signed-in app.
 
@@ -16,6 +17,8 @@ The email contains the workspace name, the role, and the invitation link. Report
 **New account.** Open the invitation, select **Create accountant account**, and enter the same email address and a password. The app sends a verification email. Open it and select **Verify and accept invitation**. The app verifies the email, consumes the invitation, and grants the Accountant membership in one database transaction.
 
 **Existing account.** Sign in with the invited email and select **Accept accountant invitation**. An account whose email has not yet been verified can complete an email password reset, then reopen the invitation. The invitation process uses the existing account for the additional client.
+
+**Google or Microsoft sign-in.** A Google account can accept directly, because Google confirms the email. Microsoft does not confirm the email it sends, so a Microsoft sign-in cannot accept an accountant invitation; the app sends the person to email signup instead. A password reset on an account whose email was never verified also removes any Google or Microsoft login linked to it, so a login someone else attached before the owner proved the inbox stops working.
 
 Acceptance opens the client’s **Reports** page. Use **Clients** to open another client. Each report, expense detail, and receipt link identifies its workspace. Membership is checked again when the page, file, or export is requested.
 
@@ -28,7 +31,7 @@ Acceptance opens the client’s **Reports** page. Use **Clients** to open anothe
 
 ## Deploy
 
-Apply the database migration with `npx prisma migrate deploy` before enabling the feature. The migration adds delivery status to household invitations. Existing email-bound, single-use accountant invitations can still be accepted by a verified account.
+Apply the database migration with `npx prisma migrate deploy` before enabling the feature. The migration adds delivery status to household invitations. Existing email-bound, single-use accountant invitations can still be accepted by a verified account. Older accountant invitations without an email address, or with more than one use, can no longer be accepted and do not appear in either Household list; send a new invitation instead.
 
 Set the following in each deployment’s environment. The base Compose file passes them to the app.
 

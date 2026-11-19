@@ -9,6 +9,7 @@ import { roleLabel } from "@/lib/auth/role-labels";
 import { canInviteMembers, canManageMembers, canRevokeInviteRole } from "@/lib/auth/permissions";
 import { prisma } from "@/lib/db/prisma";
 import { workspaceReportsHref } from "@/lib/report-links";
+import { formatInviteExpiry } from "@/lib/email";
 
 export const dynamic = "force-dynamic";
 
@@ -86,7 +87,7 @@ export default async function HouseholdPage() {
                 id: invite.id,
                 email: invite.email ?? "",
                 status,
-                expiresOn: invite.expiresAt.toISOString().slice(0, 10),
+                expiresOn: formatInviteExpiry(invite.expiresAt),
               };
             })}
           />

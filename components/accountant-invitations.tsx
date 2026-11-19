@@ -96,7 +96,7 @@ export function AccountantInvitations({
               <li className="flex flex-wrap items-center justify-between gap-3 py-3" key={invite.id}>
                 <div className="min-w-0">
                   <p className="break-all text-sm font-medium text-slate-900">{invite.email}</p>
-                  {canRevoke && <p className="text-xs text-slate-500">Expires {invite.expiresOn} UTC</p>}
+                  {canRevoke && <p className="text-xs text-slate-500">Expires {invite.expiresOn}</p>}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant={invite.status === "Accepted" || invite.status === "Sent" ? "brand" : "neutral"}>

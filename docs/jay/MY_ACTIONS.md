@@ -1,3 +1,6 @@
+- [ ] MFE-014 · After merge run prisma migrate deploy on app container · https://github.com/JayDalool/MyFamilyExpenses/blob/main/docs/accountant-access.md
+- [ ] MFE-014 · Set APP_BASE_URL and SMTP_* in the live env file · https://github.com/JayDalool/MyFamilyExpenses/blob/main/docs/accountant-access.md
+- [ ] MFE-014 · Send yourself a test invite; confirm it arrives · https://github.com/JayDalool/MyFamilyExpenses/blob/main/docs/accountant-access.md
 - [ ] MFE-010 · After merge run prisma migrate deploy on app container
 - [ ] MFE-TZ · Confirm tz rebuild deploy in the MFE pane · https://github.com/JayDalool/MyFamilyExpenses/pull/19
 - [ ] MFE-TZ · Upgrade host Node to 22.23.4+ (local npm test) · https://github.com/JayDalool/MyFamilyExpenses/pull/19

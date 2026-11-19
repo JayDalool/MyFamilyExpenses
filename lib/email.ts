@@ -82,7 +82,7 @@ export async function sendAccountantInvitationEmail({
     greetingTimeout: 10_000,
     socketTimeout: 15_000,
   });
-  const expiresOn = expiresAt.toISOString().slice(0, 10);
+  const expiresOn = formatInviteExpiry(expiresAt);
   const result = await transporter.sendMail({
     from: config.from,
     to: email,
@@ -93,13 +93,13 @@ export async function sendAccountantInvitationEmail({
       "Open the invitation and use the email address that received this message.",
       inviteUrl,
       "",
-      `The invitation expires on ${expiresOn} (UTC) and can be used once.`,
+      `The invitation expires on ${expiresOn} and can be used once.`,
     ].join("\n"),
     html: [
       `<p><strong>${escapeHtml(householdName)}</strong> invited you to view their reports and receipts as an accountant.</p>`,
       "<p>Use the email address that received this message.</p>",
       `<p><a href="${escapeHtml(inviteUrl)}">Open accountant invitation</a></p>`,
-      `<p>The invitation expires on ${expiresOn} (UTC) and can be used once.</p>`,
+      `<p>The invitation expires on ${expiresOn} and can be used once.</p>`,
     ].join(""),
   });
   if (!result.accepted.length) {
@@ -244,4 +244,24 @@ function escapeHtml(value: string) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+/**
+ * Invitation expiry as the household reads it: date, time and offset in
+ * APP_TIME_ZONE (America/Winnipeg in production). A bare UTC date showed an
+ * evening invite as expiring a day late.
+ */
+export function formatInviteExpiry(
+  expiresAt: Date,
+  timeZone = process.env.APP_TIME_ZONE || "UTC",
+) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  }).format(expiresAt);
 }

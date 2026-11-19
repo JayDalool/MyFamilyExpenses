@@ -125,6 +125,12 @@ export async function POST(request: Request) {
           where: { id: user.id, emailVerifiedAt: null },
           data: { emailVerifiedAt: new Date() },
         });
+        // Nobody had proved this inbox before, so any sign-in linked to the
+        // account (e.g. a Microsoft login carrying an unverified email) may
+        // belong to someone else. Drop them now that the real owner has
+        // shown up; otherwise that login would keep access after the owner
+        // verifies the account and accepts an accountant invitation.
+        await tx.authAccount.deleteMany({ where: { userId: user.id } });
       }
 
       await invalidateOtherActiveTokens(tx, user.id, consumed.id);

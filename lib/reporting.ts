@@ -290,7 +290,7 @@ export async function getDashboardSummary(
       where: activeExpenseWhere(householdId),
       include: {
         category: true,
-        user: true,
+        user: { select: { id: true, name: true } },
         paidByUser: { select: { id: true, name: true } },
       },
       orderBy: [{ invoiceDate: "desc" }, { createdAt: "desc" }],

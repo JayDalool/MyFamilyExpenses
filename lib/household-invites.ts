@@ -165,7 +165,8 @@ export async function createHouseholdInvite(
   if (input.role === "ACCOUNTANT" && (!email || input.maxUses !== 1)) {
     throw new InviteAcceptanceError("email_mismatch", auth.householdId);
   }
-  if (!(await reserveInviteCreationAttempt(auth.householdId, auth.user.id))) {
+  const emailedTo = input.role === "ACCOUNTANT" ? email : null;
+  if (!(await reserveInviteCreationAttempt(auth.householdId, auth.user.id, emailedTo))) {
     throw new InviteAcceptanceError("rate_limited", auth.householdId);
   }
 

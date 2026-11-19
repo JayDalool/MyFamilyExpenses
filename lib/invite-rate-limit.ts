@@ -9,6 +9,12 @@ const AUDIT_THROTTLE_WINDOW_MS = 60 * 60 * 1000;
 export const INVITE_RATE_LIMIT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 export const INVITE_CREATION_LIMIT = 10;
+// Emailed invitations go out through the app's own mail server, so any owner
+// could otherwise use them to mail arbitrary addresses. Cap them per sender
+// per day and per recipient per day (resends count, since each one mails).
+export const INVITE_EMAIL_SENDER_DAILY_LIMIT = 30;
+export const INVITE_EMAIL_RECIPIENT_DAILY_LIMIT = 5;
+const DAY_MS = 24 * 60 * 60 * 1000;
 export const INVITE_ACCEPTANCE_USER_LIMIT = 20;
 export const INVITE_ACCEPTANCE_ACTOR_TOKEN_LIMIT = 8;
 export const INVITE_ACCEPTANCE_TOKEN_LIMIT = 120;
@@ -25,6 +31,8 @@ export const INVITE_ACCEPTANCE_TOKEN_BUFFER = 20;
 
 const ACTION = {
   creation: "invite_creation",
+  emailSender: "invite_email_sender",
+  emailRecipient: "invite_email_recipient",
   acceptanceActor: "invite_acceptance_actor",
   acceptanceToken: "invite_acceptance_token",
   acceptanceActorToken: "invite_acceptance_actor_token",
@@ -127,9 +135,19 @@ export function getInviteRequestActorKeys(
   });
 }
 
-export async function reserveInviteCreationAttempt(householdId: string, userId: string) {
+export async function reserveInviteCreationAttempt(
+  householdId: string,
+  userId: string,
+  emailedTo: string | null = null,
+) {
   return reserveAtomic([
     reservation(ACTION.creation, [householdId, userId], INVITE_CREATION_LIMIT),
+    ...(emailedTo
+      ? [
+          reservation(ACTION.emailSender, [userId], INVITE_EMAIL_SENDER_DAILY_LIMIT, DAY_MS),
+          reservation(ACTION.emailRecipient, [emailedTo], INVITE_EMAIL_RECIPIENT_DAILY_LIMIT, DAY_MS),
+        ]
+      : []),
   ]);
 }
 

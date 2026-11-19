@@ -10,6 +10,8 @@ const OAUTH_ERRORS: Record<string, string> = {
   oauth_invalid: "The sign-in request was invalid. Please try again.",
   oauth_state_mismatch: "The sign-in request expired or was invalid. Please try again.",
   oauth_unverified_email: "Your email address is not verified with the provider.",
+  oauth_accountant_unverified:
+    "Your sign-in provider did not confirm this email address. Create an accountant account with your email and a password instead.",
   oauth_email_exists:
     "An account with this email already exists. Please sign in with your password instead.",
   oauth_error: "Sign in failed. Please try again.",

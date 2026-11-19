@@ -1,3 +1,4 @@
+- [ ] MFE-008 · Review step suggests last category for same vendor
 - [ ] PR-14 · Add Expense: first category tap opens upload, phone and desktop · https://github.com/JayDalool/MyFamilyExpenses/pull/14
 - [ ] STEP-5 · Reports shows "ZIP with receipts" button, desktop and phone
 - [ ] STEP-5 · ZIP opens: README, summary.pdf, index.csv/xlsx, receipts folder

@@ -6,6 +6,11 @@ FROM node:22.23.5-bookworm-slim
 # Fail the build if this Node still has the old Manitoba rule.
 RUN node -e 'const o = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Winnipeg", timeZoneName: "longOffset" }).formatToParts(new Date("2027-01-15T12:00:00Z")).find((p) => p.type === "timeZoneName").value; if (o !== "GMT-05:00") { console.error("Node tz " + process.versions.tz + " puts America/Winnipeg at " + o + "; need tzdata 2026e or newer"); process.exit(1); }'
 
+# MFE-025: Prisma needs openssl at runtime; without it Prisma warns on start.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends openssl \
+ && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY package.json package-lock.json* ./

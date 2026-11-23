@@ -4,3 +4,14 @@ node_modules
 .env
 coverage
 npm-debug.log*
+# MFE-025: keep every env-style file (incl. the local test one) out of the image;
+# the two example files stay in context.
+.env.*
+*.env
+!.env.example
+!.env.test.example
+# MFE-025: editor swap/backup files
+*.swp
+*.swo
+*~
+.*.swp

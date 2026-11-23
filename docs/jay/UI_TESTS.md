@@ -4,7 +4,6 @@
 - [ ] MFE-016 · Tax field and amber/green colours fit at phone width · https://github.com/JayDalool/MyFamilyExpenses/pull/13
 - [ ] MFE-018 · After deploy: login, add expense, reports, ZIP export still work · https://github.com/JayDalool/MyFamilyExpenses/pull/22
 - [ ] MFE-014 · Household → Invite accountant: send, resend, revoke · https://github.com/JayDalool/MyFamilyExpenses/pull/21
-- [ ] MFE-014 · New accountant: email link, set password, see reports · https://github.com/JayDalool/MyFamilyExpenses/pull/21
 - [ ] MFE-014 · Existing accountant accepts second client; Clients lists both · https://github.com/JayDalool/MyFamilyExpenses/pull/21
 - [ ] MFE-014 · Client reports: vendor, currency filters; date, amount sort · https://github.com/JayDalool/MyFamilyExpenses/pull/21
 - [ ] MFE-014 · Accountant downloads PDF, CSV, XLSX, ZIP per client · https://github.com/JayDalool/MyFamilyExpenses/pull/21
